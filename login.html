@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Entrar — Dublagem automática</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="card">
+    <h1>Entrar</h1>
+    <p class="sub">Acesse sua conta para dublar seus vídeos.</p>
+
+    <form id="loginForm">
+      <label for="email">Email</label>
+      <input type="email" id="email" required>
+
+      <label for="password">Senha</label>
+      <input type="password" id="password" required>
+
+      <button type="submit" id="submitBtn">Entrar</button>
+    </form>
+
+    <p class="sub" style="margin-top:16px;">
+      Não tem conta? <a href="register.html">Cadastre-se</a>
+    </p>
+
+    <div id="status"></div>
+  </div>
+
+  <script>
+    const API_BASE = "http://localhost:3000";
+
+    // Se já está logado, manda direto pro app
+    if (localStorage.getItem("token")) {
+      window.location.href = "index.html";
+    }
+
+    document.getElementById("loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const submitBtn = document.getElementById("submitBtn");
+      const statusEl = document.getElementById("status");
+      submitBtn.disabled = true;
+      statusEl.innerHTML = "";
+
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.error || "Erro ao entrar.");
+
+        localStorage.setItem("token", data.token);
+        localStorage.setItem("user", JSON.stringify(data.user));
+        window.location.href = "index.html";
+      } catch (err) {
+        statusEl.innerHTML = `<div class="error">${err.message}</div>`;
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
