@@ -27,11 +27,17 @@ fs.mkdirSync(LIVE_DIR, { recursive: true });
 // CORS
 // ======================================================
 
-app.use(
-  cors({
-    origin: "*",
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"]
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: [
+    "Content-Type",
+    "Accept"
+  ],
+  credentials: false
+}));
+
+app.options("*", cors());
   })
 );
 
