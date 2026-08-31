@@ -1,26 +1,11 @@
 #!/usr/bin/env python3
-"""
-pipeline.py
-Pipeline de dublagem automatica, 100% com ferramentas open-source (sem custo de API):
-
-  1. Extrai o audio do video (ffmpeg)
-  2. Transcreve o audio original (Whisper)
-  3. Traduz o texto para o idioma alvo (Argos Translate)
-  4. Gera a nova narracao em audio (Coqui TTS)
-  5. Junta a nova trilha de audio com o video original (ffmpeg)
-
-Uso:
-    python3 pipeline.py --input video.mp4 --output video_dublado.mp4 --target-lang pt
-
-Imprime no stdout linhas "STAGE:..." e "PROGRESS:..." para o backend Node
-acompanhar o andamento em tempo real.
-"""
 
 import argparse
 import subprocess
 import sys
 import os
 import tempfile
+import traceback
 
 
 def log_stage(msg):
@@ -32,118 +17,534 @@ def log_progress(pct):
 
 
 def extract_audio(video_path, audio_path):
-    log_stage("extraindo audio do video")
+
+    log_stage("Extraindo áudio do vídeo")
     log_progress(5)
-    subprocess.run(
-        ["ffmpeg", "-y", "-i", video_path, "-vn", "-acodec", "pcm_s16le",
-         "-ar", "16000", "-ac", "1", audio_path],
-        check=True,
-        capture_output=True,
-    )
+
+    try:
+
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                video_path,
+                "-vn",
+                "-acodec",
+                "pcm_s16le",
+                "-ar",
+                "16000",
+                "-ac",
+                "1",
+                audio_path
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+
+        if result.returncode != 0:
+
+            raise RuntimeError(
+                "FFmpeg falhou:\n" +
+                result.stderr[-5000:]
+            )
+
+    except Exception:
+
+        raise
 
 
 def transcribe(audio_path):
-    log_stage("transcrevendo audio (Whisper)")
-    log_progress(20)
-    import whisper
 
-    # "small" e um bom equilibrio custo/qualidade. Para mais qualidade,
-    # troque para "medium" ou "large" (exige mais VRAM/tempo).
-    WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
-model = whisper.load_model(WHISPER_MODEL)
-    result = model.transcribe(audio_path)
-    return result["text"], result.get("language", "en")
+    log_stage("Carregando Whisper")
+    log_progress(15)
 
+    try:
 
-def translate(text, source_lang, target_lang):
-    log_stage(f"traduzindo texto ({source_lang} -> {target_lang})")
-    log_progress(45)
-    import argostranslate.package
-    import argostranslate.translate
+        import whisper
+        import torch
 
-    # Assume que o pacote de idiomas ja foi instalado previamente
-    # (veja install_languages.py). Baixar pacotes exige internet,
-    # mas so precisa ser feito uma vez, na configuracao do servidor.
-    installed_languages = argostranslate.translate.get_installed_languages()
-    from_lang = next((l for l in installed_languages if l.code == source_lang), None)
-    to_lang = next((l for l in installed_languages if l.code == target_lang), None)
-
-    if not from_lang or not to_lang:
-        raise RuntimeError(
-            f"Par de idiomas {source_lang}->{target_lang} nao instalado. "
-            f"Rode install_languages.py primeiro."
+        model_name = os.getenv(
+            "WHISPER_MODEL",
+            "base"
         )
 
-    translation = from_lang.get_translation(to_lang)
-    return translation.translate(text)
+        log_stage(
+            f"Carregando modelo Whisper: {model_name}"
+        )
+
+        print(
+            f"[WHISPER] Modelo: {model_name}",
+            flush=True
+        )
+
+        print(
+            f"[WHISPER] Torch: {torch.__version__}",
+            flush=True
+        )
+
+        print(
+            f"[WHISPER] CPU disponível: {os.cpu_count()}",
+            flush=True
+        )
+
+        model = whisper.load_model(
+            model_name,
+            device="cpu"
+        )
+
+        log_stage(
+            "Transcrevendo áudio"
+        )
+
+        log_progress(25)
+
+        result = model.transcribe(
+            audio_path,
+            language=None,
+            fp16=False,
+            verbose=False
+        )
+
+        text = result.get(
+            "text",
+            ""
+        ).strip()
+
+        detected_language = result.get(
+            "language",
+            "en"
+        )
+
+        print(
+            f"[WHISPER] Idioma detectado: {detected_language}",
+            flush=True
+        )
+
+        print(
+            f"[WHISPER] Texto: {text[:500]}",
+            flush=True
+        )
+
+        if not text:
+
+            raise RuntimeError(
+                "Whisper não conseguiu reconhecer fala no áudio."
+            )
+
+        log_progress(40)
+
+        return text, detected_language
+
+    except Exception as error:
+
+        print(
+            "========================================",
+            file=sys.stderr
+        )
+
+        print(
+            "[WHISPER ERROR]",
+            file=sys.stderr
+        )
+
+        print(
+            str(error),
+            file=sys.stderr
+        )
+
+        traceback.print_exc(
+            file=sys.stderr
+        )
+
+        print(
+            "========================================",
+            file=sys.stderr
+        )
+
+        raise
 
 
-def synthesize_speech(text, target_lang, out_audio_path):
-    log_stage("gerando a voz dublada (TTS)")
+def translate(
+    text,
+    source_lang,
+    target_lang
+):
+
+    log_stage(
+        f"Traduzindo texto ({source_lang} -> {target_lang})"
+    )
+
+    log_progress(50)
+
+    try:
+
+        import argostranslate.translate
+
+        installed_languages = (
+            argostranslate.translate
+            .get_installed_languages()
+        )
+
+        from_lang = next(
+            (
+                language
+                for language in installed_languages
+                if language.code == source_lang
+            ),
+            None
+        )
+
+        to_lang = next(
+            (
+                language
+                for language in installed_languages
+                if language.code == target_lang
+            ),
+            None
+        )
+
+        if not from_lang:
+
+            raise RuntimeError(
+                f"Idioma de origem não instalado: {source_lang}"
+            )
+
+        if not to_lang:
+
+            raise RuntimeError(
+                f"Idioma de destino não instalado: {target_lang}"
+            )
+
+        translation = from_lang.get_translation(
+            to_lang
+        )
+
+        if not translation:
+
+            raise RuntimeError(
+                f"Par de tradução não instalado: "
+                f"{source_lang} -> {target_lang}"
+            )
+
+        translated = translation.translate(
+            text
+        )
+
+        if not translated.strip():
+
+            raise RuntimeError(
+                "A tradução retornou texto vazio."
+            )
+
+        print(
+            f"[ARGOS] Tradução: {translated[:500]}",
+            flush=True
+        )
+
+        log_progress(60)
+
+        return translated
+
+    except Exception as error:
+
+        print(
+            "[TRANSLATION ERROR]",
+            file=sys.stderr
+        )
+
+        traceback.print_exc(
+            file=sys.stderr
+        )
+
+        raise
+
+
+def synthesize_speech(
+    text,
+    target_lang,
+    out_audio_path
+):
+
+    log_stage(
+        "Gerando voz dublada"
+    )
+
     log_progress(70)
-    from TTS.api import TTS
 
-    # Modelo multilingue da Coqui TTS. Troque pelo modelo que preferir;
-    # alguns suportam clonagem de voz a partir de uma amostra de audio.
-    tts = TTS(model_name="tts_models/multilingual/multi-dataset/xtts_v2", progress_bar=False)
-    tts.tts_to_file(
-        text=text,
-        language=target_lang,
-        file_path=out_audio_path,
-        speaker="Claribel Dervla",  # voz padrao do modelo; pode trocar
+    try:
+
+        from TTS.api import TTS
+
+        model_name = (
+            "tts_models/"
+            "multilingual/"
+            "multi-dataset/"
+            "xtts_v2"
+        )
+
+        print(
+            f"[TTS] Carregando: {model_name}",
+            flush=True
+        )
+
+        tts = TTS(
+            model_name=model_name,
+            progress_bar=False
+        )
+
+        tts.tts_to_file(
+            text=text,
+            language=target_lang,
+            file_path=out_audio_path,
+            speaker="Claribel Dervla"
+        )
+
+        if not os.path.exists(
+            out_audio_path
+        ):
+
+            raise RuntimeError(
+                "O TTS não criou o arquivo de áudio."
+            )
+
+        log_progress(85)
+
+    except Exception:
+
+        print(
+            "[TTS ERROR]",
+            file=sys.stderr
+        )
+
+        traceback.print_exc(
+            file=sys.stderr
+        )
+
+        raise
+
+
+def merge_audio_video(
+    video_path,
+    new_audio_path,
+    output_path
+):
+
+    log_stage(
+        "Remontando vídeo com áudio dublado"
     )
 
-
-def merge_audio_video(video_path, new_audio_path, output_path):
-    log_stage("remontando o video com o audio dublado")
     log_progress(90)
-    subprocess.run(
-        [
-            "ffmpeg", "-y",
-            "-i", video_path,
-            "-i", new_audio_path,
-            "-c:v", "copy",
-            "-map", "0:v:0",
-            "-map", "1:a:0",
-            "-shortest",
-            output_path,
-        ],
-        check=True,
-        capture_output=True,
-    )
+
+    try:
+
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                video_path,
+                "-i",
+                new_audio_path,
+
+                "-map",
+                "0:v:0",
+
+                "-map",
+                "1:a:0",
+
+                "-c:v",
+                "copy",
+
+                "-c:a",
+                "aac",
+
+                "-b:a",
+                "128k",
+
+                "-shortest",
+
+                output_path
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+
+        if result.returncode != 0:
+
+            raise RuntimeError(
+                "FFmpeg falhou ao juntar áudio e vídeo:\n"
+                + result.stderr[-5000:]
+            )
+
+        if not os.path.exists(
+            output_path
+        ):
+
+            raise RuntimeError(
+                "O vídeo final não foi criado."
+            )
+
+        log_progress(95)
+
+    except Exception:
+
+        print(
+            "[FFMPEG MERGE ERROR]",
+            file=sys.stderr
+        )
+
+        traceback.print_exc(
+            file=sys.stderr
+        )
+
+        raise
 
 
 def main():
+
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input", required=True, help="Caminho do video original")
-    parser.add_argument("--output", required=True, help="Caminho do video dublado de saida")
-    parser.add_argument("--target-lang", default="pt", help="Idioma de destino (ex: pt, en, es)")
+
+    parser.add_argument(
+        "--input",
+        required=True
+    )
+
+    parser.add_argument(
+        "--output",
+        required=True
+    )
+
+    parser.add_argument(
+        "--target-lang",
+        default="pt"
+    )
+
     args = parser.parse_args()
 
+    print(
+        "========================================",
+        flush=True
+    )
+
+    print(
+        "SI — PIPELINE DE DUBLAGEM",
+        flush=True
+    )
+
+    print(
+        "========================================",
+        flush=True
+    )
+
+    print(
+        f"Entrada: {args.input}",
+        flush=True
+    )
+
+    print(
+        f"Saída: {args.output}",
+        flush=True
+    )
+
+    print(
+        f"Idioma alvo: {args.target_lang}",
+        flush=True
+    )
+
     with tempfile.TemporaryDirectory() as tmp:
-        audio_in = os.path.join(tmp, "audio_original.wav")
-        audio_out = os.path.join(tmp, "audio_dublado.wav")
+
+        audio_in = os.path.join(
+            tmp,
+            "audio_original.wav"
+        )
+
+        audio_out = os.path.join(
+            tmp,
+            "audio_dublado.wav"
+        )
 
         try:
-            extract_audio(args.input, audio_in)
 
-            text, detected_lang = transcribe(audio_in)
-            if not text.strip():
-                raise RuntimeError("Nao foi possivel extrair texto do audio (silencio ou fala nao reconhecida).")
+            extract_audio(
+                args.input,
+                audio_in
+            )
 
-            translated_text = translate(text, detected_lang, args.target_lang)
+            text, detected_lang = transcribe(
+                audio_in
+            )
 
-            synthesize_speech(translated_text, args.target_lang, audio_out)
+            if detected_lang == args.target_lang:
 
-            merge_audio_video(args.input, audio_out, args.output)
+                print(
+                    "[INFO] O idioma original já é o idioma de destino.",
+                    flush=True
+                )
+
+                translated_text = text
+
+            else:
+
+                translated_text = translate(
+                    text,
+                    detected_lang,
+                    args.target_lang
+                )
+
+            synthesize_speech(
+                translated_text,
+                args.target_lang,
+                audio_out
+            )
+
+            merge_audio_video(
+                args.input,
+                audio_out,
+                args.output
+            )
 
             log_progress(100)
-            log_stage("concluido")
-        except subprocess.CalledProcessError as e:
-            sys.stderr.write(f"Erro no ffmpeg: {e.stderr.decode(errors='ignore') if e.stderr else e}\n")
-            sys.exit(1)
-        except Exception as e:
-            sys.stderr.write(f"Erro no pipeline: {e}\n")
+
+            log_stage(
+                "Concluído"
+            )
+
+            print(
+                "PROCESSAMENTO CONCLUÍDO",
+                flush=True
+            )
+
+            sys.exit(0)
+
+        except Exception as error:
+
+            print(
+                "========================================",
+                file=sys.stderr
+            )
+
+            print(
+                "[PIPELINE ERROR]",
+                file=sys.stderr
+            )
+
+            print(
+                str(error),
+                file=sys.stderr
+            )
+
+            traceback.print_exc(
+                file=sys.stderr
+            )
+
+            print(
+                "========================================",
+                file=sys.stderr
+            )
+
             sys.exit(1)
 
 
