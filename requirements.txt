@@ -1,14 +1,27 @@
-# Dependencias do pipeline de dublagem (100% open-source, sem custo de API)
-#
-# Transcricao
+# ==========================================
+# DEPENDÊNCIAS DO PROJETO DE DUBLAGEM
+# Python 3.11
+# ==========================================
+
+# Transcrição de áudio
 openai-whisper==20231117
 
-# Traducao offline
+# Tradução offline
 argostranslate==1.9.6
 
-# Geracao de voz (TTS)
+# Texto para voz
 TTS==0.22.0
 
-# Utilitarios
+# Áudio / vídeo
 ffmpeg-python==0.2.0
-torch>=2.0.0
+
+# PyTorch compatível com TTS 0.22
+torch==2.1.2
+torchaudio==2.1.2
+
+# Compatibilidade do ecossistema TTS
+numpy==1.24.4
+transformers==4.36.2
+
+# Utilitários
+soundfile>=0.12.1
