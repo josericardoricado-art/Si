@@ -1,4 +1,13 @@
-// server.js - Backend da aplicação de dublagem automática
+// server.js
+// Backend do Si - Tradutor Universal
+// Suporta:
+// 1. Upload de vídeos MP4 para dublagem
+// 2. Consulta de progresso
+// 3. Arquivos de saída
+// 4. Recepção de áudio em blocos para modo ao vivo
+// 5. CORS para GitHub Pages
+// 6. Execução do pipeline Python
+
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
@@ -8,112 +17,291 @@ const fs = require("fs");
 const { spawn } = require("child_process");
 
 const app = express();
+
 const PORT = process.env.PORT || 10000;
 
-// ===============================
-// DIRETÓRIOS
-// ===============================
+// ======================================================
+// CONFIGURAÇÃO
+// ======================================================
 
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 const OUTPUT_DIR = path.join(__dirname, "outputs");
+const LIVE_DIR = path.join(__dirname, "live_audio");
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+fs.mkdirSync(LIVE_DIR, { recursive: true });
 
-// ===============================
-// MIDDLEWARE
-// ===============================
+// ======================================================
+// CORS
+// ======================================================
 
-app.use(cors({
-  origin: "*",
-  methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["Content-Type"]
-}));
+app.use(
+  cors({
+    origin: "*",
+    methods: [
+      "GET",
+      "POST",
+      "OPTIONS"
+    ],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization"
+    ]
+  })
+);
 
-app.use(express.json());
+// ======================================================
+// JSON
+// ======================================================
 
-// Arquivos finais
-app.use("/outputs", express.static(OUTPUT_DIR));
+app.use(
+  express.json({
+    limit: "20mb"
+  })
+);
 
-// ===============================
-// UPLOAD DO VÍDEO
-// ===============================
+// ======================================================
+// ARQUIVOS DE SAÍDA
+// ======================================================
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, UPLOAD_DIR);
-  },
+app.use(
+  "/outputs",
+  express.static(OUTPUT_DIR)
+);
 
-  filename: (req, file, cb) => {
-    const id = uuidv4();
+app.use(
+  "/live_audio",
+  express.static(LIVE_DIR)
+);
 
-    req.jobId = id;
+// ======================================================
+// MULTER - UPLOAD DE VÍDEO
+// ======================================================
 
-    const ext =
-      path.extname(file.originalname) || ".mp4";
+const videoStorage =
+  multer.diskStorage({
 
-    cb(null, `${id}${ext}`);
-  }
-});
+    destination: function (
+      req,
+      file,
+      cb
+    ) {
+      cb(
+        null,
+        UPLOAD_DIR
+      );
+    },
 
-const upload = multer({
-  storage,
+    filename: function (
+      req,
+      file,
+      cb
+    ) {
 
-  limits: {
-    fileSize: 2 * 1024 * 1024 * 1024
-  }
-});
+      const id =
+        uuidv4();
 
-// ===============================
-// FILA DE PROCESSAMENTO
-// ===============================
+      req.jobId =
+        id;
 
-const jobs = new Map();
-const queue = [];
+      const ext =
+        path.extname(
+          file.originalname
+        ) || ".mp4";
 
-let processing = false;
+      cb(
+        null,
+        `${id}${ext}`
+      );
+    }
 
-// ===============================
-// ADICIONAR JOB À FILA
-// ===============================
+  });
 
-function enqueue(jobId) {
-  queue.push(jobId);
+
+const uploadVideo =
+  multer({
+
+    storage:
+      videoStorage,
+
+    limits: {
+
+      fileSize:
+        2 *
+        1024 *
+        1024 *
+        1024
+
+    }
+
+  });
+
+
+// ======================================================
+// MULTER - ÁUDIO AO VIVO
+// ======================================================
+
+const liveStorage =
+  multer.diskStorage({
+
+    destination: function (
+      req,
+      file,
+      cb
+    ) {
+
+      cb(
+        null,
+        LIVE_DIR
+      );
+
+    },
+
+    filename: function (
+      req,
+      file,
+      cb
+    ) {
+
+      const id =
+        uuidv4();
+
+      const ext =
+        path.extname(
+          file.originalname
+        ) || ".webm";
+
+      cb(
+        null,
+        `${id}${ext}`
+      );
+
+    }
+
+  });
+
+
+const uploadLive =
+  multer({
+
+    storage:
+      liveStorage,
+
+    limits: {
+
+      fileSize:
+        25 *
+        1024 *
+        1024
+
+    }
+
+  });
+
+
+// ======================================================
+// JOBS DE VÍDEO
+// ======================================================
+
+const jobs =
+  new Map();
+
+const queue =
+  [];
+
+let processing =
+  false;
+
+
+// ======================================================
+// SESSÕES AO VIVO
+// ======================================================
+
+const liveSessions =
+  new Map();
+
+
+// ======================================================
+// IDIOMAS PERMITIDOS
+// ======================================================
+
+const allowedLanguages = [
+  "pt",
+  "en",
+  "es"
+];
+
+
+// ======================================================
+// FILA
+// ======================================================
+
+function enqueue(
+  jobId
+) {
+
+  queue.push(
+    jobId
+  );
 
   processQueue();
+
 }
 
-// ===============================
+
+// ======================================================
 // PROCESSAR FILA
-// ===============================
+// ======================================================
 
 function processQueue() {
 
-  if (processing) {
+  if (
+    processing
+  ) {
     return;
   }
 
-  if (queue.length === 0) {
+  if (
+    queue.length === 0
+  ) {
     return;
   }
 
-  processing = true;
+  processing =
+    true;
 
-  const jobId = queue.shift();
 
-  const job = jobs.get(jobId);
+  const jobId =
+    queue.shift();
+
+
+  const job =
+    jobs.get(
+      jobId
+    );
+
 
   if (!job) {
-    processing = false;
+
+    processing =
+      false;
 
     processQueue();
 
     return;
   }
 
-  job.status = "processing";
-  job.stage = "Iniciando processamento...";
-  job.progress = 1;
+
+  job.status =
+    "processing";
+
+  job.stage =
+    "Iniciando processamento...";
+
+  job.progress =
+    1;
+
 
   const outputPath =
     path.join(
@@ -121,10 +309,10 @@ function processQueue() {
       `${jobId}.mp4`
     );
 
-  job.outputPath = outputPath;
 
-  // IMPORTANTE:
-  // pipeline.py fica na mesma pasta do server.js
+  job.outputPath =
+    outputPath;
+
 
   const pipelinePath =
     path.join(
@@ -132,25 +320,29 @@ function processQueue() {
       "pipeline.py"
     );
 
-  // Render usa Linux.
-  // Windows usa python.
 
   const pythonCommand =
     process.platform === "win32"
       ? "python"
       : "python3";
 
+
   console.log(
-    "================================="
+    "========================================"
   );
 
   console.log(
-    "Iniciando processamento"
+    "INICIANDO JOB"
   );
 
   console.log(
     "Job:",
     jobId
+  );
+
+  console.log(
+    "Python:",
+    pythonCommand
   );
 
   console.log(
@@ -174,8 +366,9 @@ function processQueue() {
   );
 
   console.log(
-    "================================="
+    "========================================"
   );
+
 
   const pythonArgs = [
 
@@ -192,124 +385,143 @@ function processQueue() {
 
   ];
 
-  const py = spawn(
-    pythonCommand,
-    pythonArgs,
-    {
-      cwd: __dirname,
 
-      env: {
-        ...process.env,
+  const py =
+    spawn(
+      pythonCommand,
+      pythonArgs,
+      {
 
-        PYTHONUNBUFFERED:
-          "1"
+        cwd:
+          __dirname,
+
+        env: {
+
+          ...process.env,
+
+          PYTHONUNBUFFERED:
+            "1"
+
+        }
+
       }
-    }
-  );
+    );
 
-  let stderrBuffer = "";
 
-  // ===============================
-  // SAÍDA DO PYTHON
-  // ===============================
+  let stderrBuffer =
+    "";
+
+
+  // ====================================================
+  // STDOUT DO PYTHON
+  // ====================================================
 
   py.stdout.on(
     "data",
-    (data) => {
+    function (data) {
 
       const output =
         data.toString();
+
 
       console.log(
         "[PYTHON]",
         output.trim()
       );
 
+
       const lines =
-        output.split(/\r?\n/);
+        output.split(
+          /\r?\n/
+        );
 
-      lines
-        .filter(Boolean)
-        .forEach(
-          (line) => {
 
-            // Exemplo:
-            // STAGE: Transcrevendo
+      for (
+        const line
+        of lines
+      ) {
 
-            if (
-              line.startsWith(
-                "STAGE:"
+        if (
+          line.startsWith(
+            "STAGE:"
+          )
+        ) {
+
+          job.stage =
+            line
+              .replace(
+                "STAGE:",
+                ""
               )
-            ) {
+              .trim();
 
-              job.stage =
-                line
-                  .replace(
-                    "STAGE:",
-                    ""
-                  )
-                  .trim();
-            }
+        }
 
-            // Exemplo:
-            // PROGRESS: 50
 
-            if (
-              line.startsWith(
-                "PROGRESS:"
-              )
-            ) {
+        if (
+          line.startsWith(
+            "PROGRESS:"
+          )
+        ) {
 
-              const value =
-                Number(
-                  line
-                    .replace(
-                      "PROGRESS:",
-                      ""
-                    )
-                    .trim()
-                );
+          const value =
+            Number(
+              line
+                .replace(
+                  "PROGRESS:",
+                  ""
+                )
+                .trim()
+            );
 
-              if (
-                !Number.isNaN(
+
+          if (
+            !Number.isNaN(
+              value
+            )
+          ) {
+
+            job.progress =
+              Math.max(
+                0,
+                Math.min(
+                  100,
                   value
                 )
-              ) {
+              );
 
-                job.progress =
-                  Math.max(
-                    0,
-                    Math.min(
-                      100,
-                      value
-                    )
-                  );
-              }
-            }
           }
-        );
+
+        }
+
+      }
+
     }
   );
 
-  // ===============================
-  // ERROS DO PYTHON
-  // ===============================
+
+  // ====================================================
+  // STDERR
+  // ====================================================
 
   py.stderr.on(
     "data",
-    (data) => {
+    function (data) {
 
       const text =
         data.toString();
+
 
       console.error(
         "[PYTHON ERROR]",
         text.trim()
       );
 
-      stderrBuffer += text;
 
-      // Mantém os últimos 10 KB
+      stderrBuffer +=
+        text;
+
+
       if (
         stderrBuffer.length >
         10000
@@ -319,47 +531,60 @@ function processQueue() {
           stderrBuffer.slice(
             -10000
           );
+
       }
+
     }
   );
 
-  // ===============================
+
+  // ====================================================
   // ERRO AO INICIAR PYTHON
-  // ===============================
+  // ====================================================
 
   py.on(
     "error",
-    (error) => {
+    function (error) {
 
       console.error(
         "Erro ao iniciar Python:",
         error
       );
 
-      job.status = "error";
 
-      job.stage = "Erro";
+      job.status =
+        "error";
+
+      job.stage =
+        "Erro";
 
       job.error =
-        `Não foi possível iniciar o Python: ${error.message}`;
+        "Não foi possível iniciar o Python: " +
+        error.message;
 
-      processing = false;
+
+      processing =
+        false;
+
 
       processQueue();
+
     }
   );
 
-  // ===============================
+
+  // ====================================================
   // PYTHON TERMINOU
-  // ===============================
+  // ====================================================
 
   py.on(
     "close",
-    (code) => {
+    function (code) {
 
       console.log(
         `Job ${jobId} terminou com código ${code}`
       );
+
 
       if (
         code === 0 &&
@@ -368,124 +593,154 @@ function processQueue() {
         )
       ) {
 
-        job.status = "done";
+        job.status =
+          "done";
 
-        job.progress = 100;
+        job.progress =
+          100;
 
         job.stage =
           "Concluído";
 
-        job.error = null;
+        job.error =
+          null;
+
 
         console.log(
-          "Vídeo dublado com sucesso:"
-        );
-
-        console.log(
-          outputPath
+          "Vídeo dublado com sucesso."
         );
 
       } else {
 
-        job.status = "error";
+        job.status =
+          "error";
 
-        job.stage = "Erro";
+        job.stage =
+          "Erro";
+
 
         job.error =
           stderrBuffer.trim() ||
           `O processamento terminou com código ${code}.`;
 
-        console.error(
-          "Falha no processamento:"
-        );
 
         console.error(
           job.error
         );
+
       }
 
-      processing = false;
+
+      processing =
+        false;
+
 
       processQueue();
+
     }
   );
+
 }
 
-// ===============================
+
+// ======================================================
 // ROTA PRINCIPAL
-// ===============================
+// ======================================================
 
 app.get(
   "/",
-  (req, res) => {
+  function (
+    req,
+    res
+  ) {
 
     res.json({
 
-      ok: true,
+      ok:
+        true,
 
       service:
-        "dublagem-backend",
+        "si-tradutor-backend",
 
       message:
-        "Backend funcionando"
+        "Backend do Si funcionando.",
+
+      version:
+        "2.0"
 
     });
+
   }
 );
 
-// ===============================
+
+// ======================================================
 // HEALTH CHECK
-// ===============================
+// ======================================================
 
 app.get(
   "/api/health",
-  (req, res) => {
+  function (
+    req,
+    res
+  ) {
 
     res.json({
 
-      ok: true,
+      ok:
+        true,
 
       service:
-        "dublagem-backend",
+        "si-tradutor-backend",
 
       status:
-        "online"
+        "online",
+
+      time:
+        new Date().toISOString()
 
     });
+
   }
 );
 
-// ===============================
-// ENVIAR VÍDEO PARA DUBLAGEM
-// ===============================
+
+// ======================================================
+// ENVIAR VÍDEO MP4
+// ======================================================
 
 app.post(
   "/api/dublar",
 
-  upload.single("video"),
+  uploadVideo.single(
+    "video"
+  ),
 
-  (req, res) => {
+  function (
+    req,
+    res
+  ) {
 
     try {
 
-      if (!req.file) {
+      if (
+        !req.file
+      ) {
 
         return res
           .status(400)
           .json({
 
+            ok:
+              false,
+
             error:
               "Nenhum vídeo foi enviado."
 
           });
+
       }
 
-      // Idiomas aceitos
-      const allowedLanguages = [
-        "pt",
-        "en",
-        "es"
-      ];
 
       const targetLang =
         allowedLanguages.includes(
@@ -494,8 +749,27 @@ app.post(
           ? req.body.targetLang
           : "pt";
 
+
       const jobId =
         req.jobId;
+
+
+      if (!jobId) {
+
+        return res
+          .status(500)
+          .json({
+
+            ok:
+              false,
+
+            error:
+              "Não foi possível criar o ID do processamento."
+
+          });
+
+      }
+
 
       jobs.set(
         jobId,
@@ -531,7 +805,11 @@ app.post(
         }
       );
 
-      enqueue(jobId);
+
+      enqueue(
+        jobId
+      );
+
 
       return res
         .status(202)
@@ -551,38 +829,52 @@ app.post(
 
         });
 
-    } catch (error) {
+
+    } catch (
+      error
+    ) {
 
       console.error(
         "Erro no upload:",
         error
       );
 
+
       return res
         .status(500)
         .json({
+
+          ok:
+            false,
 
           error:
             "Erro interno ao receber o vídeo."
 
         });
+
     }
+
   }
 );
 
-// ===============================
-// CONSULTAR STATUS
-// ===============================
+
+// ======================================================
+// CONSULTAR STATUS DO JOB
+// ======================================================
 
 app.get(
   "/api/status/:jobId",
 
-  (req, res) => {
+  function (
+    req,
+    res
+  ) {
 
     const job =
       jobs.get(
         req.params.jobId
       );
+
 
     if (!job) {
 
@@ -590,13 +882,21 @@ app.get(
         .status(404)
         .json({
 
+          ok:
+            false,
+
           error:
             "Job não encontrado."
 
         });
+
     }
 
+
     return res.json({
+
+      ok:
+        true,
 
       id:
         job.id,
@@ -615,26 +915,379 @@ app.get(
 
       downloadUrl:
         job.status === "done"
-
           ? `/outputs/${job.id}.mp4`
-
           : null
 
     });
+
   }
 );
 
-// ===============================
-// ERROS DO UPLOAD
-// ===============================
+
+// ======================================================
+// INICIAR SESSÃO AO VIVO
+// ======================================================
+
+app.post(
+  "/api/live/start",
+
+  function (
+    req,
+    res
+  ) {
+
+    try {
+
+      const sessionId =
+        uuidv4();
+
+
+      const targetLang =
+        allowedLanguages.includes(
+          req.body.targetLang
+        )
+          ? req.body.targetLang
+          : "pt";
+
+
+      liveSessions.set(
+        sessionId,
+        {
+
+          id:
+            sessionId,
+
+          targetLang:
+            targetLang,
+
+          status:
+            "active",
+
+          createdAt:
+            Date.now(),
+
+          lastAudio:
+            Date.now(),
+
+          chunks:
+            0
+
+        }
+      );
+
+
+      console.log(
+        "Sessão ao vivo iniciada:",
+        sessionId
+      );
+
+
+      res.json({
+
+        ok:
+          true,
+
+        sessionId:
+          sessionId,
+
+        targetLang:
+          targetLang,
+
+        status:
+          "active"
+
+      });
+
+
+    } catch (
+      error
+    ) {
+
+      console.error(
+        "Erro ao iniciar sessão:",
+        error
+      );
+
+
+      res
+        .status(500)
+        .json({
+
+          ok:
+            false,
+
+          error:
+            "Não foi possível iniciar a sessão ao vivo."
+
+        });
+
+    }
+
+  }
+);
+
+
+// ======================================================
+// RECEBER ÁUDIO AO VIVO
+// ======================================================
+
+app.post(
+  "/api/live/audio",
+
+  uploadLive.single(
+    "audio"
+  ),
+
+  async function (
+    req,
+    res
+  ) {
+
+    try {
+
+      if (
+        !req.file
+      ) {
+
+        return res
+          .status(400)
+          .json({
+
+            ok:
+              false,
+
+            error:
+              "Nenhum bloco de áudio foi enviado."
+
+          });
+
+      }
+
+
+      const targetLang =
+        allowedLanguages.includes(
+          req.body.targetLang
+        )
+          ? req.body.targetLang
+          : "pt";
+
+
+      /*
+       * O navegador pode enviar os blocos
+       * sem criar uma sessão previamente.
+       *
+       * Criamos uma sessão automaticamente.
+       */
+
+      let sessionId =
+        req.body.sessionId;
+
+
+      if (
+        !sessionId ||
+        !liveSessions.has(
+          sessionId
+        )
+      ) {
+
+        sessionId =
+          uuidv4();
+
+
+        liveSessions.set(
+          sessionId,
+          {
+
+            id:
+              sessionId,
+
+            targetLang:
+              targetLang,
+
+            status:
+              "active",
+
+            createdAt:
+              Date.now(),
+
+            lastAudio:
+              Date.now(),
+
+            chunks:
+              0
+
+          }
+        );
+
+      }
+
+
+      const session =
+        liveSessions.get(
+          sessionId
+        );
+
+
+      session.lastAudio =
+        Date.now();
+
+      session.chunks +=
+        1;
+
+      session.targetLang =
+        targetLang;
+
+
+      console.log(
+        "Áudio ao vivo recebido:",
+        {
+          sessionId,
+          chunk: session.chunks,
+          size: req.file.size,
+          targetLang
+        }
+      );
+
+
+      /*
+       * --------------------------------------------------
+       * IMPORTANTE
+       * --------------------------------------------------
+       *
+       * O live_pipeline.py será conectado aqui.
+       *
+       * Por enquanto o servidor confirma o recebimento
+       * do bloco. O próximo arquivo implementará:
+       *
+       * áudio -> Whisper -> tradução -> TTS.
+       *
+       * --------------------------------------------------
+       */
+
+
+      return res.json({
+
+        ok:
+          true,
+
+        sessionId:
+          sessionId,
+
+        received:
+          true,
+
+        chunk:
+          session.chunks,
+
+        progress:
+          50,
+
+        stage:
+          "Áudio recebido; aguardando processamento de tradução.",
+
+        translation:
+          "",
+
+        audioUrl:
+          null
+
+      });
+
+
+    } catch (
+      error
+    ) {
+
+      console.error(
+        "Erro no áudio ao vivo:",
+        error
+      );
+
+
+      return res
+        .status(500)
+        .json({
+
+          ok:
+            false,
+
+          error:
+            "Erro ao processar o bloco de áudio."
+
+        });
+
+    }
+
+  }
+);
+
+
+// ======================================================
+// PARAR SESSÃO AO VIVO
+// ======================================================
+
+app.post(
+  "/api/live/stop",
+
+  function (
+    req,
+    res
+  ) {
+
+    const sessionId =
+      req.body.sessionId;
+
+
+    if (
+      sessionId &&
+      liveSessions.has(
+        sessionId
+      )
+    ) {
+
+      const session =
+        liveSessions.get(
+          sessionId
+        );
+
+
+      session.status =
+        "stopped";
+
+
+      console.log(
+        "Sessão ao vivo encerrada:",
+        sessionId
+      );
+
+    }
+
+
+    res.json({
+
+      ok:
+        true,
+
+      status:
+        "stopped"
+
+    });
+
+  }
+);
+
+
+// ======================================================
+// ERROS DO MULTER / UPLOAD
+// ======================================================
 
 app.use(
-  (
+  function (
     error,
     req,
     res,
     next
-  ) => {
+  ) {
 
     if (
       error &&
@@ -646,43 +1299,59 @@ app.use(
         .status(413)
         .json({
 
+          ok:
+            false,
+
           error:
-            "O vídeo é maior que o limite permitido."
+            "O arquivo ultrapassa o limite permitido."
 
         });
+
     }
 
-    if (error) {
+
+    if (
+      error
+    ) {
 
       console.error(
         "Erro:",
         error
       );
 
+
       return res
         .status(500)
         .json({
+
+          ok:
+            false,
 
           error:
             error.message ||
             "Erro interno do servidor."
 
         });
+
     }
 
+
     next();
+
   }
 );
 
-// ===============================
-// LIMPEZA DE ARQUIVOS ANTIGOS
-// ===============================
+
+// ======================================================
+// LIMPEZA DOS JOBS
+// ======================================================
 
 setInterval(
-  () => {
+  function () {
 
     const now =
       Date.now();
+
 
     for (
       const [
@@ -692,12 +1361,16 @@ setInterval(
       of jobs.entries()
     ) {
 
-      // Remove depois de 1 hora
+      /*
+       * Remove jobs com mais de 1 hora.
+       */
 
       if (
         now -
-          job.createdAt >
-        60 * 60 * 1000
+        job.createdAt >
+        60 *
+        60 *
+        1000
       ) {
 
         try {
@@ -712,7 +1385,9 @@ setInterval(
             fs.unlinkSync(
               job.inputPath
             );
+
           }
+
 
           if (
             job.outputPath &&
@@ -724,38 +1399,174 @@ setInterval(
             fs.unlinkSync(
               job.outputPath
             );
+
           }
 
-        } catch (error) {
+        } catch (
+          error
+        ) {
 
           console.error(
-            "Erro na limpeza:",
+            "Erro removendo job:",
             error
           );
+
         }
+
 
         jobs.delete(
           jobId
         );
+
       }
+
+    }
+
+
+    /*
+     * Limpa sessões ao vivo
+     * abandonadas há mais de 30 minutos.
+     */
+
+    for (
+      const [
+        sessionId,
+        session
+      ]
+      of liveSessions.entries()
+    ) {
+
+      if (
+        now -
+        session.lastAudio >
+        30 *
+        60 *
+        1000
+      ) {
+
+        liveSessions.delete(
+          sessionId
+        );
+
+      }
+
+    }
+
+
+    /*
+     * Remove arquivos de áudio
+     * temporários com mais de 30 minutos.
+     */
+
+    try {
+
+      const files =
+        fs.readdirSync(
+          LIVE_DIR
+        );
+
+
+      for (
+        const file
+        of files
+      ) {
+
+        const filePath =
+          path.join(
+            LIVE_DIR,
+            file
+          );
+
+
+        const stat =
+          fs.statSync(
+            filePath
+          );
+
+
+        if (
+          now -
+          stat.mtimeMs >
+          30 *
+          60 *
+          1000
+        ) {
+
+          fs.unlinkSync(
+            filePath
+          );
+
+        }
+
+      }
+
+    } catch (
+      error
+    ) {
+
+      console.error(
+        "Erro limpando áudio ao vivo:",
+        error
+      );
+
     }
 
   },
 
-  10 * 60 * 1000
+  10 *
+  60 *
+  1000
 );
 
-// ===============================
+
+// ======================================================
+// 404
+// ======================================================
+
+app.use(
+  function (
+    req,
+    res
+  ) {
+
+    res
+      .status(404)
+      .json({
+
+        ok:
+          false,
+
+        error:
+          "Endpoint não encontrado.",
+
+        path:
+          req.originalUrl
+
+      });
+
+  }
+);
+
+
+// ======================================================
 // INICIAR SERVIDOR
-// ===============================
+// ======================================================
 
 app.listen(
   PORT,
   "0.0.0.0",
-  () => {
+  function () {
 
     console.log(
-      "================================="
+      "========================================"
+    );
+
+    console.log(
+      "        SI TRADUTOR UNIVERSAL"
+    );
+
+    console.log(
+      "========================================"
     );
 
     console.log(
@@ -763,11 +1574,23 @@ app.listen(
     );
 
     console.log(
+      `Diretório de uploads: ${UPLOAD_DIR}`
+    );
+
+    console.log(
+      `Diretório de outputs: ${OUTPUT_DIR}`
+    );
+
+    console.log(
+      `Diretório de áudio ao vivo: ${LIVE_DIR}`
+    );
+
+    console.log(
       "Backend pronto."
     );
 
     console.log(
-      "================================="
+      "========================================"
     );
 
   }
