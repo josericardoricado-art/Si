@@ -2,7 +2,10 @@ FROM node:20-bookworm
 
 WORKDIR /app
 
-# Instala Python, FFmpeg e ferramentas necessárias
+# ==========================================
+# Python + FFmpeg
+# ==========================================
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     python3 \
@@ -13,39 +16,72 @@ RUN apt-get update && \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Instala as dependências Node
+# ==========================================
+# Node.js
+# ==========================================
+
 COPY package*.json ./
+
 RUN npm install
 
-# Cria ambiente Python
+# ==========================================
+# Ambiente Python
+# ==========================================
+
 RUN python3 -m venv /opt/venv
 
 ENV PATH="/opt/venv/bin:$PATH"
 ENV PYTHONUNBUFFERED="1"
 
-# Atualiza ferramentas Python
+# ==========================================
+# Ferramentas Python
+# ==========================================
+
 RUN pip install --no-cache-dir --upgrade \
     pip \
     setuptools \
     wheel
 
-# Instala dependências Python
+# ==========================================
+# Dependências Python
+# ==========================================
+
 COPY requirements.txt ./
+
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia os arquivos do projeto
+# ==========================================
+# Copiar aplicação
+# ==========================================
+
 COPY . .
 
-# Cria as pastas necessárias
+# ==========================================
+# Diretórios
+# ==========================================
+
 RUN mkdir -p uploads outputs live_audio
 
-# Instala os idiomas do Argos
-RUN python3 install_languages.py
+# ==========================================
+# IMPORTANTE
+# ==========================================
+# NÃO executar install_languages.py durante
+# o build do Docker.
+#
+# RUN python3 install_languages.py
+# foi removido.
+# ==========================================
+
+# Modelo Whisper
+ENV WHISPER_MODEL=base
 
 # Porta do Render
 ENV PORT=10000
 
 EXPOSE 10000
 
-# Inicia o backend
+# ==========================================
+# Iniciar servidor
+# ==========================================
+
 CMD ["node", "server.js"]
