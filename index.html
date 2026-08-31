@@ -3,296 +3,2072 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dublagem automática de vídeos</title>
+
+  <meta name="theme-color" content="#080b14">
+  <meta name="description" content="Dublagem automática de vídeos com inteligência artificial. Envie seu vídeo, escolha o idioma e gere uma nova versão dublada.">
+
+  <title>Si — Dublagem IA de Vídeos</title>
+
   <style>
-    :root {
-      --bg: #0f1115;
-      --card: #171a21;
-      --border: #2a2e38;
-      --text: #e8e9ec;
-      --text-muted: #9a9da6;
-      --accent: #6c5ce7;
-      --accent-hover: #5b4bd1;
-      --success: #2ecc71;
-      --error: #e74c3c;
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
     }
 
-    * { box-sizing: border-box; }
+    :root {
+      --bg: #070a12;
+      --bg2: #0d1220;
+      --card: rgba(18, 24, 39, 0.88);
+      --card2: #111827;
+      --border: rgba(255,255,255,0.09);
+      --text: #f7f8fc;
+      --muted: #9ca8bd;
+      --primary: #6d5dfc;
+      --primary2: #8b7cff;
+      --success: #22c55e;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --shadow: 0 25px 70px rgba(0,0,0,.45);
+    }
 
     body {
-      margin: 0;
       min-height: 100vh;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: var(--bg);
+      font-family:
+        Inter,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        Roboto,
+        Arial,
+        sans-serif;
       color: var(--text);
+      background:
+        radial-gradient(circle at 10% 10%, rgba(109,93,252,.22), transparent 28%),
+        radial-gradient(circle at 90% 20%, rgba(139,92,246,.14), transparent 25%),
+        linear-gradient(135deg, var(--bg), var(--bg2));
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(
+          rgba(255,255,255,.015) 1px,
+          transparent 1px
+        ),
+        linear-gradient(
+          90deg,
+          rgba(255,255,255,.015) 1px,
+          transparent 1px
+        );
+      background-size: 40px 40px;
+      mask-image: linear-gradient(to bottom, black, transparent);
+    }
+
+    .container {
+      width: min(1080px, calc(100% - 32px));
+      margin: auto;
+    }
+
+    header {
+      padding: 24px 0;
+      position: relative;
+      z-index: 2;
+    }
+
+    .nav {
       display: flex;
-      justify-content: center;
-      padding: 32px 16px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
     }
 
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 28px;
-      width: 100%;
-      max-width: 520px;
-      height: fit-content;
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -.5px;
     }
 
-    h1 { font-size: 22px; margin: 0 0 8px; }
-    p.sub { color: var(--text-muted); font-size: 14px; margin: 0 0 24px; line-height: 1.5; }
+    .logo-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 13px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(
+        135deg,
+        var(--primary),
+        #9b6cff
+      );
+      box-shadow: 0 10px 35px rgba(109,93,252,.4);
+      font-size: 20px;
+    }
 
-    label {
-      display: block;
+    .status-online {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: #b7c2d7;
       font-size: 13px;
-      color: var(--text-muted);
-      margin-bottom: 6px;
     }
 
-    input[type="file"], select {
-      width: 100%;
-      padding: 11px;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      background: #11131a;
-      color: var(--text);
-      margin-bottom: 16px;
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 12px rgba(34,197,94,.8);
+    }
+
+    .hero {
+      text-align: center;
+      padding: 65px 0 35px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border: 1px solid rgba(139,124,255,.25);
+      border-radius: 999px;
+      background: rgba(109,93,252,.09);
+      color: #c9c3ff;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 22px;
+    }
+
+    h1 {
+      font-size: clamp(38px, 7vw, 72px);
+      line-height: .98;
+      letter-spacing: -3px;
+      max-width: 850px;
+      margin: auto;
+      font-weight: 850;
+    }
+
+    .gradient-text {
+      background:
+        linear-gradient(
+          90deg,
+          #ffffff,
+          #a99dff,
+          #ffffff
+        );
+      background-size: 200% auto;
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      animation: shine 5s linear infinite;
+    }
+
+    @keyframes shine {
+      to {
+        background-position: 200% center;
+      }
+    }
+
+    .hero p {
+      max-width: 650px;
+      margin: 23px auto 0;
+      color: var(--muted);
+      font-size: 17px;
+      line-height: 1.7;
+    }
+
+    .app-card {
+      position: relative;
+      margin: 25px auto 70px;
+      max-width: 760px;
+      padding: 1px;
+      border-radius: 26px;
+      background:
+        linear-gradient(
+          135deg,
+          rgba(139,124,255,.5),
+          rgba(255,255,255,.05),
+          rgba(139,124,255,.15)
+        );
+      box-shadow: var(--shadow);
+    }
+
+    .app-inner {
+      background: rgba(10,14,25,.96);
+      border-radius: 25px;
+      padding: 30px;
+    }
+
+    .section-title {
+      font-size: 21px;
+      font-weight: 750;
+      margin-bottom: 7px;
+    }
+
+    .section-subtitle {
+      color: var(--muted);
       font-size: 14px;
+      margin-bottom: 25px;
     }
 
-    button {
+    .upload-area {
+      position: relative;
+      border: 1.5px dashed rgba(139,124,255,.4);
+      border-radius: 20px;
+      padding: 36px 20px;
+      text-align: center;
+      background:
+        radial-gradient(
+          circle at center,
+          rgba(109,93,252,.09),
+          transparent 65%
+        );
+      cursor: pointer;
+      transition: .25s ease;
+    }
+
+    .upload-area:hover,
+    .upload-area.dragover {
+      border-color: var(--primary2);
+      background:
+        radial-gradient(
+          circle at center,
+          rgba(109,93,252,.16),
+          transparent 70%
+        );
+      transform: translateY(-2px);
+    }
+
+    .upload-icon {
+      width: 62px;
+      height: 62px;
+      margin: 0 auto 15px;
+      border-radius: 18px;
+      display: grid;
+      place-items: center;
+      background: rgba(109,93,252,.13);
+      font-size: 29px;
+    }
+
+    .upload-title {
+      font-size: 17px;
+      font-weight: 700;
+    }
+
+    .upload-text {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 7px;
+    }
+
+    .file-name {
+      display: none;
+      margin-top: 13px;
+      color: #c8c2ff;
+      font-size: 13px;
+      word-break: break-word;
+    }
+
+    #videoInput {
+      display: none;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+      margin-top: 18px;
+    }
+
+    .field label {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+
+    select {
       width: 100%;
-      padding: 13px;
-      border-radius: 8px;
-      border: none;
-      background: var(--accent);
+      height: 52px;
+      border-radius: 13px;
+      border: 1px solid var(--border);
+      background: #0d1320;
+      color: var(--text);
+      padding: 0 15px;
+      font-size: 14px;
+      outline: none;
+    }
+
+    select:focus {
+      border-color: var(--primary);
+    }
+
+    .main-button {
+      width: 100%;
+      height: 56px;
+      margin-top: 18px;
+      border: 0;
+      border-radius: 15px;
       color: white;
       font-size: 15px;
-      font-weight: 600;
+      font-weight: 750;
       cursor: pointer;
+      background:
+        linear-gradient(
+          135deg,
+          var(--primary),
+          #8c6cff
+        );
+      box-shadow:
+        0 13px 35px rgba(109,93,252,.28);
+      transition: .2s ease;
     }
 
-    button:hover { background: var(--accent-hover); }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .main-button:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow:
+        0 17px 40px rgba(109,93,252,.38);
+    }
 
-    #status {
-      margin-top: 24px;
+    .main-button:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    .status-box {
+      display: none;
+      margin-top: 22px;
+      padding: 20px;
+      border: 1px solid var(--border);
+      border-radius: 17px;
+      background: rgba(255,255,255,.025);
+    }
+
+    .status-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 15px;
+      margin-bottom: 13px;
+    }
+
+    .status-title {
       font-size: 14px;
+      font-weight: 700;
+    }
+
+    .percentage {
+      font-size: 13px;
+      color: #bbb3ff;
+      font-weight: 700;
+    }
+
+    .progress {
+      height: 9px;
+      width: 100%;
+      background: #1a2233;
+      border-radius: 99px;
+      overflow: hidden;
+    }
+
+    .progress-bar {
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background:
+        linear-gradient(
+          90deg,
+          var(--primary),
+          #aa91ff
+        );
+      transition: width .35s ease;
+    }
+
+    .stage {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 11px;
+    }
+
+    .error {
+      margin-top: 15px;
+      padding: 13px;
+      border-radius: 12px;
+      background: rgba(239,68,68,.09);
+      border: 1px solid rgba(239,68,68,.2);
+      color: #ff9c9c;
+      font-size: 13px;
       line-height: 1.5;
     }
 
-    .bar-bg {
+    .success {
+      margin-top: 15px;
+      padding: 16px;
+      border-radius: 13px;
+      background: rgba(34,197,94,.08);
+      border: 1px solid rgba(34,197,94,.2);
+      color: #9cf0b8;
+      font-size: 13px;
+    }
+
+    .download-button {
+      display: flex;
+      align-items: center;
+      justify-content: center;
       width: 100%;
-      height: 8px;
-      background: #11131a;
-      border-radius: 4px;
-      overflow: hidden;
-      margin: 12px 0;
-    }
-
-    .bar-fill {
-      height: 100%;
-      background: var(--accent);
-      width: 0%;
-      transition: width 0.3s ease;
-    }
-
-    .stage { color: var(--text-muted); font-size: 13px; }
-    .error { color: var(--error); }
-    .success { color: var(--success); }
-
-    a.download {
-      display: inline-block;
+      height: 50px;
       margin-top: 12px;
-      color: var(--success);
+      border-radius: 13px;
       text-decoration: none;
-      font-weight: 600;
+      color: white;
+      font-size: 14px;
+      font-weight: 750;
+      background: #168a4a;
+      transition: .2s;
     }
 
-    .server-status {
-      margin-top: 18px;
-      padding: 10px;
+    .download-button:hover {
+      background: #1ca858;
+      transform: translateY(-1px);
+    }
+
+    .preview {
+      display: none;
+      margin-top: 22px;
+    }
+
+    .preview-title {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 9px;
+    }
+
+    video {
+      width: 100%;
+      max-height: 390px;
+      border-radius: 15px;
+      background: black;
+      display: block;
+    }
+
+    .features {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 17px;
+      max-width: 900px;
+      margin: 0 auto 70px;
+    }
+
+    .feature {
+      padding: 24px;
       border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--text-muted);
+      border-radius: 19px;
+      background: rgba(255,255,255,.025);
+    }
+
+    .feature-icon {
+      font-size: 25px;
+      margin-bottom: 14px;
+    }
+
+    .feature h3 {
+      font-size: 15px;
+      margin-bottom: 8px;
+    }
+
+    .feature p {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .steps {
+      max-width: 900px;
+      margin: 0 auto 70px;
+    }
+
+    .steps h2 {
+      text-align: center;
+      margin-bottom: 25px;
+      font-size: 27px;
+    }
+
+    .step-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 15px;
+    }
+
+    .step {
+      text-align: center;
+      padding: 22px;
+    }
+
+    .step-number {
+      width: 38px;
+      height: 38px;
+      margin: 0 auto 12px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: rgba(109,93,252,.15);
+      color: #b9b0ff;
+      font-weight: 800;
+    }
+
+    .step h3 {
+      font-size: 14px;
+      margin-bottom: 7px;
+    }
+
+    .step p {
+      color: var(--muted);
       font-size: 12px;
+      line-height: 1.5;
+    }
+
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 25px 0 35px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 12px;
+    }
+
+    .reset-button {
+      display: none;
+      width: 100%;
+      height: 48px;
+      margin-top: 10px;
+      border: 1px solid var(--border);
+      border-radius: 13px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-weight: 650;
+    }
+
+    .reset-button:hover {
+      color: white;
+      border-color: rgba(255,255,255,.2);
+    }
+
+    .connection {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 7px;
+      margin-top: 17px;
+      font-size: 11px;
+      color: #718096;
+    }
+
+    @media (max-width: 700px) {
+
+      .container {
+        width: min(100% - 20px, 1080px);
+      }
+
+      header {
+        padding: 16px 0;
+      }
+
+      .status-online {
+        display: none;
+      }
+
+      .hero {
+        padding: 48px 0 25px;
+      }
+
+      h1 {
+        font-size: 42px;
+        letter-spacing: -2px;
+      }
+
+      .hero p {
+        font-size: 15px;
+      }
+
+      .app-inner {
+        padding: 20px;
+      }
+
+      .controls {
+        grid-template-columns: 1fr;
+      }
+
+      .features {
+        grid-template-columns: 1fr;
+      }
+
+      .step-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .app-card {
+        margin-bottom: 50px;
+      }
+    }
+
+    @media (max-width: 400px) {
+
+      h1 {
+        font-size: 36px;
+      }
+
+      .app-inner {
+        padding: 15px;
+      }
+
+      .upload-area {
+        padding: 30px 15px;
+      }
     }
   </style>
 </head>
 
 <body>
-  <div class="card">
-    <h1>Dublagem automática de vídeos</h1>
-    <p class="sub">
-      Envie um vídeo e escolha o idioma para gerar uma nova faixa de áudio dublada.
-    </p>
 
-    <form id="form">
-      <label for="video">Vídeo</label>
-      <input type="file" id="video" name="video" accept="video/*" required>
+  <header>
+    <div class="container nav">
 
-      <label for="targetLang">Idioma de destino</label>
-      <select id="targetLang" name="targetLang">
-        <option value="pt">Português</option>
-        <option value="en">Inglês</option>
-        <option value="es">Espanhol</option>
-      </select>
+      <div class="logo">
+        <div class="logo-icon">S</div>
+        <span>Si</span>
+      </div>
 
-      <button type="submit" id="submitBtn">Dublar vídeo</button>
-    </form>
+      <div class="status-online">
+        <span class="dot"></span>
+        Sistema online
+      </div>
 
-    <div id="status"></div>
-    <div class="server-status" id="serverStatus">Verificando servidor...</div>
-  </div>
+    </div>
+  </header>
+
+
+  <main>
+
+    <section class="hero container">
+
+      <div class="badge">
+        ✨ DUBLAGEM COM IA
+      </div>
+
+      <h1>
+        Transforme seus vídeos
+        <span class="gradient-text">
+          em outros idiomas
+        </span>
+      </h1>
+
+      <p>
+        Envie seu vídeo, escolha o idioma e deixe nossa
+        tecnologia preparar uma nova versão dublada.
+      </p>
+
+    </section>
+
+
+    <section class="container">
+
+      <div class="app-card">
+
+        <div class="app-inner">
+
+          <div class="section-title">
+            Comece sua dublagem
+          </div>
+
+          <div class="section-subtitle">
+            Envie um arquivo de vídeo para começar.
+          </div>
+
+
+          <form id="dubbingForm">
+
+            <div
+              class="upload-area"
+              id="uploadArea"
+            >
+
+              <div class="upload-icon">
+                🎬
+              </div>
+
+              <div class="upload-title">
+                Clique para escolher seu vídeo
+              </div>
+
+              <div class="upload-text">
+                Ou arraste e solte o arquivo aqui
+              </div>
+
+              <div class="upload-text">
+                MP4, MOV, AVI, MKV e outros formatos de vídeo
+              </div>
+
+              <div
+                class="file-name"
+                id="fileName"
+              ></div>
+
+              <input
+                type="file"
+                id="videoInput"
+                name="video"
+                accept="video/*"
+                required
+              >
+
+            </div>
+
+
+            <div class="controls">
+
+              <div class="field">
+
+                <label for="targetLang">
+                  Idioma da dublagem
+                </label>
+
+                <select
+                  id="targetLang"
+                  name="targetLang"
+                >
+
+                  <option value="pt">
+                    🇧🇷 Português
+                  </option>
+
+                  <option value="en">
+                    🇺🇸 Inglês
+                  </option>
+
+                  <option value="es">
+                    🇪🇸 Espanhol
+                  </option>
+
+                </select>
+
+              </div>
+
+
+              <div class="field">
+
+                <label>
+                  Arquivo selecionado
+                </label>
+
+                <div
+                  style="
+                    height:52px;
+                    border:1px solid rgba(255,255,255,.09);
+                    border-radius:13px;
+                    display:flex;
+                    align-items:center;
+                    padding:0 15px;
+                    color:#9ca8bd;
+                    font-size:13px;
+                    background:#0d1320;
+                  "
+                  id="fileInfo"
+                >
+                  Nenhum vídeo
+                </div>
+
+              </div>
+
+            </div>
+
+
+            <button
+              class="main-button"
+              id="submitButton"
+              type="submit"
+            >
+              🚀 Dublar vídeo
+            </button>
+
+          </form>
+
+
+          <div
+            class="status-box"
+            id="statusBox"
+          >
+
+            <div class="status-top">
+
+              <div
+                class="status-title"
+                id="statusTitle"
+              >
+                Processando...
+              </div>
+
+              <div
+                class="percentage"
+                id="percentage"
+              >
+                0%
+              </div>
+
+            </div>
+
+
+            <div class="progress">
+
+              <div
+                class="progress-bar"
+                id="progressBar"
+              ></div>
+
+            </div>
+
+
+            <div
+              class="stage"
+              id="stageText"
+            >
+              Preparando...
+            </div>
+
+
+            <div id="resultArea"></div>
+
+          </div>
+
+
+          <div
+            class="preview"
+            id="preview"
+          >
+
+            <div class="preview-title">
+              Pré-visualização do vídeo
+            </div>
+
+            <video
+              id="videoPreview"
+              controls
+              playsinline
+            ></video>
+
+          </div>
+
+
+          <button
+            class="reset-button"
+            id="resetButton"
+            type="button"
+          >
+            🔄 Dublar outro vídeo
+          </button>
+
+
+          <div class="connection">
+
+            <span class="dot"></span>
+
+            Conectado ao servidor de processamento
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <section class="features container">
+
+      <div class="feature">
+
+        <div class="feature-icon">
+          🎙️
+        </div>
+
+        <h3>
+          Reconhecimento de voz
+        </h3>
+
+        <p>
+          O sistema identifica a fala presente
+          no vídeo para preparar a tradução.
+        </p>
+
+      </div>
+
+
+      <div class="feature">
+
+        <div class="feature-icon">
+          🌎
+        </div>
+
+        <h3>
+          Tradução
+        </h3>
+
+        <p>
+          Escolha entre os idiomas disponíveis
+          para criar uma nova versão do conteúdo.
+        </p>
+
+      </div>
+
+
+      <div class="feature">
+
+        <div class="feature-icon">
+          🔊
+        </div>
+
+        <h3>
+          Nova voz
+        </h3>
+
+        <p>
+          O áudio traduzido é transformado
+          em uma nova faixa de voz.
+        </p>
+
+      </div>
+
+    </section>
+
+
+    <section class="steps container">
+
+      <h2>
+        Como funciona
+      </h2>
+
+      <div class="step-grid">
+
+        <div class="step">
+
+          <div class="step-number">
+            1
+          </div>
+
+          <h3>
+            Envie o vídeo
+          </h3>
+
+          <p>
+            Escolha o arquivo de vídeo
+            no seu celular ou computador.
+          </p>
+
+        </div>
+
+
+        <div class="step">
+
+          <div class="step-number">
+            2
+          </div>
+
+          <h3>
+            Escolha o idioma
+          </h3>
+
+          <p>
+            Selecione o idioma em que
+            deseja gerar a dublagem.
+          </p>
+
+        </div>
+
+
+        <div class="step">
+
+          <div class="step-number">
+            3
+          </div>
+
+          <h3>
+            Baixe o resultado
+          </h3>
+
+          <p>
+            Quando o processamento terminar,
+            você poderá baixar o vídeo.
+          </p>
+
+        </div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+
+  <footer>
+
+    <div class="container">
+
+      © 2026 Si — Dublagem automática de vídeos
+
+    </div>
+
+  </footer>
+
 
   <script>
-    // IMPORTANTE:
-    // Este endereço precisa ser o endereço público do seu backend no Render.
-    const API_BASE = "https://repository-name-tradutor-ia-0h2r.onrender.com";
 
-    const form = document.getElementById("form");
-    const submitBtn = document.getElementById("submitBtn");
-    const statusEl = document.getElementById("status");
-    const serverStatus = document.getElementById("serverStatus");
+    /*
+      ============================================
+      BACKEND DO RENDER
+      ============================================
+    */
 
-    async function checkServer() {
-      try {
-        const res = await fetch(`${API_BASE}/api/health`);
-        if (!res.ok) throw new Error("Servidor respondeu com erro");
-        const data = await res.json();
+    const API_BASE =
+      "https://si-u2ul.onrender.com";
 
-        if (data.ok) {
-          serverStatus.textContent = "Servidor conectado ✓";
-          serverStatus.className = "server-status success";
-        } else {
-          throw new Error("Backend não está saudável");
-        }
-      } catch (err) {
-        serverStatus.textContent =
-          "Backend não conectado. Verifique a URL do Render.";
-        serverStatus.className = "server-status error";
+
+    /*
+      ELEMENTOS
+    */
+
+    const form =
+      document.getElementById(
+        "dubbingForm"
+      );
+
+    const uploadArea =
+      document.getElementById(
+        "uploadArea"
+      );
+
+    const videoInput =
+      document.getElementById(
+        "videoInput"
+      );
+
+    const fileName =
+      document.getElementById(
+        "fileName"
+      );
+
+    const fileInfo =
+      document.getElementById(
+        "fileInfo"
+      );
+
+    const submitButton =
+      document.getElementById(
+        "submitButton"
+      );
+
+    const statusBox =
+      document.getElementById(
+        "statusBox"
+      );
+
+    const statusTitle =
+      document.getElementById(
+        "statusTitle"
+      );
+
+    const percentage =
+      document.getElementById(
+        "percentage"
+      );
+
+    const progressBar =
+      document.getElementById(
+        "progressBar"
+      );
+
+    const stageText =
+      document.getElementById(
+        "stageText"
+      );
+
+    const resultArea =
+      document.getElementById(
+        "resultArea"
+      );
+
+    const resetButton =
+      document.getElementById(
+        "resetButton"
+      );
+
+    const preview =
+      document.getElementById(
+        "preview"
+      );
+
+    const videoPreview =
+      document.getElementById(
+        "videoPreview"
+      );
+
+
+    /*
+      CLICAR NA ÁREA DE UPLOAD
+    */
+
+    uploadArea.addEventListener(
+      "click",
+      () => {
+
+        videoInput.click();
+
       }
+    );
+
+
+    /*
+      ARQUIVO SELECIONADO
+    */
+
+    videoInput.addEventListener(
+      "change",
+      () => {
+
+        updateFile();
+
+      }
+    );
+
+
+    function updateFile() {
+
+      if (
+        !videoInput.files ||
+        !videoInput.files.length
+      ) {
+
+        fileName.style.display =
+          "none";
+
+        fileInfo.textContent =
+          "Nenhum vídeo";
+
+        return;
+
+      }
+
+
+      const file =
+        videoInput.files[0];
+
+
+      fileName.style.display =
+        "block";
+
+      fileName.textContent =
+        "✓ " + file.name;
+
+
+      const size =
+        formatFileSize(
+          file.size
+        );
+
+
+      fileInfo.textContent =
+        `${size} • ${file.type || "vídeo"}`;
+
     }
 
-    checkServer();
 
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
+    /*
+      TAMANHO DO ARQUIVO
+    */
 
-      const fileInput = document.getElementById("video");
-      const targetLang = document.getElementById("targetLang").value;
+    function formatFileSize(
+      bytes
+    ) {
 
-      if (!fileInput.files.length) {
-        statusEl.innerHTML = '<div class="error">Escolha um vídeo.</div>';
-        return;
+      if (
+        bytes === 0
+      ) {
+
+        return "0 Bytes";
+
       }
 
-      submitBtn.disabled = true;
-      submitBtn.textContent = "Enviando...";
-      statusEl.innerHTML = "";
 
-      const formData = new FormData();
-      formData.append("video", fileInput.files[0]);
-      formData.append("targetLang", targetLang);
+      const units =
+        [
+          "Bytes",
+          "KB",
+          "MB",
+          "GB"
+        ];
 
-      try {
-        const res = await fetch(`${API_BASE}/api/dublar`, {
-          method: "POST",
-          body: formData
-        });
 
-        const text = await res.text();
-        let data = {};
+      const index =
+        Math.floor(
+          Math.log(bytes) /
+          Math.log(1024)
+        );
+
+
+      return (
+        parseFloat(
+          (
+            bytes /
+            Math.pow(
+              1024,
+              index
+            )
+          ).toFixed(2)
+        )
+        + " "
+        + units[index]
+      );
+
+    }
+
+
+    /*
+      DRAG & DROP
+    */
+
+    [
+      "dragenter",
+      "dragover"
+    ].forEach(
+      eventName => {
+
+        uploadArea.addEventListener(
+          eventName,
+          event => {
+
+            event.preventDefault();
+
+            uploadArea.classList.add(
+              "dragover"
+            );
+
+          }
+        );
+
+      }
+    );
+
+
+    [
+      "dragleave",
+      "drop"
+    ].forEach(
+      eventName => {
+
+        uploadArea.addEventListener(
+          eventName,
+          event => {
+
+            event.preventDefault();
+
+            uploadArea.classList.remove(
+              "dragover"
+            );
+
+          }
+        );
+
+      }
+    );
+
+
+    uploadArea.addEventListener(
+      "drop",
+      event => {
+
+        const files =
+          event.dataTransfer.files;
+
+
+        if (
+          files &&
+          files.length
+        ) {
+
+          videoInput.files =
+            files;
+
+          updateFile();
+
+        }
+
+      }
+    );
+
+
+    /*
+      ENVIO DO VÍDEO
+    */
+
+    form.addEventListener(
+      "submit",
+      async event => {
+
+        event.preventDefault();
+
+
+        if (
+          !videoInput.files ||
+          !videoInput.files.length
+        ) {
+
+          showError(
+            "Selecione um vídeo antes de continuar."
+          );
+
+          return;
+
+        }
+
+
+        const file =
+          videoInput.files[0];
+
+
+        const targetLang =
+          document.getElementById(
+            "targetLang"
+          ).value;
+
+
+        submitButton.disabled =
+          true;
+
+        submitButton.textContent =
+          "⏳ Enviando vídeo...";
+
+
+        statusBox.style.display =
+          "block";
+
+
+        statusTitle.textContent =
+          "Enviando vídeo...";
+
+
+        percentage.textContent =
+          "0%";
+
+
+        progressBar.style.width =
+          "0%";
+
+
+        stageText.textContent =
+          "Enviando arquivo para o servidor...";
+
+
+        resultArea.innerHTML =
+          "";
+
+
+        const formData =
+          new FormData();
+
+
+        formData.append(
+          "video",
+          file
+        );
+
+
+        formData.append(
+          "targetLang",
+          targetLang
+        );
+
 
         try {
-          data = JSON.parse(text);
-        } catch {
-          throw new Error("O servidor retornou uma resposta inválida.");
+
+          const response =
+            await fetch(
+              `${API_BASE}/api/dublar`,
+              {
+                method: "POST",
+                body: formData
+              }
+            );
+
+
+          let data;
+
+          try {
+
+            data =
+              await response.json();
+
+          } catch {
+
+            throw new Error(
+              "O servidor retornou uma resposta inválida."
+            );
+
+          }
+
+
+          if (
+            !response.ok
+          ) {
+
+            throw new Error(
+              data.error ||
+              "Não foi possível enviar o vídeo."
+            );
+
+          }
+
+
+          if (
+            !data.jobId
+          ) {
+
+            throw new Error(
+              "O servidor não retornou o ID do processamento."
+            );
+
+          }
+
+
+          statusTitle.textContent =
+            "Processando vídeo";
+
+
+          stageText.textContent =
+            "Vídeo recebido. Entrando na fila...";
+
+
+          submitButton.textContent =
+            "⏳ Processando...";
+
+
+          pollStatus(
+            data.jobId
+          );
+
+
+        } catch (error) {
+
+          console.error(
+            error
+          );
+
+
+          showError(
+            getFriendlyError(
+              error
+            )
+          );
+
+
+          submitButton.disabled =
+            false;
+
+
+          submitButton.textContent =
+            "🚀 Tentar novamente";
+
         }
 
-        if (!res.ok) {
-          throw new Error(data.error || "Erro ao enviar o vídeo.");
-        }
+      }
+    );
 
-        statusEl.innerHTML = `
-          <div class="stage" id="stageText">Na fila...</div>
-          <div class="bar-bg">
-            <div class="bar-fill" id="barFill"></div>
+
+    /*
+      CONSULTAR STATUS
+    */
+
+    function pollStatus(
+      jobId
+    ) {
+
+      let attempts =
+        0;
+
+
+      const maxAttempts =
+        720;
+
+
+      const interval =
+        setInterval(
+          async () => {
+
+            attempts++;
+
+
+            try {
+
+              const response =
+                await fetch(
+                  `${API_BASE}/api/status/${encodeURIComponent(jobId)}`
+                );
+
+
+              const data =
+                await response.json();
+
+
+              if (
+                !response.ok
+              ) {
+
+                throw new Error(
+                  data.error ||
+                  "Não foi possível consultar o processamento."
+                );
+
+              }
+
+
+              updateProgress(
+                data
+              );
+
+
+              if (
+                data.status ===
+                "done"
+              ) {
+
+                clearInterval(
+                  interval
+                );
+
+
+                finishSuccess(
+                  data
+                );
+
+
+                return;
+
+              }
+
+
+              if (
+                data.status ===
+                "error"
+              ) {
+
+                clearInterval(
+                  interval
+                );
+
+
+                finishError(
+                  data.error
+                );
+
+
+                return;
+
+              }
+
+
+              if (
+                attempts >=
+                maxAttempts
+              ) {
+
+                clearInterval(
+                  interval
+                );
+
+
+                finishError(
+                  "O processamento demorou mais que o esperado. Verifique o servidor."
+                );
+
+              }
+
+            } catch (error) {
+
+              console.error(
+                error
+              );
+
+
+              /*
+                Não interrompe imediatamente.
+                Problemas temporários de rede
+                podem acontecer.
+              */
+
+              if (
+                attempts >=
+                5
+              ) {
+
+                clearInterval(
+                  interval
+                );
+
+
+                finishError(
+                  getFriendlyError(
+                    error
+                  )
+                );
+
+              }
+
+            }
+
+          },
+
+          3000
+
+        );
+
+    }
+
+
+    /*
+      ATUALIZAR PROGRESSO
+    */
+
+    function updateProgress(
+      data
+    ) {
+
+      let progress =
+        Number(
+          data.progress
+        );
+
+
+      if (
+        Number.isNaN(
+          progress
+        )
+      ) {
+
+        progress = 0;
+
+      }
+
+
+      progress =
+        Math.max(
+          0,
+          Math.min(
+            100,
+            progress
+          )
+        );
+
+
+      progressBar.style.width =
+        `${progress}%`;
+
+
+      percentage.textContent =
+        `${Math.round(progress)}%`;
+
+
+      stageText.textContent =
+        data.stage ||
+        translateStatus(
+          data.status
+        );
+
+
+      if (
+        data.status ===
+        "processing"
+      ) {
+
+        statusTitle.textContent =
+          "Processando vídeo";
+
+      } else if (
+        data.status ===
+        "queued"
+      ) {
+
+        statusTitle.textContent =
+          "Na fila";
+
+      }
+
+    }
+
+
+    /*
+      TRADUZIR STATUS
+    */
+
+    function translateStatus(
+      status
+    ) {
+
+      const map = {
+
+        queued:
+          "Aguardando processamento...",
+
+        processing:
+          "Processando...",
+
+        done:
+          "Concluído",
+
+        error:
+          "Erro"
+
+      };
+
+
+      return (
+        map[status] ||
+        "Processando..."
+      );
+
+    }
+
+
+    /*
+      PROCESSAMENTO CONCLUÍDO
+    */
+
+    function finishSuccess(
+      data
+    ) {
+
+      progressBar.style.width =
+        "100%";
+
+
+      percentage.textContent =
+        "100%";
+
+
+      statusTitle.textContent =
+        "✅ Dublagem concluída";
+
+
+      stageText.textContent =
+        "Seu vídeo está pronto.";
+
+
+      if (
+        data.downloadUrl
+      ) {
+
+        const downloadUrl =
+          `${API_BASE}${data.downloadUrl}`;
+
+
+        resultArea.innerHTML = `
+
+          <div class="success">
+            🎉 O processamento terminou com sucesso!
           </div>
+
+          <a
+            class="download-button"
+            href="${downloadUrl}"
+            target="_blank"
+            rel="noopener"
+          >
+            ⬇️ Baixar vídeo dublado
+          </a>
+
         `;
 
-        pollStatus(data.jobId);
 
-      } catch (err) {
-        statusEl.innerHTML =
-          `<div class="error">${escapeHtml(err.message)}</div>`;
-        submitBtn.disabled = false;
-        submitBtn.textContent = "Dublar vídeo";
+        /*
+          Mostra o vídeo no próprio site
+        */
+
+        videoPreview.src =
+          downloadUrl;
+
+
+        preview.style.display =
+          "block";
+
       }
-    });
 
-    function pollStatus(jobId) {
-      const interval = setInterval(async () => {
-        try {
-          const res = await fetch(`${API_BASE}/api/status/${jobId}`);
-          const data = await res.json();
 
-          if (!res.ok) {
-            throw new Error(data.error || "Erro ao consultar o job.");
-          }
+      submitButton.disabled =
+        true;
 
-          const stageText = document.getElementById("stageText");
-          const barFill = document.getElementById("barFill");
 
-          if (stageText) stageText.textContent = data.stage || data.status;
-          if (barFill) barFill.style.width = `${data.progress || 0}%`;
+      submitButton.textContent =
+        "✅ Vídeo pronto";
 
-          if (data.status === "done") {
-            clearInterval(interval);
 
-            statusEl.innerHTML = `
-              <div class="success">Vídeo dublado com sucesso!</div>
-              <a class="download"
-                 href="${API_BASE}${data.downloadUrl}"
-                 target="_blank"
-                 rel="noopener">
-                Baixar vídeo dublado
-              </a>
-            `;
+      resetButton.style.display =
+        "block";
 
-            submitBtn.disabled = false;
-            submitBtn.textContent = "Dublar outro vídeo";
-          }
+    }
 
-          if (data.status === "error") {
-            clearInterval(interval);
 
-            statusEl.innerHTML =
-              `<div class="error">Erro: ${escapeHtml(data.error || "Falha no processamento.")}</div>`;
+    /*
+      PROCESSAMENTO COM ERRO
+    */
 
-            submitBtn.disabled = false;
-            submitBtn.textContent = "Tentar novamente";
-          }
+    function finishError(
+      message
+    ) {
 
-        } catch (err) {
-          clearInterval(interval);
-          statusEl.innerHTML =
-            `<div class="error">Falha ao consultar o status: ${escapeHtml(err.message)}</div>`;
-          submitBtn.disabled = false;
-          submitBtn.textContent = "Tentar novamente";
+      statusTitle.textContent =
+        "❌ Não foi possível concluir";
+
+
+      stageText.textContent =
+        "O processamento encontrou um problema.";
+
+
+      showError(
+        message ||
+        "Ocorreu um erro durante a dublagem."
+      );
+
+
+      submitButton.disabled =
+        false;
+
+
+      submitButton.textContent =
+        "🚀 Tentar novamente";
+
+
+      resetButton.style.display =
+        "block";
+
+    }
+
+
+    /*
+      MOSTRAR ERRO
+    */
+
+    function showError(
+      message
+    ) {
+
+      statusBox.style.display =
+        "block";
+
+
+      resultArea.innerHTML = `
+
+        <div class="error">
+          ${escapeHtml(message)}
+        </div>
+
+      `;
+
+    }
+
+
+    /*
+      ERROS MAIS AMIGÁVEIS
+    */
+
+    function getFriendlyError(
+      error
+    ) {
+
+      const message =
+        error &&
+        error.message
+          ? error.message
+          : String(error);
+
+
+      if (
+        message.includes(
+          "Failed to fetch"
+        )
+      ) {
+
+        return (
+          "Não foi possível conectar ao servidor. " +
+          "Verifique se o backend do Render está online."
+        );
+
+      }
+
+
+      return message;
+
+    }
+
+
+    /*
+      PROTEÇÃO CONTRA HTML
+    */
+
+    function escapeHtml(
+      text
+    ) {
+
+      return String(text)
+        .replace(
+          /&/g,
+          "&amp;"
+        )
+        .replace(
+          /</g,
+          "&lt;"
+        )
+        .replace(
+          />/g,
+          "&gt;"
+        )
+        .replace(
+          /"/g,
+          "&quot;"
+        )
+        .replace(
+          /'/g,
+          "&#039;"
+        );
+
+    }
+
+
+    /*
+      RESET
+    */
+
+    resetButton.addEventListener(
+      "click",
+      () => {
+
+        form.reset();
+
+        fileName.style.display =
+          "none";
+
+        fileName.textContent =
+          "";
+
+        fileInfo.textContent =
+          "Nenhum vídeo";
+
+
+        statusBox.style.display =
+          "none";
+
+
+        preview.style.display =
+          "none";
+
+
+        videoPreview.pause();
+
+        videoPreview.removeAttribute(
+          "src"
+        );
+
+        videoPreview.load();
+
+
+        resultArea.innerHTML =
+          "";
+
+
+        progressBar.style.width =
+          "0%";
+
+
+        percentage.textContent =
+          "0%";
+
+
+        stageText.textContent =
+          "Preparando...";
+
+
+        statusTitle.textContent =
+          "Processando...";
+
+
+        submitButton.disabled =
+          false;
+
+
+        submitButton.textContent =
+          "🚀 Dublar vídeo";
+
+
+        resetButton.style.display =
+          "none";
+
+      }
+    );
+
+
+    /*
+      TESTE AUTOMÁTICO DO BACKEND
+    */
+
+    async function checkBackend() {
+
+      try {
+
+        const response =
+          await fetch(
+            `${API_BASE}/api/health`,
+            {
+              method: "GET"
+            }
+          );
+
+
+        if (
+          response.ok
+        ) {
+
+          console.log(
+            "Backend online:",
+            API_BASE
+          );
+
+        } else {
+
+          console.warn(
+            "Backend respondeu com erro."
+          );
+
         }
-      }, 2000);
+
+      } catch (error) {
+
+        console.warn(
+          "Backend indisponível no momento.",
+          error
+        );
+
+      }
+
     }
 
-    function escapeHtml(value) {
-      return String(value)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
-    }
+
+    checkBackend();
+
   </script>
+
 </body>
-</html>
+  </html>
