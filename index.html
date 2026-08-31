@@ -770,93 +770,88 @@ dubButton.addEventListener(
 ===================================== */
 
 async function startDubbing() {
-
     hideError();
 
-    result.classList.remove(
-        "active"
-    );
+    result.classList.remove("active");
+    statusCard.classList.add("active");
 
-    statusCard.classList.add(
-        "active"
-    );
+    dubButton.disabled = true;
+    newButton.style.display = "none";
 
-    dubButton.disabled =
-        true;
+    setProgress(1, "Preparando envio do vídeo...", "Preparando");
 
-    newButton.style.display =
-        "none";
+    if (!selectedFile) {
+        showError("❌ Nenhum vídeo foi selecionado.");
+        dubButton.disabled = false;
+        return;
+    }
 
-    setProgress(
-        1,
-        "Enviando vídeo...",
-        "Enviando"
-    );
+    console.log("Backend:", BACKEND_URL);
+    console.log("Arquivo:", selectedFile.name);
+    console.log("Tamanho:", selectedFile.size);
+    console.log("Tipo:", selectedFile.type);
 
-    const formData =
-        new FormData();
+    const formData = new FormData();
 
-    formData.append(
-        "video",
-        selectedFile
-    );
-
-    formData.append(
-        "targetLang",
-        targetLang.value
-    );
+    formData.append("video", selectedFile, selectedFile.name);
+    formData.append("targetLang", targetLang.value);
 
     try {
+        setProgress(
+            2,
+            "Enviando vídeo para o Render...",
+            "Enviando"
+        );
 
-        const response =
-            await fetch(
-                BACKEND_URL +
-                "/api/dublar",
-                {
-                    method: "POST",
-                    body: formData
-                }
-            );
+        const response = await fetch(
+            `${BACKEND_URL}/api/dublar`,
+            {
+                method: "POST",
+                body: formData
+            }
+        );
 
-        const rawText =
-            await response.text();
+        console.log("HTTP:", response.status);
 
-        let data = null;
+        const rawText = await response.text();
+
+        console.log("Resposta:", rawText);
+
+        let data;
 
         try {
-
-            data =
-                JSON.parse(rawText);
-
-        } catch {
-
+            data = JSON.parse(rawText);
+        } catch (e) {
             throw new Error(
-                "O servidor retornou uma resposta inválida."
+                `O servidor retornou uma resposta inválida. HTTP ${response.status}`
             );
-
         }
 
         if (!response.ok) {
-
             throw new Error(
                 data.error ||
-                "Erro ao enviar o vídeo."
+                `Erro HTTP ${response.status}`
+            );
+        }
+
+        if (!data.ok) {
+            throw new Error(
+                data.error ||
+                "O servidor recusou o vídeo."
             );
         }
 
         if (!data.jobId) {
-
             throw new Error(
-                "O servidor não retornou o ID do processamento."
+                "O servidor recebeu o vídeo, mas não retornou o Job ID."
             );
         }
 
-        currentJobId =
-            data.jobId;
+        currentJobId = data.jobId;
 
         setProgress(
             3,
-            "Vídeo recebido. Entrando na fila...",
+            "Vídeo enviado. Aguardando processamento...",
             "Na fila"
         );
 
@@ -865,23 +860,37 @@ async function startDubbing() {
     } catch (error) {
 
         console.error(
+            "ERRO NO UPLOAD:",
             error
         );
 
+        let mensagem = error.message || String(error);
+
+        if (
+            error.name === "TypeError" &&
+            mensagem.toLowerCase().includes("fetch")
+        ) {
+            mensagem =
+                "O navegador não conseguiu completar a conexão com o Render. " +
+                "O servidor está online, mas o envio do vídeo foi interrompido.";
+        }
+
         showError(
             "❌ Não foi possível enviar o vídeo.<br><br>" +
-            escapeHTML(error.message)
+            escapeHTML(mensagem) +
+            "<br><br>" +
+            "<small>Backend: " +
+            escapeHTML(BACKEND_URL) +
+            "</small>"
         );
 
-        dubButton.disabled =
-            false;
+        dubButton.disabled = false;
 
-        statusCard.classList.remove(
-            "active"
-        );
+        dubButton.textContent =
+            "🚀 Tentar novamente";
 
+        statusCard.classList.remove("active");
     }
-
 }
 
 
