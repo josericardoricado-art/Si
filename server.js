@@ -1,5 +1,5 @@
 // server.js
-// Si - Tradutor Universal
+// SI - Tradutor Universal
 // Backend para vídeo + tradução ao vivo
 
 const express = require("express");
@@ -27,19 +27,21 @@ fs.mkdirSync(LIVE_DIR, { recursive: true });
 // CORS
 // ======================================================
 
-app.use(cors({
-  origin: "*",
-  methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: [
-    "Content-Type",
-    "Accept"
-  ],
-  credentials: false
-}));
-
-app.options("*", cors());
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Accept"],
+    credentials: false
   })
 );
+
+app.options("*", cors());
+
+
+// ======================================================
+// JSON
+// ======================================================
 
 app.use(
   express.json({
@@ -86,6 +88,7 @@ const videoStorage = multer.diskStorage({
       null,
       `${id}${ext}`
     );
+
   }
 
 });
@@ -103,7 +106,7 @@ const uploadVideo = multer({
 
 
 // ======================================================
-// UPLOAD DE ÁUDIO AO VIVO
+// UPLOAD ÁUDIO LIVE
 // ======================================================
 
 const liveStorage = multer.diskStorage({
@@ -123,6 +126,7 @@ const liveStorage = multer.diskStorage({
       null,
       `${id}${ext}`
     );
+
   }
 
 });
@@ -151,7 +155,7 @@ let processing = false;
 
 
 // ======================================================
-// SESSÕES AO VIVO
+// SESSÕES LIVE
 // ======================================================
 
 const liveSessions = new Map();
@@ -169,7 +173,7 @@ const allowedLanguages = [
 
 
 // ======================================================
-// FUNÇÃO PYTHON
+// PYTHON
 // ======================================================
 
 function getPythonCommand() {
@@ -185,7 +189,7 @@ function getPythonCommand() {
 
 
 // ======================================================
-// FILA DE VÍDEOS
+// FILA
 // ======================================================
 
 function enqueue(jobId) {
@@ -193,11 +197,12 @@ function enqueue(jobId) {
   queue.push(jobId);
 
   processQueue();
+
 }
 
 
 // ======================================================
-// PROCESSAMENTO DE VÍDEO
+// PROCESSAMENTO
 // ======================================================
 
 function processQueue() {
@@ -226,11 +231,9 @@ function processQueue() {
   }
 
   job.status = "processing";
-
-  job.stage =
-    "Iniciando processamento...";
-
+  job.stage = "Iniciando processamento...";
   job.progress = 1;
+
 
   const outputPath =
     path.join(
@@ -241,14 +244,17 @@ function processQueue() {
   job.outputPath =
     outputPath;
 
+
   const pipelinePath =
     path.join(
       __dirname,
       "pipeline.py"
     );
 
+
   const pythonCommand =
     getPythonCommand();
+
 
   console.log(
     "========================================"
@@ -264,6 +270,16 @@ function processQueue() {
   );
 
   console.log(
+    "Entrada:",
+    job.inputPath
+  );
+
+  console.log(
+    "Saída:",
+    outputPath
+  );
+
+  console.log(
     "Pipeline:",
     pipelinePath
   );
@@ -271,6 +287,7 @@ function processQueue() {
   console.log(
     "========================================"
   );
+
 
   const args = [
 
@@ -287,22 +304,29 @@ function processQueue() {
 
   ];
 
-  const py = spawn(
-    pythonCommand,
-    args,
-    {
-      cwd: __dirname,
 
-      env: {
-        ...process.env,
+  const py =
+    spawn(
+      pythonCommand,
+      args,
+      {
+        cwd: __dirname,
 
-        PYTHONUNBUFFERED: "1"
+        env: {
+          ...process.env,
+
+          PYTHONUNBUFFERED: "1"
+        }
       }
-    }
-  );
+    );
+
 
   let stderrBuffer = "";
 
+
+  // ==================================================
+  // PYTHON STDOUT
+  // ==================================================
 
   py.stdout.on(
     "data",
@@ -316,16 +340,16 @@ function processQueue() {
         text.trim()
       );
 
+
       const lines =
         text.split(/\r?\n/);
+
 
       lines.forEach(
         (line) => {
 
           if (
-            line.startsWith(
-              "STAGE:"
-            )
+            line.startsWith("STAGE:")
           ) {
 
             job.stage =
@@ -338,10 +362,9 @@ function processQueue() {
 
           }
 
+
           if (
-            line.startsWith(
-              "PROGRESS:"
-            )
+            line.startsWith("PROGRESS:")
           ) {
 
             const value =
@@ -353,6 +376,7 @@ function processQueue() {
                   )
                   .trim()
               );
+
 
             if (
               !Number.isNaN(value)
@@ -378,6 +402,10 @@ function processQueue() {
   );
 
 
+  // ==================================================
+  // PYTHON STDERR
+  // ==================================================
+
   py.stderr.on(
     "data",
     (data) => {
@@ -390,16 +418,17 @@ function processQueue() {
         text.trim()
       );
 
-      stderrBuffer += text;
+      stderrBuffer +=
+        text;
 
       if (
         stderrBuffer.length >
-        10000
+        15000
       ) {
 
         stderrBuffer =
           stderrBuffer.slice(
-            -10000
+            -15000
           );
 
       }
@@ -408,20 +437,36 @@ function processQueue() {
   );
 
 
+  // ==================================================
+  // ERRO AO INICIAR PYTHON
+  // ==================================================
+
   py.on(
     "error",
     (error) => {
 
       console.error(
-        "Erro iniciando Python:",
+        "========================================"
+      );
+
+      console.error(
+        "ERRO INICIANDO PYTHON"
+      );
+
+      console.error(
         error
       );
+
+      console.error(
+        "========================================"
+      );
+
 
       job.status =
         "error";
 
       job.stage =
-        "Erro";
+        "Erro iniciando Python";
 
       job.error =
         error.message;
@@ -435,30 +480,130 @@ function processQueue() {
   );
 
 
+  // ==================================================
+  // PYTHON TERMINOU
+  // ==================================================
+
   py.on(
     "close",
     (code) => {
 
+      console.log(
+        "========================================"
+      );
+
+      console.log(
+        "PYTHON FINALIZADO"
+      );
+
+      console.log(
+        "Código:",
+        code
+      );
+
+      console.log(
+        "Output existe:",
+        fs.existsSync(outputPath)
+      );
+
+      console.log(
+        "Output:",
+        outputPath
+      );
+
+      console.log(
+        "========================================"
+      );
+
+
+      // ----------------------------------------------
+      // Código 0 + arquivo existente
+      // ----------------------------------------------
+
       if (
         code === 0 &&
-        fs.existsSync(
-          outputPath
-        )
+        fs.existsSync(outputPath)
       ) {
 
-        job.status =
-          "done";
+        const fileSize =
+          fs.statSync(
+            outputPath
+          ).size;
 
-        job.progress =
-          100;
+
+        console.log(
+          "VÍDEO FINAL CRIADO"
+        );
+
+        console.log(
+          "Tamanho:",
+          fileSize,
+          "bytes"
+        );
+
+
+        if (
+          fileSize <= 0
+        ) {
+
+          job.status =
+            "error";
+
+          job.stage =
+            "Erro";
+
+          job.error =
+            "O pipeline terminou com código 0, mas o vídeo final está vazio.";
+
+        } else {
+
+          job.status =
+            "done";
+
+          job.progress =
+            100;
+
+          job.stage =
+            "Concluído";
+
+          job.error =
+            null;
+
+        }
+
+      }
+
+      // ----------------------------------------------
+      // Código 0 MAS arquivo não existe
+      // ----------------------------------------------
+
+      else if (
+        code === 0 &&
+        !fs.existsSync(outputPath)
+      ) {
+
+        console.error(
+          "PYTHON TERMINOU COM CÓDIGO 0, MAS NÃO CRIOU O VÍDEO."
+        );
+
+
+        job.status =
+          "error";
 
         job.stage =
-          "Concluído";
+          "Vídeo não encontrado";
 
         job.error =
-          null;
+          "O pipeline terminou com código 0, mas não criou o arquivo final em: " +
+          outputPath;
 
-      } else {
+      }
+
+      // ----------------------------------------------
+      // Python terminou com erro
+      // ----------------------------------------------
+
+      else {
 
         job.status =
           "error";
@@ -471,6 +616,7 @@ function processQueue() {
           `Processamento terminou com código ${code}.`;
 
       }
+
 
       processing =
         false;
@@ -493,16 +639,17 @@ app.get(
 
     res.json({
 
-      ok: true,
+      ok:
+        true,
 
       service:
         "si-tradutor-backend",
 
       message:
-        "Backend do Si funcionando",
+        "Backend do SI funcionando",
 
       version:
-        "3.0"
+        "3.1"
 
     });
 
@@ -520,7 +667,8 @@ app.get(
 
     res.json({
 
-      ok: true,
+      ok:
+        true,
 
       status:
         "online",
@@ -556,7 +704,8 @@ app.post(
           .status(400)
           .json({
 
-            ok: false,
+            ok:
+              false,
 
             error:
               "Nenhum vídeo foi enviado."
@@ -565,6 +714,41 @@ app.post(
 
       }
 
+
+      console.log(
+        "========================================"
+      );
+
+      console.log(
+        "UPLOAD RECEBIDO"
+      );
+
+      console.log(
+        "Nome:",
+        req.file.originalname
+      );
+
+      console.log(
+        "Arquivo:",
+        req.file.path
+      );
+
+      console.log(
+        "Tamanho:",
+        req.file.size,
+        "bytes"
+      );
+
+      console.log(
+        "Tipo:",
+        req.file.mimetype
+      );
+
+      console.log(
+        "========================================"
+      );
+
+
       const targetLang =
         allowedLanguages.includes(
           req.body.targetLang
@@ -572,8 +756,10 @@ app.post(
           ? req.body.targetLang
           : "pt";
 
+
       const jobId =
         req.jobId;
+
 
       jobs.set(
         jobId,
@@ -609,31 +795,38 @@ app.post(
         }
       );
 
+
       enqueue(jobId);
 
-      res.status(202).json({
 
-        ok:
-          true,
+      return res
+        .status(202)
+        .json({
 
-        jobId:
-          jobId,
+          ok:
+            true,
 
-        status:
-          "queued",
+          jobId:
+            jobId,
 
-        message:
-          "Vídeo recebido."
+          status:
+            "queued",
 
-      });
+          message:
+            "Vídeo recebido e colocado na fila."
+
+        });
+
 
     } catch (error) {
 
       console.error(
+        "ERRO /api/dublar:",
         error
       );
 
-      res
+
+      return res
         .status(500)
         .json({
 
@@ -665,6 +858,7 @@ app.get(
         req.params.jobId
       );
 
+
     if (!job) {
 
       return res
@@ -681,7 +875,8 @@ app.get(
 
     }
 
-    res.json({
+
+    return res.json({
 
       ok:
         true,
@@ -713,7 +908,7 @@ app.get(
 
 
 // ======================================================
-// INICIAR LIVE
+// LIVE START
 // ======================================================
 
 app.post(
@@ -724,12 +919,14 @@ app.post(
     const sessionId =
       uuidv4();
 
+
     const targetLang =
       allowedLanguages.includes(
         req.body.targetLang
       )
         ? req.body.targetLang
         : "pt";
+
 
     liveSessions.set(
       sessionId,
@@ -756,10 +953,12 @@ app.post(
       }
     );
 
+
     console.log(
       "LIVE START:",
       sessionId
     );
+
 
     res.json({
 
@@ -782,7 +981,7 @@ app.post(
 
 
 // ======================================================
-// PROCESSAR ÁUDIO LIVE
+// LIVE AUDIO
 // ======================================================
 
 app.post(
@@ -810,8 +1009,10 @@ app.post(
 
       }
 
+
       let sessionId =
         req.body.sessionId;
+
 
       const targetLang =
         allowedLanguages.includes(
@@ -820,10 +1021,6 @@ app.post(
           ? req.body.targetLang
           : "pt";
 
-
-      // -----------------------------------------------
-      // Criar sessão automaticamente
-      // -----------------------------------------------
 
       if (
         !sessionId ||
@@ -834,6 +1031,7 @@ app.post(
 
         sessionId =
           uuidv4();
+
 
         liveSessions.set(
           sessionId,
@@ -868,6 +1066,7 @@ app.post(
           sessionId
         );
 
+
       session.targetLang =
         targetLang;
 
@@ -897,11 +1096,6 @@ app.post(
       );
 
       console.log(
-        "Idioma:",
-        targetLang
-      );
-
-      console.log(
         "Arquivo:",
         req.file.path
       );
@@ -911,12 +1105,9 @@ app.post(
       );
 
 
-      // ==================================================
-      // ARQUIVO DE SAÍDA
-      // ==================================================
-
       const outputName =
         `${uuidv4()}.wav`;
+
 
       const outputPath =
         path.join(
@@ -925,15 +1116,12 @@ app.post(
         );
 
 
-      // ==================================================
-      // LIVE PIPELINE
-      // ==================================================
-
       const livePipeline =
         path.join(
           __dirname,
           "live_pipeline.py"
         );
+
 
       const pythonCommand =
         getPythonCommand();
@@ -953,11 +1141,6 @@ app.post(
         targetLang
 
       ];
-
-
-      console.log(
-        "Executando live_pipeline.py..."
-      );
 
 
       const py =
@@ -985,10 +1168,6 @@ app.post(
         "";
 
 
-      // ==================================================
-      // STDOUT
-      // ==================================================
-
       py.stdout.on(
         "data",
         (data) => {
@@ -1007,10 +1186,6 @@ app.post(
         }
       );
 
-
-      // ==================================================
-      // STDERR
-      // ==================================================
 
       py.stderr.on(
         "data",
@@ -1031,10 +1206,6 @@ app.post(
       );
 
 
-      // ==================================================
-      // ERRO AO INICIAR
-      // ==================================================
-
       py.on(
         "error",
         (error) => {
@@ -1048,10 +1219,6 @@ app.post(
       );
 
 
-      // ==================================================
-      // FINAL DO PYTHON
-      // ==================================================
-
       py.on(
         "close",
         (code) => {
@@ -1061,10 +1228,6 @@ app.post(
             code
           );
 
-
-          // ----------------------------------------------
-          // Apagar áudio original
-          // ----------------------------------------------
 
           try {
 
@@ -1090,18 +1253,9 @@ app.post(
           }
 
 
-          // ----------------------------------------------
-          // Erro
-          // ----------------------------------------------
-
           if (
             code !== 0
           ) {
-
-            console.error(
-              "Erro no pipeline:",
-              stderrBuffer
-            );
 
             return res
               .status(500)
@@ -1121,10 +1275,6 @@ app.post(
 
           }
 
-
-          // ----------------------------------------------
-          // Procurar texto
-          // ----------------------------------------------
 
           let text =
             "";
@@ -1178,10 +1328,6 @@ app.post(
           );
 
 
-          // ----------------------------------------------
-          // URL do áudio
-          // ----------------------------------------------
-
           let audioUrl =
             null;
 
@@ -1197,10 +1343,6 @@ app.post(
 
           }
 
-
-          // ----------------------------------------------
-          // Resposta
-          // ----------------------------------------------
 
           return res.json({
 
@@ -1238,7 +1380,8 @@ app.post(
         error
       );
 
-      res
+
+      return res
         .status(500)
         .json({
 
@@ -1268,6 +1411,7 @@ app.post(
     const sessionId =
       req.body.sessionId;
 
+
     if (
       sessionId
     ) {
@@ -1277,6 +1421,7 @@ app.post(
       );
 
     }
+
 
     res.json({
 
@@ -1324,11 +1469,13 @@ app.use(
 
     }
 
+
     if (error) {
 
       console.error(
         error
       );
+
 
       return res
         .status(500)
@@ -1344,6 +1491,7 @@ app.use(
         });
 
     }
+
 
     next();
 
@@ -1388,10 +1536,6 @@ setInterval(
       Date.now();
 
 
-    // -----------------------------------------------
-    // Jobs antigos
-    // -----------------------------------------------
-
     for (
       const [
         jobId,
@@ -1423,6 +1567,7 @@ setInterval(
 
           }
 
+
           if (
             job.outputPath &&
             fs.existsSync(
@@ -1444,6 +1589,7 @@ setInterval(
 
         }
 
+
         jobs.delete(
           jobId
         );
@@ -1452,10 +1598,6 @@ setInterval(
 
     }
 
-
-    // -----------------------------------------------
-    // Sessões antigas
-    // -----------------------------------------------
 
     for (
       const [
