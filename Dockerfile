@@ -2,46 +2,50 @@ FROM node:20-bookworm
 
 WORKDIR /app
 
-# FFmpeg é necessário para processar vídeo e áudio
+# Instala Python, FFmpeg e ferramentas necessárias
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    ffmpeg \
     python3 \
     python3-pip \
     python3-venv \
+    ffmpeg \
     build-essential \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
-# Copiar arquivos do projeto
+# Instala as dependências Node
 COPY package*.json ./
-
-# Instalar dependências Node
 RUN npm install
 
-# Criar ambiente Python
+# Cria ambiente Python
 RUN python3 -m venv /opt/venv
 
 ENV PATH="/opt/venv/bin:$PATH"
+ENV PYTHONUNBUFFERED="1"
 
-# Atualizar ferramentas Python
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+# Atualiza ferramentas Python
+RUN pip install --no-cache-dir --upgrade \
+    pip \
+    setuptools \
+    wheel
 
-# Copiar requirements
+# Instala dependências Python
 COPY requirements.txt ./
-
-# Instalar dependências Python
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar o restante do projeto
+# Copia os arquivos do projeto
 COPY . .
 
-# Diretórios utilizados pelo aplicativo
+# Cria as pastas necessárias
 RUN mkdir -p uploads outputs live_audio
 
-# Porta utilizada pelo Render
+# Instala os idiomas do Argos
+RUN python3 install_languages.py
+
+# Porta do Render
 ENV PORT=10000
 
 EXPOSE 10000
 
-# Iniciar o servidor
+# Inicia o backend
 CMD ["node", "server.js"]
