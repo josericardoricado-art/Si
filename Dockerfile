@@ -1,70 +1,90 @@
-# Dockerfile - Backend de Dublagem Automática
-# Node.js + Python + FFmpeg
-# Estrutura esperada:
-# index.html
-# server.js
-# package.json
-# pipeline.py
-# requirements.txt
-# install_languages.py
-# Dockerfile
+# ==========================================
+# BACKEND DE DUBLAGEM AUTOMÁTICA
+# ==========================================
 
-FROM node:20-bookworm
+FROM python:3.11-slim-bookworm
 
-# Evita perguntas interativas durante a instalação
-ENV DEBIAN_FRONTEND=noninteractive
+# Evita arquivos .pyc e mantém logs imediatamente visíveis
+ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV PIP_NO_CACHE_DIR=1
 
-# Instala Python, pip, FFmpeg e ferramentas necessárias
+# Porta padrão do Render
+ENV PORT=10000
+
+# ==========================================
+# PACOTES DO SISTEMA
+# ==========================================
+
 RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    python3-venv \
     ffmpeg \
-    build-essential \
+    nodejs \
+    npm \
     git \
+    build-essential \
+    gcc \
+    g++ \
+    libsndfile1 \
+    libsndfile1-dev \
+    libgomp1 \
+    espeak-ng \
     curl \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Diretório do aplicativo
+# ==========================================
+# DIRETÓRIO DA APLICAÇÃO
+# ==========================================
+
 WORKDIR /app
 
-# -----------------------------
-# Dependências Node.js
-# -----------------------------
-COPY package*.json ./
+# ==========================================
+# ATUALIZA PIP
+# ==========================================
+
+RUN python -m pip install --upgrade pip setuptools wheel
+
+# ==========================================
+# COPIA DEPENDÊNCIAS PYTHON
+# ==========================================
+
+COPY requirements.txt .
+
+# Instala dependências Python
+RUN pip install --no-cache-dir -r requirements.txt
+
+# ==========================================
+# COPIA PACKAGE.JSON
+# ==========================================
+
+COPY package.json .
+
+# Instala dependências Node.js
 RUN npm install --omit=dev
 
-# -----------------------------
-# Dependências Python
-# -----------------------------
-COPY requirements.txt ./
+# ==========================================
+# COPIA O RESTANTE DO PROJETO
+# ==========================================
 
-# Instala as dependências Python
-RUN pip3 install --break-system-packages -r requirements.txt
+COPY server.js .
+COPY pipeline.py .
+COPY install_languages.py .
+COPY index.html .
+COPY README.md .
 
-# -----------------------------
-# Arquivos do projeto
-# -----------------------------
-COPY server.js ./
-COPY pipeline.py ./
-COPY install_languages.py ./
-COPY index.html ./
+# ==========================================
+# CRIA DIRETÓRIOS
+# ==========================================
 
-# Cria diretórios usados pelo backend
 RUN mkdir -p /app/uploads /app/outputs
 
-# -----------------------------
-# Instala os idiomas do Argos
-# -----------------------------
-# O script baixa os pacotes de tradução durante o build.
-# Se o build ficar pesado ou falhar por disponibilidade do pacote,
-# essa etapa poderá ser movida para um serviço de inicialização.
-RUN python3 install_languages.py
+# ==========================================
+# PORTA DO RENDER
+# ==========================================
 
-# Porta usada pelo Render
 EXPOSE 10000
 
-# O Render fornece PORT automaticamente.
+# ==========================================
+# INICIA O BACKEND
+# ==========================================
+
 CMD ["node", "server.js"]
