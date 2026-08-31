@@ -1,66 +1,90 @@
-def transcribe(audio_path):
+def extract_audio(video_path, audio_path):
 
-    log_stage("Carregando Whisper")
-    log_progress(15)
+    log_stage("Extraindo áudio do vídeo")
+    log_progress(5)
 
     try:
-        import whisper
-        import torch
-
-        model_name = os.getenv("WHISPER_MODEL", "base")
-
-        log_stage(
-            f"Carregando modelo Whisper: {model_name}"
+        # Primeiro verifica se existe uma faixa de áudio
+        probe = subprocess.run(
+            [
+                "ffprobe",
+                "-v", "error",
+                "-select_streams", "a:0",
+                "-show_entries", "stream=codec_name",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                video_path
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
         )
 
-        print(
-            f"[WHISPER] Modelo: {model_name}",
-            flush=True
-        )
-
-        model = whisper.load_model(
-            model_name,
-            device="cpu"
-        )
-
-        log_stage("Transcrevendo áudio")
-        log_progress(25)
-
-        result = model.transcribe(
-            audio_path,
-            language=None,
-            fp16=False,
-            verbose=False
-        )
-
-        text = result.get(
-            "text",
-            ""
-        ).strip()
-
-        detected_language = result.get(
-            "language",
-            "en"
-        )
-
-        print(
-            f"[WHISPER] Idioma detectado: {detected_language}",
-            flush=True
-        )
-
-        if not text:
+        if probe.returncode != 0:
             raise RuntimeError(
-                "Whisper não conseguiu reconhecer fala no áudio."
+                "Não foi possível analisar o vídeo com FFprobe."
             )
 
-        log_progress(40)
+        audio_codec = probe.stdout.strip()
 
-        return text, detected_language
-
-    except Exception as error:
+        if not audio_codec:
+            raise RuntimeError(
+                "Este vídeo não possui uma faixa de áudio. "
+                "Envie um vídeo que tenha som."
+            )
 
         print(
-            "[WHISPER ERROR]",
+            f"[FFMPEG] Codec de áudio detectado: {audio_codec}",
+            flush=True
+        )
+
+        # Extrai o áudio para WAV compatível com Whisper
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                video_path,
+                "-map",
+                "0:a:0",
+                "-vn",
+                "-ac",
+                "1",
+                "-ar",
+                "16000",
+                "-c:a",
+                "pcm_s16le",
+                audio_path
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(
+                "FFmpeg não conseguiu extrair o áudio:\n"
+                + result.stderr[-5000:]
+            )
+
+        if not os.path.exists(audio_path):
+            raise RuntimeError(
+                "O arquivo de áudio não foi criado."
+            )
+
+        if os.path.getsize(audio_path) == 0:
+            raise RuntimeError(
+                "O arquivo de áudio criado está vazio."
+            )
+
+        print(
+            "[FFMPEG] Áudio extraído com sucesso.",
+            flush=True
+        )
+
+    except Exception:
+
+        print(
+            "[AUDIO ERROR]",
             file=sys.stderr
         )
 
