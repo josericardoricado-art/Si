@@ -49,7 +49,7 @@ def transcribe(audio_path):
 
     # "small" e um bom equilibrio custo/qualidade. Para mais qualidade,
     # troque para "medium" ou "large" (exige mais VRAM/tempo).
-    model = whisper.load_model("small")
+    model = whisper.load_model("base")
     result = model.transcribe(audio_path)
     return result["text"], result.get("language", "en")
 
