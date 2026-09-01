@@ -1,123 +1,36 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-
 <head>
 
 <meta charset="UTF-8">
 
-<meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
->
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<meta
-    name="theme-color"
-    content="#070b14"
->
+<meta name="theme-color" content="#070b14">
 
-<title>SI IA — Tradutor e Dublagem Automática de Vídeos</title>
+<!-- SEO -->
+<title>SI IA — Tradutor e Dublagem de Vídeos com Inteligência Artificial</title>
 
 <meta
     name="description"
-    content="Traduza e duble vídeos automaticamente com inteligência artificial. Envie seu vídeo, escolha o idioma e gere uma nova versão dublada."
+    content="SI IA é um tradutor e sistema de dublagem automática de vídeos com inteligência artificial. Traduza e duble seus vídeos para português, inglês e espanhol."
 >
 
 <meta
     name="keywords"
-    content="tradutor de vídeos, tradução de vídeos, dublagem automática, dublagem com IA, traduzir vídeo, traduzir vídeos online, inteligência artificial, tradutor IA, dublagem IA"
+    content="tradutor de vídeos, dublagem automática, tradução de vídeos, inteligência artificial, IA, tradutor IA, dublagem IA, traduzir vídeo, dublar vídeo"
 >
 
-<meta
-    name="robots"
-    content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"
->
+<meta name="robots" content="index, follow">
 
-<meta
-    name="googlebot"
-    content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"
->
+<meta name="googlebot" content="index, follow">
 
-<meta
-    name="author"
-    content="SI IA"
->
-
-<meta
-    name="language"
-    content="Portuguese"
->
+<meta name="author" content="SI IA">
 
 <link
     rel="canonical"
-    href="https://josericardoricado-art.github.io/Si/"
+    href="https://josericardoricado-art.github.io/Repository-name-tradutor-ia/"
 >
-
-
-<!-- OPEN GRAPH -->
-
-<meta
-    property="og:type"
-    content="website"
->
-
-<meta
-    property="og:locale"
-    content="pt_BR"
->
-
-<meta
-    property="og:title"
-    content="SI IA — Tradutor e Dublagem Automática de Vídeos"
->
-
-<meta
-    property="og:description"
-    content="Traduza e duble seus vídeos automaticamente com inteligência artificial."
->
-
-<meta
-    property="og:url"
-    content="https://josericardoricado-art.github.io/Si/"
->
-
-<meta
-    property="og:site_name"
-    content="SI IA"
->
-
-
-<!-- TWITTER / X -->
-
-<meta
-    name="twitter:card"
-    content="summary"
->
-
-<meta
-    name="twitter:title"
-    content="SI IA — Tradutor e Dublagem Automática de Vídeos"
->
-
-<meta
-    name="twitter:description"
-    content="Traduza e duble vídeos automaticamente usando inteligência artificial."
->
-
-
-<!-- DADOS ESTRUTURADOS -->
-
-<script type="application/ld+json">
-{
-    "@context": "https://schema.org",
-    "@type": "WebApplication",
-    "name": "SI IA — Tradutor e Dublagem Automática de Vídeos",
-    "url": "https://josericardoricado-art.github.io/Si/",
-    "description": "Ferramenta online para tradução e dublagem automática de vídeos com inteligência artificial.",
-    "applicationCategory": "MultimediaApplication",
-    "operatingSystem": "Web",
-    "inLanguage": "pt-BR"
-}
-</script>
 
 
 <style>
@@ -129,7 +42,11 @@
 }
 
 body {
-    font-family: Arial, Helvetica, sans-serif;
+
+    font-family:
+        Arial,
+        Helvetica,
+        sans-serif;
 
     background:
         radial-gradient(
@@ -145,6 +62,7 @@ body {
 }
 
 .container {
+
     width: 100%;
 
     max-width: 1050px;
@@ -155,12 +73,14 @@ body {
 }
 
 header {
+
     padding: 25px 0;
 
     text-align: center;
 }
 
 .logo {
+
     font-size: 38px;
 
     font-weight: 900;
@@ -169,24 +89,28 @@ header {
 }
 
 .logo span {
+
     color: #4ade80;
 }
 
 .subtitle {
+
     margin-top: 8px;
 
     color: #aab4c8;
 
     font-size: 15px;
+
+    line-height: 1.5;
 }
 
 .card {
+
     background:
         rgba(15, 23, 42, 0.88);
 
     border:
-        1px solid
-        rgba(255,255,255,.09);
+        1px solid rgba(255,255,255,.09);
 
     border-radius: 24px;
 
@@ -195,20 +119,21 @@ header {
     margin-top: 20px;
 
     box-shadow:
-        0 20px 60px
-        rgba(0,0,0,.35);
+        0 20px 60px rgba(0,0,0,.35);
 
     backdrop-filter:
         blur(12px);
 }
 
 h1 {
+
     font-size: 25px;
 
     margin-bottom: 8px;
 }
 
 .description {
+
     color: #9ca3af;
 
     line-height: 1.5;
@@ -217,9 +142,9 @@ h1 {
 }
 
 .upload-area {
+
     border:
-        2px dashed
-        #334155;
+        2px dashed #334155;
 
     border-radius: 20px;
 
@@ -233,9 +158,12 @@ h1 {
 
     background:
         rgba(2,6,23,.45);
+
+    display: block;
 }
 
 .upload-area:hover {
+
     border-color: #4ade80;
 
     background:
@@ -243,18 +171,21 @@ h1 {
 }
 
 .upload-icon {
+
     font-size: 45px;
 
     margin-bottom: 12px;
 }
 
 .upload-title {
+
     font-size: 18px;
 
     font-weight: bold;
 }
 
 .upload-text {
+
     color: #94a3b8;
 
     margin-top: 7px;
@@ -263,20 +194,24 @@ h1 {
 }
 
 #videoInput {
+
     display: none;
 }
 
 .preview {
+
     display: none;
 
     margin-top: 20px;
 }
 
 .preview.active {
+
     display: block;
 }
 
 .video-box {
+
     background: #000;
 
     border-radius: 18px;
@@ -284,11 +219,11 @@ h1 {
     overflow: hidden;
 
     border:
-        1px solid
-        #263244;
+        1px solid #263244;
 }
 
 video {
+
     width: 100%;
 
     max-height: 500px;
@@ -299,6 +234,7 @@ video {
 }
 
 .file-info {
+
     padding: 13px;
 
     background: #111827;
@@ -306,13 +242,17 @@ video {
     color: #cbd5e1;
 
     font-size: 13px;
+
+    word-break: break-word;
 }
 
 .controls {
+
     margin-top: 20px;
 }
 
 label {
+
     display: block;
 
     color: #cbd5e1;
@@ -325,6 +265,7 @@ label {
 }
 
 select {
+
     width: 100%;
 
     padding: 15px;
@@ -334,8 +275,7 @@ select {
     background: #0f172a;
 
     border:
-        1px solid
-        #334155;
+        1px solid #334155;
 
     color: #fff;
 
@@ -343,6 +283,7 @@ select {
 }
 
 button {
+
     width: 100%;
 
     border: 0;
@@ -363,6 +304,7 @@ button {
 }
 
 .primary {
+
     background:
         linear-gradient(
             135deg,
@@ -373,16 +315,17 @@ button {
     color: white;
 
     box-shadow:
-        0 10px 30px
-        rgba(34,197,94,.2);
+        0 10px 30px rgba(34,197,94,.2);
 }
 
 .primary:hover {
+
     transform:
         translateY(-1px);
 }
 
 .primary:disabled {
+
     opacity: .5;
 
     cursor: not-allowed;
@@ -391,12 +334,14 @@ button {
 }
 
 .secondary {
+
     background: #1e293b;
 
     color: #fff;
 }
 
 .status-card {
+
     display: none;
 
     margin-top: 20px;
@@ -408,21 +353,23 @@ button {
     background: #0b1220;
 
     border:
-        1px solid
-        #263244;
+        1px solid #263244;
 }
 
 .status-card.active {
+
     display: block;
 }
 
 .status-title {
+
     font-weight: 800;
 
     margin-bottom: 10px;
 }
 
 .status-message {
+
     color: #94a3b8;
 
     font-size: 14px;
@@ -431,6 +378,7 @@ button {
 }
 
 .progress-wrap {
+
     width: 100%;
 
     height: 12px;
@@ -443,6 +391,7 @@ button {
 }
 
 .progress-bar {
+
     width: 0%;
 
     height: 100%;
@@ -459,6 +408,7 @@ button {
 }
 
 .progress-info {
+
     display: flex;
 
     justify-content: space-between;
@@ -471,22 +421,26 @@ button {
 }
 
 .result {
+
     display: none;
 
     margin-top: 20px;
 }
 
 .result.active {
+
     display: block;
 }
 
 .result h2 {
+
     font-size: 20px;
 
     margin-bottom: 12px;
 }
 
 .download {
+
     display: block;
 
     text-align: center;
@@ -507,6 +461,7 @@ button {
 }
 
 .error {
+
     display: none;
 
     margin-top: 20px;
@@ -519,19 +474,22 @@ button {
         rgba(127,29,29,.35);
 
     border:
-        1px solid
-        #7f1d1d;
+        1px solid #7f1d1d;
 
     color: #fecaca;
 
     line-height: 1.5;
+
+    word-break: break-word;
 }
 
 .error.active {
+
     display: block;
 }
 
 .connection {
+
     text-align: center;
 
     margin-top: 15px;
@@ -542,6 +500,7 @@ button {
 }
 
 .dot {
+
     display: inline-block;
 
     width: 8px;
@@ -556,6 +515,7 @@ button {
 }
 
 .features {
+
     display: grid;
 
     grid-template-columns:
@@ -567,6 +527,7 @@ button {
 }
 
 .feature {
+
     padding: 18px;
 
     border-radius: 15px;
@@ -575,23 +536,25 @@ button {
         rgba(30,41,59,.65);
 
     border:
-        1px solid
-        rgba(255,255,255,.06);
+        1px solid rgba(255,255,255,.06);
 }
 
 .feature-icon {
+
     font-size: 25px;
 
     margin-bottom: 8px;
 }
 
 .feature-title {
+
     font-weight: bold;
 
     font-size: 14px;
 }
 
 .feature-text {
+
     color: #94a3b8;
 
     font-size: 12px;
@@ -602,6 +565,7 @@ button {
 }
 
 footer {
+
     text-align: center;
 
     color: #64748b;
@@ -609,28 +573,33 @@ footer {
     font-size: 12px;
 
     padding: 30px 0;
+
+    line-height: 1.5;
 }
 
 @media(max-width:700px) {
 
     .container {
+
         padding: 12px;
     }
 
     .logo {
+
         font-size: 30px;
     }
 
     .card {
+
         padding: 16px;
 
         border-radius: 20px;
     }
 
     .features {
+
         grid-template-columns: 1fr;
     }
-
 }
 
 </style>
@@ -639,7 +608,6 @@ footer {
 
 
 <body>
-
 
 <div class="container">
 
@@ -651,7 +619,8 @@ footer {
     </div>
 
     <div class="subtitle">
-        Tradutor universal e dublagem automática de vídeos com inteligência artificial
+        Tradutor universal e dublagem automática
+        com inteligência artificial
     </div>
 
 </header>
@@ -659,18 +628,18 @@ footer {
 
 <main>
 
-
 <div class="card">
 
-
     <h1>
-        🎬 Traduzir e dublar vídeo com IA
+        🎬 Traduzir e dublar vídeo
     </h1>
 
-
     <p class="description">
-        Traduza e duble seus vídeos automaticamente usando inteligência artificial.
-        Escolha um vídeo do seu celular, selecione o idioma e envie para o processamento.
+
+        Escolha um vídeo do seu celular.
+        O vídeo aparecerá aqui imediatamente.
+        Depois selecione o idioma e envie para o processamento.
+
     </p>
 
 
@@ -706,16 +675,14 @@ footer {
         id="preview"
     >
 
-
         <div class="video-box">
-
 
             <video
                 id="previewVideo"
                 controls
                 playsinline
+                preload="metadata"
             ></video>
-
 
             <div
                 class="file-info"
@@ -724,12 +691,10 @@ footer {
                 Vídeo carregado
             </div>
 
-
         </div>
 
 
         <div class="controls">
-
 
             <label for="targetLang">
                 Idioma da dublagem
@@ -738,21 +703,17 @@ footer {
 
             <select id="targetLang">
 
-
                 <option value="pt">
                     🇧🇷 Português
                 </option>
-
 
                 <option value="en">
                     🇺🇸 Inglês
                 </option>
 
-
                 <option value="es">
                     🇪🇸 Espanhol
                 </option>
-
 
             </select>
 
@@ -760,6 +721,7 @@ footer {
             <button
                 id="dubButton"
                 class="primary"
+                type="button"
             >
                 🚀 Traduzir e dublar vídeo
             </button>
@@ -768,14 +730,13 @@ footer {
             <button
                 id="newButton"
                 class="secondary"
+                type="button"
                 style="display:none"
             >
                 🔄 Escolher outro vídeo
             </button>
 
-
         </div>
-
 
     </div>
 
@@ -785,11 +746,9 @@ footer {
         id="statusCard"
     >
 
-
         <div class="status-title">
             ⚙️ Processando vídeo
         </div>
-
 
         <div
             class="status-message"
@@ -821,7 +780,6 @@ footer {
 
         </div>
 
-
     </div>
 
 
@@ -836,7 +794,6 @@ footer {
         id="result"
     >
 
-
         <h2>
             ✅ Vídeo dublado
         </h2>
@@ -844,13 +801,12 @@ footer {
 
         <div class="video-box">
 
-
             <video
                 id="resultVideo"
                 controls
                 playsinline
+                preload="metadata"
             ></video>
-
 
         </div>
 
@@ -860,14 +816,13 @@ footer {
             class="download"
             href="#"
             target="_blank"
+            rel="noopener"
             download
         >
             ⬇️ Baixar vídeo dublado
         </a>
 
-
     </div>
-
 
 </div>
 
@@ -883,11 +838,7 @@ footer {
 </div>
 
 
-<section
-    class="features"
-    aria-label="Recursos do SI IA"
->
-
+<div class="features">
 
     <div class="feature">
 
@@ -896,7 +847,7 @@ footer {
         </div>
 
         <div class="feature-title">
-            Transcrição com IA
+            Transcrição IA
         </div>
 
         <div class="feature-text">
@@ -913,7 +864,7 @@ footer {
         </div>
 
         <div class="feature-title">
-            Tradução de vídeo
+            Tradução
         </div>
 
         <div class="feature-text">
@@ -930,17 +881,16 @@ footer {
         </div>
 
         <div class="feature-title">
-            Dublagem com IA
+            Voz dublada
         </div>
 
         <div class="feature-text">
-            Geração de uma nova faixa de áudio para o vídeo.
+            Geração de uma nova faixa de áudio.
         </div>
 
     </div>
 
-
-</section>
+</div>
 
 
 </main>
@@ -948,7 +898,7 @@ footer {
 
 <footer>
 
-    SI IA — Tradutor e dublagem automática de vídeos com inteligência artificial
+    SI IA — Sistema de tradução e dublagem automática
 
 </footer>
 
@@ -959,93 +909,86 @@ footer {
 <script>
 
 
+/* =====================================================
+   CONFIGURAÇÃO DO BACKEND
+===================================================== */
+
 const BACKEND_URL =
     "https://si-u2ul.onrender.com";
 
 
+/* =====================================================
+   ELEMENTOS
+===================================================== */
+
 const videoInput =
     document.getElementById("videoInput");
-
 
 const preview =
     document.getElementById("preview");
 
-
 const previewVideo =
     document.getElementById("previewVideo");
-
 
 const fileInfo =
     document.getElementById("fileInfo");
 
-
 const dubButton =
     document.getElementById("dubButton");
-
 
 const newButton =
     document.getElementById("newButton");
 
-
 const targetLang =
     document.getElementById("targetLang");
-
 
 const statusCard =
     document.getElementById("statusCard");
 
-
 const statusMessage =
     document.getElementById("statusMessage");
-
 
 const stageText =
     document.getElementById("stageText");
 
-
 const progressBar =
     document.getElementById("progressBar");
-
 
 const progressText =
     document.getElementById("progressText");
 
-
 const errorBox =
     document.getElementById("errorBox");
-
 
 const result =
     document.getElementById("result");
 
-
 const resultVideo =
     document.getElementById("resultVideo");
 
-
 const downloadButton =
     document.getElementById("downloadButton");
-
 
 const connectionText =
     document.getElementById("connectionText");
 
 
-let selectedFile =
-    null;
+/* =====================================================
+   VARIÁVEIS
+===================================================== */
+
+let selectedFile = null;
+
+let currentJobId = null;
+
+let pollingTimer = null;
+
+let previewObjectURL = null;
 
 
-let currentJobId =
-    null;
-
-
-let pollingTimer =
-    null;
-
-
-/* =====================================
+/* =====================================================
    TESTAR BACKEND
-===================================== */
+===================================================== */
 
 async function checkBackend() {
 
@@ -1053,15 +996,11 @@ async function checkBackend() {
 
         const response =
             await fetch(
-
-                BACKEND_URL +
-                "/api/health",
-
+                BACKEND_URL + "/api/health",
                 {
                     method: "GET",
                     cache: "no-store"
                 }
-
             );
 
 
@@ -1090,7 +1029,6 @@ async function checkBackend() {
 
         }
 
-
     } catch (error) {
 
         connectionText.textContent =
@@ -1106,14 +1044,13 @@ async function checkBackend() {
 }
 
 
-/* =====================================
+/* =====================================================
    ESCOLHER VÍDEO
-===================================== */
+===================================================== */
 
 videoInput.addEventListener(
     "change",
     function() {
-
 
         const file =
             this.files[0];
@@ -1128,27 +1065,40 @@ videoInput.addEventListener(
             file;
 
 
-        errorBox.classList.remove(
-            "active"
-        );
+        currentJobId =
+            null;
 
+
+        clearPolling();
+
+        hideError();
 
         result.classList.remove(
             "active"
         );
-
 
         statusCard.classList.remove(
             "active"
         );
 
 
-        const videoURL =
-            URL.createObjectURL(file);
+        if (previewObjectURL) {
+
+            URL.revokeObjectURL(
+                previewObjectURL
+            );
+
+        }
+
+
+        previewObjectURL =
+            URL.createObjectURL(
+                file
+            );
 
 
         previewVideo.src =
-            videoURL;
+            previewObjectURL;
 
 
         previewVideo.load();
@@ -1182,19 +1132,17 @@ videoInput.addEventListener(
         dubButton.textContent =
             "🚀 Traduzir e dublar vídeo";
 
-
     }
 );
 
 
-/* =====================================
+/* =====================================================
    DUBLAR
-===================================== */
+===================================================== */
 
 dubButton.addEventListener(
     "click",
     async function() {
-
 
         if (!selectedFile) {
 
@@ -1213,20 +1161,17 @@ dubButton.addEventListener(
 );
 
 
-/* =====================================
+/* =====================================================
    INICIAR PROCESSAMENTO
-===================================== */
+===================================================== */
 
 async function startDubbing() {
 
-
     hideError();
-
 
     result.classList.remove(
         "active"
     );
-
 
     statusCard.classList.add(
         "active"
@@ -1254,10 +1199,8 @@ async function startDubbing() {
             "❌ Nenhum vídeo foi selecionado."
         );
 
-
         dubButton.disabled =
             false;
-
 
         return;
 
@@ -1269,18 +1212,15 @@ async function startDubbing() {
         BACKEND_URL
     );
 
-
     console.log(
         "Arquivo:",
         selectedFile.name
     );
 
-
     console.log(
         "Tamanho:",
         selectedFile.size
     );
-
 
     console.log(
         "Tipo:",
@@ -1307,17 +1247,24 @@ async function startDubbing() {
 
     try {
 
-
         setProgress(
             2,
-            "Enviando vídeo para o Render...",
+            "Enviando vídeo para o servidor...",
             "Enviando"
         );
 
 
+        /*
+         * CORREÇÃO IMPORTANTE:
+         *
+         * O endpoint correto é /api/dublar
+         * porque essa rota cria o jobId
+         * e coloca o vídeo na fila.
+         */
+
         const response =
             await fetch(
-                `${BACKEND_URL}/api/test-upload`,
+                `${BACKEND_URL}/api/dublar`,
                 {
                     method: "POST",
                     body: formData
@@ -1347,7 +1294,9 @@ async function startDubbing() {
         try {
 
             data =
-                JSON.parse(rawText);
+                JSON.parse(
+                    rawText
+                );
 
         } catch (e) {
 
@@ -1403,7 +1352,6 @@ async function startDubbing() {
 
     } catch (error) {
 
-
         console.error(
             "ERRO NO UPLOAD:",
             error
@@ -1422,7 +1370,6 @@ async function startDubbing() {
                 .includes("fetch")
         ) {
 
-
             mensagem =
                 "O navegador não conseguiu completar a conexão com o Render. " +
                 "Verifique se o backend está online e se o CORS permite o GitHub Pages.";
@@ -1431,23 +1378,12 @@ async function startDubbing() {
 
 
         showError(
-
             "❌ Não foi possível enviar o vídeo.<br><br>" +
-
-            escapeHTML(
-                mensagem
-            ) +
-
+            escapeHTML(mensagem) +
             "<br><br>" +
-
             "<small>Backend: " +
-
-            escapeHTML(
-                BACKEND_URL
-            ) +
-
+            escapeHTML(BACKEND_URL) +
             "</small>"
-
         );
 
 
@@ -1468,12 +1404,11 @@ async function startDubbing() {
 }
 
 
-/* =====================================
+/* =====================================================
    CONSULTAR STATUS
-===================================== */
+===================================================== */
 
 async function pollStatus() {
-
 
     if (!currentJobId) {
         return;
@@ -1482,20 +1417,16 @@ async function pollStatus() {
 
     try {
 
-
         const response =
             await fetch(
-
                 BACKEND_URL +
                 "/api/status/" +
                 encodeURIComponent(
                     currentJobId
                 ),
-
                 {
                     cache: "no-store"
                 }
-
             );
 
 
@@ -1509,7 +1440,9 @@ async function pollStatus() {
         try {
 
             data =
-                JSON.parse(rawText);
+                JSON.parse(
+                    rawText
+                );
 
         } catch {
 
@@ -1569,10 +1502,13 @@ async function pollStatus() {
         );
 
 
+        /* =================================================
+           CONCLUÍDO
+        ================================================= */
+
         if (
             data.status === "done"
         ) {
-
 
             clearPolling();
 
@@ -1582,6 +1518,17 @@ async function pollStatus() {
                 "Vídeo dublado com sucesso!",
                 "Concluído"
             );
+
+
+            if (
+                !data.downloadUrl
+            ) {
+
+                throw new Error(
+                    "O servidor concluiu o processamento, mas não retornou o vídeo final."
+                );
+
+            }
 
 
             const downloadURL =
@@ -1617,30 +1564,34 @@ async function pollStatus() {
                 "block";
 
 
+            result.scrollIntoView({
+                behavior: "smooth",
+                block: "center"
+            });
+
+
             return;
 
         }
 
 
+        /* =================================================
+           ERRO
+        ================================================= */
+
         if (
             data.status === "error"
         ) {
-
 
             clearPolling();
 
 
             showError(
-
                 "❌ Erro no processamento.<br><br>" +
-
                 escapeHTML(
-
                     data.error ||
                     "O servidor não conseguiu processar o vídeo."
-
                 )
-
             );
 
 
@@ -1666,7 +1617,6 @@ async function pollStatus() {
 
     } catch (error) {
 
-
         console.error(
             "Status:",
             error
@@ -1677,13 +1627,11 @@ async function pollStatus() {
 
 
         showError(
-
             "❌ Erro ao consultar o processamento.<br><br>" +
-
             escapeHTML(
-                error.message
+                error.message ||
+                String(error)
             )
-
         );
 
 
@@ -1695,16 +1643,15 @@ async function pollStatus() {
 }
 
 
-/* =====================================
+/* =====================================================
    PROGRESSO
-===================================== */
+===================================================== */
 
 function setProgress(
     percent,
     message,
     stage
 ) {
-
 
     let value =
         Number(percent);
@@ -1749,14 +1696,13 @@ function setProgress(
 }
 
 
-/* =====================================
+/* =====================================================
    NOVO VÍDEO
-===================================== */
+===================================================== */
 
 newButton.addEventListener(
     "click",
     function() {
-
 
         clearPolling();
 
@@ -1825,16 +1771,31 @@ newButton.addEventListener(
             "none";
 
 
+        progressBar.style.width =
+            "0%";
+
+
+        progressText.textContent =
+            "0%";
+
+
+        stageText.textContent =
+            "Aguardando";
+
+
+        statusMessage.textContent =
+            "Preparando...";
+
+
     }
 );
 
 
-/* =====================================
+/* =====================================================
    ERRO
-===================================== */
+===================================================== */
 
 function showError(message) {
-
 
     errorBox.innerHTML =
         message;
@@ -1846,18 +1807,14 @@ function showError(message) {
 
 
     errorBox.scrollIntoView({
-
         behavior: "smooth",
-
         block: "center"
-
     });
 
 }
 
 
 function hideError() {
-
 
     errorBox.classList.remove(
         "active"
@@ -1870,15 +1827,13 @@ function hideError() {
 }
 
 
-/* =====================================
+/* =====================================================
    LIMPAR POLLING
-===================================== */
+===================================================== */
 
 function clearPolling() {
 
-
     if (pollingTimer) {
-
 
         clearTimeout(
             pollingTimer
@@ -1893,12 +1848,11 @@ function clearPolling() {
 }
 
 
-/* =====================================
+/* =====================================================
    SEGURANÇA
-===================================== */
+===================================================== */
 
 function escapeHTML(text) {
-
 
     return String(text)
 
@@ -1930,9 +1884,9 @@ function escapeHTML(text) {
 }
 
 
-/* =====================================
+/* =====================================================
    INICIALIZAÇÃO
-===================================== */
+===================================================== */
 
 checkBackend();
 
@@ -1945,7 +1899,5 @@ setInterval(
 
 </script>
 
-
 </body>
-
-</html>
+    </html>
