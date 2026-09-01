@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://josericardoricado-art.github.io/Si/sitemap.xml
