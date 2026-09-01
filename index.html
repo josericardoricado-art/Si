@@ -15,13 +15,7 @@
     content="#070b14"
 >
 
-<!-- ================================
-     SEO PRINCIPAL
-================================ -->
-
-<title>
-    SI IA — Tradutor e Dublagem Automática de Vídeos
-</title>
+<title>SI IA — Tradutor e Dublagem Automática de Vídeos</title>
 
 <meta
     name="description"
@@ -53,18 +47,13 @@
     content="Portuguese"
 >
 
-<!-- URL principal do site -->
-
 <link
     rel="canonical"
     href="https://josericardoricado-art.github.io/Si/"
 >
 
 
-<!-- ================================
-     OPEN GRAPH
-     Compartilhamento em redes sociais
-================================ -->
+<!-- OPEN GRAPH -->
 
 <meta
     property="og:type"
@@ -97,9 +86,7 @@
 >
 
 
-<!-- ================================
-     TWITTER / X
-================================ -->
+<!-- TWITTER / X -->
 
 <meta
     name="twitter:card"
@@ -117,9 +104,7 @@
 >
 
 
-<!-- ================================
-     DADOS ESTRUTURADOS
-================================ -->
+<!-- DADOS ESTRUTURADOS -->
 
 <script type="application/ld+json">
 {
@@ -155,24 +140,31 @@ body {
         );
 
     color: #fff;
+
     min-height: 100vh;
 }
 
 .container {
     width: 100%;
+
     max-width: 1050px;
+
     margin: auto;
+
     padding: 20px;
 }
 
 header {
     padding: 25px 0;
+
     text-align: center;
 }
 
 .logo {
     font-size: 38px;
+
     font-weight: 900;
+
     letter-spacing: 3px;
 }
 
@@ -182,14 +174,19 @@ header {
 
 .subtitle {
     margin-top: 8px;
+
     color: #aab4c8;
+
     font-size: 15px;
 }
 
 .card {
-    background: rgba(15, 23, 42, 0.88);
+    background:
+        rgba(15, 23, 42, 0.88);
 
-    border: 1px solid rgba(255,255,255,.09);
+    border:
+        1px solid
+        rgba(255,255,255,.09);
 
     border-radius: 24px;
 
@@ -198,24 +195,31 @@ header {
     margin-top: 20px;
 
     box-shadow:
-        0 20px 60px rgba(0,0,0,.35);
+        0 20px 60px
+        rgba(0,0,0,.35);
 
-    backdrop-filter: blur(12px);
+    backdrop-filter:
+        blur(12px);
 }
 
 h1 {
     font-size: 25px;
+
     margin-bottom: 8px;
 }
 
 .description {
     color: #9ca3af;
+
     line-height: 1.5;
+
     margin-bottom: 20px;
 }
 
 .upload-area {
-    border: 2px dashed #334155;
+    border:
+        2px dashed
+        #334155;
 
     border-radius: 20px;
 
@@ -227,7 +231,8 @@ h1 {
 
     transition: .25s;
 
-    background: rgba(2,6,23,.45);
+    background:
+        rgba(2,6,23,.45);
 }
 
 .upload-area:hover {
@@ -239,17 +244,21 @@ h1 {
 
 .upload-icon {
     font-size: 45px;
+
     margin-bottom: 12px;
 }
 
 .upload-title {
     font-size: 18px;
+
     font-weight: bold;
 }
 
 .upload-text {
     color: #94a3b8;
+
     margin-top: 7px;
+
     font-size: 14px;
 }
 
@@ -259,6 +268,7 @@ h1 {
 
 .preview {
     display: none;
+
     margin-top: 20px;
 }
 
@@ -273,7 +283,9 @@ h1 {
 
     overflow: hidden;
 
-    border: 1px solid #263244;
+    border:
+        1px solid
+        #263244;
 }
 
 video {
@@ -321,7 +333,9 @@ select {
 
     background: #0f172a;
 
-    border: 1px solid #334155;
+    border:
+        1px solid
+        #334155;
 
     color: #fff;
 
@@ -393,7 +407,9 @@ button {
 
     background: #0b1220;
 
-    border: 1px solid #263244;
+    border:
+        1px solid
+        #263244;
 }
 
 .status-card.active {
@@ -502,7 +518,9 @@ button {
     background:
         rgba(127,29,29,.35);
 
-    border: 1px solid #7f1d1d;
+    border:
+        1px solid
+        #7f1d1d;
 
     color: #fecaca;
 
@@ -622,6 +640,7 @@ footer {
 
 <body>
 
+
 <div class="container">
 
 
@@ -640,11 +659,14 @@ footer {
 
 <main>
 
+
 <div class="card">
+
 
     <h1>
         🎬 Traduzir e dublar vídeo com IA
     </h1>
+
 
     <p class="description">
         Traduza e duble seus vídeos automaticamente usando inteligência artificial.
@@ -684,13 +706,16 @@ footer {
         id="preview"
     >
 
+
         <div class="video-box">
+
 
             <video
                 id="previewVideo"
                 controls
                 playsinline
             ></video>
+
 
             <div
                 class="file-info"
@@ -699,10 +724,12 @@ footer {
                 Vídeo carregado
             </div>
 
+
         </div>
 
 
         <div class="controls">
+
 
             <label for="targetLang">
                 Idioma da dublagem
@@ -711,17 +738,21 @@ footer {
 
             <select id="targetLang">
 
+
                 <option value="pt">
                     🇧🇷 Português
                 </option>
+
 
                 <option value="en">
                     🇺🇸 Inglês
                 </option>
 
+
                 <option value="es">
                     🇪🇸 Espanhol
                 </option>
+
 
             </select>
 
@@ -742,7 +773,9 @@ footer {
                 🔄 Escolher outro vídeo
             </button>
 
+
         </div>
+
 
     </div>
 
@@ -752,9 +785,11 @@ footer {
         id="statusCard"
     >
 
+
         <div class="status-title">
             ⚙️ Processando vídeo
         </div>
+
 
         <div
             class="status-message"
@@ -762,6 +797,7 @@ footer {
         >
             Preparando...
         </div>
+
 
         <div class="progress-wrap">
 
@@ -771,6 +807,7 @@ footer {
             ></div>
 
         </div>
+
 
         <div class="progress-info">
 
@@ -783,6 +820,7 @@ footer {
             </span>
 
         </div>
+
 
     </div>
 
@@ -798,17 +836,21 @@ footer {
         id="result"
     >
 
+
         <h2>
             ✅ Vídeo dublado
         </h2>
 
+
         <div class="video-box">
+
 
             <video
                 id="resultVideo"
                 controls
                 playsinline
             ></video>
+
 
         </div>
 
@@ -823,7 +865,9 @@ footer {
             ⬇️ Baixar vídeo dublado
         </a>
 
+
     </div>
+
 
 </div>
 
@@ -843,6 +887,7 @@ footer {
     class="features"
     aria-label="Recursos do SI IA"
 >
+
 
     <div class="feature">
 
@@ -894,6 +939,7 @@ footer {
 
     </div>
 
+
 </section>
 
 
@@ -920,60 +966,81 @@ const BACKEND_URL =
 const videoInput =
     document.getElementById("videoInput");
 
+
 const preview =
     document.getElementById("preview");
+
 
 const previewVideo =
     document.getElementById("previewVideo");
 
+
 const fileInfo =
     document.getElementById("fileInfo");
+
 
 const dubButton =
     document.getElementById("dubButton");
 
+
 const newButton =
     document.getElementById("newButton");
+
 
 const targetLang =
     document.getElementById("targetLang");
 
+
 const statusCard =
     document.getElementById("statusCard");
+
 
 const statusMessage =
     document.getElementById("statusMessage");
 
+
 const stageText =
     document.getElementById("stageText");
+
 
 const progressBar =
     document.getElementById("progressBar");
 
+
 const progressText =
     document.getElementById("progressText");
+
 
 const errorBox =
     document.getElementById("errorBox");
 
+
 const result =
     document.getElementById("result");
+
 
 const resultVideo =
     document.getElementById("resultVideo");
 
+
 const downloadButton =
     document.getElementById("downloadButton");
+
 
 const connectionText =
     document.getElementById("connectionText");
 
 
-let selectedFile = null;
+let selectedFile =
+    null;
 
-let currentJobId = null;
 
-let pollingTimer = null;
+let currentJobId =
+    null;
+
+
+let pollingTimer =
+    null;
 
 
 /* =====================================
@@ -986,11 +1053,15 @@ async function checkBackend() {
 
         const response =
             await fetch(
-                BACKEND_URL + "/api/health",
+
+                BACKEND_URL +
+                "/api/health",
+
                 {
                     method: "GET",
                     cache: "no-store"
                 }
+
             );
 
 
@@ -1042,6 +1113,7 @@ async function checkBackend() {
 videoInput.addEventListener(
     "change",
     function() {
+
 
         const file =
             this.files[0];
@@ -1110,6 +1182,7 @@ videoInput.addEventListener(
         dubButton.textContent =
             "🚀 Traduzir e dublar vídeo";
 
+
     }
 );
 
@@ -1122,6 +1195,7 @@ dubButton.addEventListener(
     "click",
     async function() {
 
+
         if (!selectedFile) {
 
             showError(
@@ -1129,6 +1203,7 @@ dubButton.addEventListener(
             );
 
             return;
+
         }
 
 
@@ -1143,6 +1218,7 @@ dubButton.addEventListener(
 ===================================== */
 
 async function startDubbing() {
+
 
     hideError();
 
@@ -1178,10 +1254,13 @@ async function startDubbing() {
             "❌ Nenhum vídeo foi selecionado."
         );
 
+
         dubButton.disabled =
             false;
 
+
         return;
+
     }
 
 
@@ -1227,6 +1306,7 @@ async function startDubbing() {
 
 
     try {
+
 
         setProgress(
             2,
@@ -1323,6 +1403,7 @@ async function startDubbing() {
 
     } catch (error) {
 
+
         console.error(
             "ERRO NO UPLOAD:",
             error
@@ -1341,9 +1422,10 @@ async function startDubbing() {
                 .includes("fetch")
         ) {
 
+
             mensagem =
                 "O navegador não conseguiu completar a conexão com o Render. " +
-                "O servidor está online, mas o envio do vídeo foi interrompido.";
+                "Verifique se o backend está online e se o CORS permite o GitHub Pages.";
 
         }
 
@@ -1392,12 +1474,14 @@ async function startDubbing() {
 
 async function pollStatus() {
 
+
     if (!currentJobId) {
         return;
     }
 
 
     try {
+
 
         const response =
             await fetch(
@@ -1485,13 +1569,10 @@ async function pollStatus() {
         );
 
 
-        /* =============================
-           CONCLUÍDO
-        ============================= */
-
         if (
             data.status === "done"
         ) {
+
 
             clearPolling();
 
@@ -1541,13 +1622,10 @@ async function pollStatus() {
         }
 
 
-        /* =============================
-           ERRO
-        ============================= */
-
         if (
             data.status === "error"
         ) {
+
 
             clearPolling();
 
@@ -1588,6 +1666,7 @@ async function pollStatus() {
 
     } catch (error) {
 
+
         console.error(
             "Status:",
             error
@@ -1625,6 +1704,7 @@ function setProgress(
     message,
     stage
 ) {
+
 
     let value =
         Number(percent);
@@ -1676,6 +1756,7 @@ function setProgress(
 newButton.addEventListener(
     "click",
     function() {
+
 
         clearPolling();
 
@@ -1743,6 +1824,7 @@ newButton.addEventListener(
         newButton.style.display =
             "none";
 
+
     }
 );
 
@@ -1752,6 +1834,7 @@ newButton.addEventListener(
 ===================================== */
 
 function showError(message) {
+
 
     errorBox.innerHTML =
         message;
@@ -1763,14 +1846,18 @@ function showError(message) {
 
 
     errorBox.scrollIntoView({
+
         behavior: "smooth",
+
         block: "center"
+
     });
 
 }
 
 
 function hideError() {
+
 
     errorBox.classList.remove(
         "active"
@@ -1789,7 +1876,9 @@ function hideError() {
 
 function clearPolling() {
 
+
     if (pollingTimer) {
+
 
         clearTimeout(
             pollingTimer
@@ -1809,6 +1898,7 @@ function clearPolling() {
 ===================================== */
 
 function escapeHTML(text) {
+
 
     return String(text)
 
@@ -1858,4 +1948,4 @@ setInterval(
 
 </body>
 
-    </html>
+</html>
