@@ -1,87 +1,62 @@
-FROM node:20-bookworm
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1
+ENV PIP_NO_CACHE_DIR=1
+ENV WHISPER_MODEL=tiny
 
 WORKDIR /app
 
 # ==========================================
-# Python + FFmpeg
+# SISTEMA
 # ==========================================
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    python3 \
-    python3-pip \
-    python3-venv \
+RUN apt-get update && apt-get install -y \
     ffmpeg \
-    build-essential \
     git \
+    build-essential \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # ==========================================
-# Node.js
+# PYTHON
 # ==========================================
 
-COPY package*.json ./
+RUN python -m pip install --upgrade pip setuptools wheel
 
-RUN npm install
-
-# ==========================================
-# Ambiente Python
-# ==========================================
-
-RUN python3 -m venv /opt/venv
-
-ENV PATH="/opt/venv/bin:$PATH"
-ENV PYTHONUNBUFFERED="1"
-
-# ==========================================
-# Ferramentas Python
-# ==========================================
-
-RUN pip install --no-cache-dir --upgrade \
-    pip \
-    setuptools \
-    wheel
-
-# ==========================================
-# Dependências Python
-# ==========================================
-
-COPY requirements.txt ./
+COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
 # ==========================================
-# Copiar aplicação
+# ARQUIVOS DO PROJETO
 # ==========================================
 
 COPY . .
 
 # ==========================================
-# Diretórios
+# INSTALAR IDIOMAS ARGOS
 # ==========================================
 
-RUN mkdir -p uploads outputs live_audio
+RUN python install_languages.py
 
 # ==========================================
-# IMPORTANTE
-# ==========================================
-# NÃO executar install_languages.py durante
-# o build do Docker.
-#
-# RUN python3 install_languages.py
-# foi removido.
+# DIRETÓRIOS
 # ==========================================
 
-# Modelo Whisper
-ENV WHISPER_MODEL=base
+RUN mkdir -p /app/uploads \
+    /app/outputs \
+    /app/live_audio
 
-# Porta do Render
+# ==========================================
+# PORTA RENDER
+# ==========================================
+
 ENV PORT=10000
 
 EXPOSE 10000
 
 # ==========================================
-# Iniciar servidor
+# SERVIDOR
 # ==========================================
 
 CMD ["node", "server.js"]
