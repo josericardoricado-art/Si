@@ -1,79 +1,73 @@
-// server.js
-// SI - Tradutor Universal
-// Backend para upload, tradução e dublagem de vídeos
-
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
-const { v4: uuidv4 } = require("uuid");
 const path = require("path");
 const fs = require("fs");
 const { spawn } = require("child_process");
+const crypto = require("crypto");
+
+// ============================================================
+// APP
+// ============================================================
 
 const app = express();
 
-// ======================================================
-// PORTA
-// ======================================================
-
 const PORT = process.env.PORT || 10000;
 
-// ======================================================
+// ============================================================
 // DIRETÓRIOS
-// ======================================================
+// ============================================================
 
-const UPLOAD_DIR = path.join(__dirname, "uploads");
-const OUTPUT_DIR = path.join(__dirname, "outputs");
-const LIVE_DIR = path.join(__dirname, "live_audio");
+const BASE_DIR = process.cwd();
+
+const UPLOAD_DIR = path.join(BASE_DIR, "uploads");
+const OUTPUT_DIR = path.join(BASE_DIR, "outputs");
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-fs.mkdirSync(LIVE_DIR, { recursive: true });
 
-// ======================================================
+// ============================================================
 // CORS
-// ======================================================
+// ============================================================
 
 app.use(
     cors({
-        origin: "*",
-        methods: ["GET", "POST", "OPTIONS"],
-        allowedHeaders: ["Content-Type", "Accept"],
+        origin: true,
+        methods: [
+            "GET",
+            "POST",
+            "OPTIONS"
+        ],
+        allowedHeaders: [
+            "Content-Type",
+            "Authorization"
+        ],
         credentials: false
     })
 );
 
-app.options("*", cors());
-
-// ======================================================
-// JSON
-// ======================================================
+// ============================================================
+// BODY
+// ============================================================
 
 app.use(
     express.json({
-        limit: "20mb"
+        limit: "10mb"
     })
 );
 
-// ======================================================
-// ARQUIVOS ESTÁTICOS
-// ======================================================
-
 app.use(
-    "/outputs",
-    express.static(OUTPUT_DIR)
+    express.urlencoded({
+        extended: true,
+        limit: "10mb"
+    })
 );
 
-app.use(
-    "/live_audio",
-    express.static(LIVE_DIR)
-);
+// ============================================================
+// MULTER
+// ============================================================
 
-// ======================================================
-// CONFIGURAÇÃO DO UPLOAD DE VÍDEO
-// ======================================================
-
-const videoStorage = multer.diskStorage({
+const storage = multer.diskStorage({
 
     destination: function (req, file, cb) {
         cb(null, UPLOAD_DIR);
@@ -81,861 +75,485 @@ const videoStorage = multer.diskStorage({
 
     filename: function (req, file, cb) {
 
-        const id = uuidv4();
+        const id = crypto.randomUUID();
 
-        req.jobId = id;
-
-        const ext =
-            path.extname(file.originalname) || ".mp4";
+        const extension =
+            path.extname(file.originalname || ".mp4")
+                .toLowerCase() || ".mp4";
 
         cb(
             null,
-            `${id}${ext}`
+            id + extension
         );
     }
 });
 
-const uploadVideo = multer({
+const upload = multer({
 
-    storage: videoStorage,
+    storage,
 
     limits: {
-        fileSize: 2 * 1024 * 1024 * 1024
-    }
-
-});
-
-// ======================================================
-// UPLOAD DE ÁUDIO LIVE
-// ======================================================
-
-const liveStorage = multer.diskStorage({
-
-    destination: function (req, file, cb) {
-        cb(null, LIVE_DIR);
+        fileSize: 500 * 1024 * 1024
     },
 
-    filename: function (req, file, cb) {
+    fileFilter: function (req, file, cb) {
 
-        const id = uuidv4();
+        const allowed = [
+            ".mp4",
+            ".mov",
+            ".webm",
+            ".mkv",
+            ".avi",
+            ".m4v"
+        ];
 
-        const ext =
-            path.extname(file.originalname) || ".webm";
+        const extension =
+            path.extname(file.originalname || "")
+                .toLowerCase();
 
-        cb(
-            null,
-            `${id}${ext}`
-        );
+        if (!allowed.includes(extension)) {
+
+            return cb(
+                new Error(
+                    "Formato de vídeo não suportado. Use MP4, MOV, WebM, MKV, AVI ou M4V."
+                )
+            );
+        }
+
+        cb(null, true);
     }
-
 });
 
-const uploadLive = multer({
-
-    storage: liveStorage,
-
-    limits: {
-        fileSize: 25 * 1024 * 1024
-    }
-
-});
-
-// ======================================================
+// ============================================================
 // JOBS
-// ======================================================
+// ============================================================
+//
+// O Node NÃO espera o pipeline terminar.
+// O pipeline roda em um processo separado.
+// Isso permite que /api/status/:jobId continue respondendo.
+//
 
 const jobs = new Map();
 
-const queue = [];
+// ============================================================
+// FUNÇÕES AUXILIARES
+// ============================================================
 
-let processing = false;
+function createJob(id, inputPath, outputPath, targetLang) {
 
-// ======================================================
-// SESSÕES LIVE
-// ======================================================
+    const job = {
 
-const liveSessions = new Map();
+        id,
 
-// ======================================================
-// IDIOMAS
-// ======================================================
+        status: "queued",
 
-const allowedLanguages = [
-    "pt",
-    "en",
-    "es"
-];
+        stage: "Aguardando processamento",
 
-// ======================================================
-// PYTHON
-// ======================================================
+        progress: 0,
 
-function getPythonCommand() {
+        targetLang,
 
-    if (process.platform === "win32") {
-        return "python";
-    }
+        inputPath,
 
-    return "python3";
+        outputPath,
+
+        outputUrl: null,
+
+        error: null,
+
+        pid: null,
+
+        startedAt: null,
+
+        finishedAt: null,
+
+        logs: []
+    };
+
+    jobs.set(id, job);
+
+    return job;
 }
 
-// ======================================================
-// FILA
-// ======================================================
 
-function enqueue(jobId) {
-
-    queue.push(jobId);
-
-    processQueue();
-}
-
-// ======================================================
-// PROCESSAR FILA
-// ======================================================
-
-function processQueue() {
-
-    if (processing) {
-        return;
-    }
-
-    if (queue.length === 0) {
-        return;
-    }
-
-    processing = true;
-
-    const jobId = queue.shift();
-
-    const job = jobs.get(jobId);
+function addJobLog(job, message) {
 
     if (!job) {
-
-        processing = false;
-
-        processQueue();
-
         return;
     }
 
-    job.status = "processing";
-    job.stage = "Iniciando processamento...";
-    job.progress = 1;
+    const text = String(message || "").trim();
 
-    const outputPath = path.join(
-        OUTPUT_DIR,
-        `${jobId}.mp4`
-    );
-
-    job.outputPath = outputPath;
-
-    const pipelinePath = path.join(
-        __dirname,
-        "pipeline.py"
-    );
-
-    console.log("========================================");
-    console.log("PROCESSANDO VÍDEO");
-    console.log("Job:", jobId);
-    console.log("Entrada:", job.inputPath);
-    console.log("Saída:", outputPath);
-    console.log("Pipeline:", pipelinePath);
-    console.log("========================================");
-
-    if (!fs.existsSync(pipelinePath)) {
-
-        job.status = "error";
-        job.stage = "Erro";
-        job.error = "pipeline.py não foi encontrado.";
-
-        processing = false;
-
-        processQueue();
-
+    if (!text) {
         return;
     }
 
-    const pythonCommand =
-        getPythonCommand();
+    job.logs.push(text);
 
-    const args = [
-        pipelinePath,
-        "--input",
-        job.inputPath,
-        "--output",
-        outputPath,
-        "--target-lang",
-        job.targetLang
-    ];
+    // Não deixar memória crescer indefinidamente
+    if (job.logs.length > 200) {
+        job.logs.shift();
+    }
 
     console.log(
-        "Executando:",
-        pythonCommand,
-        args.join(" ")
-    );
-
-    const py = spawn(
-        pythonCommand,
-        args,
-        {
-            cwd: __dirname,
-
-            env: {
-                ...process.env,
-                PYTHONUNBUFFERED: "1"
-            }
-        }
-    );
-
-    let stderrBuffer = "";
-    let stdoutBuffer = "";
-
-    py.stdout.on(
-        "data",
-        function (data) {
-
-            const text =
-                data.toString();
-
-            stdoutBuffer += text;
-
-            console.log(
-                "[PIPELINE]",
-                text.trim()
-            );
-
-            const lines =
-                text.split(/\r?\n/);
-
-            lines.forEach(
-                function (line) {
-
-                    if (
-                        line.startsWith("STAGE:")
-                    ) {
-
-                        job.stage =
-                            line
-                                .replace("STAGE:", "")
-                                .trim();
-                    }
-
-                    if (
-                        line.startsWith("PROGRESS:")
-                    ) {
-
-                        const value =
-                            Number(
-                                line
-                                    .replace("PROGRESS:", "")
-                                    .trim()
-                            );
-
-                        if (!Number.isNaN(value)) {
-
-                            job.progress =
-                                Math.max(
-                                    0,
-                                    Math.min(100, value)
-                                );
-                        }
-                    }
-                }
-            );
-        }
-    );
-
-    py.stderr.on(
-        "data",
-        function (data) {
-
-            const text =
-                data.toString();
-
-            stderrBuffer += text;
-
-            if (stderrBuffer.length > 15000) {
-
-                stderrBuffer =
-                    stderrBuffer.slice(-15000);
-            }
-
-            console.error(
-                "[PIPELINE ERROR]",
-                text.trim()
-            );
-        }
-    );
-
-    py.on(
-        "error",
-        function (error) {
-
-            console.error(
-                "Erro iniciando Python:",
-                error
-            );
-
-            job.status = "error";
-            job.stage = "Erro";
-            job.error = error.message;
-
-            processing = false;
-
-            processQueue();
-        }
-    );
-
-    py.on(
-        "close",
-        function (code) {
-
-            console.log(
-                "Pipeline terminou com código:",
-                code
-            );
-
-            // ------------------------------------------
-            // Código 0 NÃO significa que o arquivo existe.
-            // Verificamos o arquivo obrigatoriamente.
-            // ------------------------------------------
-
-            if (
-                code === 0 &&
-                fs.existsSync(outputPath) &&
-                fs.statSync(outputPath).size > 0
-            ) {
-
-                job.status = "done";
-                job.progress = 100;
-                job.stage = "Concluído";
-                job.error = null;
-
-                console.log(
-                    "VÍDEO FINAL CRIADO:",
-                    outputPath
-                );
-
-            } else {
-
-                job.status = "error";
-                job.stage = "Erro";
-
-                if (code === 0) {
-
-                    job.error =
-                        "O pipeline terminou com código 0, mas não criou o arquivo final em: " +
-                        outputPath;
-
-                } else {
-
-                    job.error =
-                        stderrBuffer.trim() ||
-                        `Pipeline terminou com código ${code}.`;
-                }
-
-                console.error(
-                    "ERRO FINAL:",
-                    job.error
-                );
-            }
-
-            processing = false;
-
-            processQueue();
-        }
+        `[JOB ${job.id}] ${text}`
     );
 }
 
-// ======================================================
-// HOME
-// ======================================================
 
-app.get(
-    "/",
-    function (req, res) {
+function updateProgressFromLine(job, line) {
 
-        res.json({
+    const progressMatch =
+        String(line).match(
+            /PROGRESS\s*:\s*(\d+)/i
+        );
 
-            ok: true,
+    if (progressMatch) {
 
-            service:
-                "si-tradutor-backend",
+        const value = Number(
+            progressMatch[1]
+        );
 
-            message:
-                "Backend do SI funcionando",
+        if (Number.isFinite(value)) {
 
-            version:
-                "4.0"
-        });
+            job.progress =
+                Math.max(
+                    0,
+                    Math.min(
+                        100,
+                        value
+                    )
+                );
+        }
     }
-);
 
-// ======================================================
+
+    const stageMatch =
+        String(line).match(
+            /STAGE\s*:\s*(.+)/i
+        );
+
+    if (stageMatch) {
+
+        job.stage =
+            stageMatch[1].trim();
+
+        job.status = "processing";
+    }
+
+
+    // Mostra mensagens úteis do pipeline
+    if (
+        line.includes("[PIPELINE]") ||
+        line.includes("[PIPELINE ERROR]")
+    ) {
+
+        addJobLog(
+            job,
+            line
+        );
+    }
+}
+
+
+function safeDelete(filePath) {
+
+    try {
+
+        if (
+            filePath &&
+            fs.existsSync(filePath)
+        ) {
+
+            fs.unlinkSync(filePath);
+        }
+
+    } catch (error) {
+
+        console.error(
+            "Erro ao apagar arquivo:",
+            error.message
+        );
+    }
+}
+
+
+// ============================================================
 // HEALTH
-// ======================================================
+// ============================================================
 
 app.get(
     "/api/health",
-    function (req, res) {
+    (req, res) => {
 
-        res.json({
+        res.status(200).json({
 
             ok: true,
 
-            status:
-                "online",
+            status: "online",
 
-            service:
-                "si-tradutor-backend",
+            service: "SI - Tradutor Universal",
 
-            time:
-                new Date().toISOString()
+            time: new Date().toISOString(),
+
+            whisper:
+                process.env.WHISPER_MODEL || "tiny",
+
+            openai:
+                Boolean(
+                    process.env.OPENAI_API_KEY
+                ),
+
+            elevenlabs:
+                Boolean(
+                    process.env.ELEVENLABS_API_KEY
+                )
         });
     }
 );
 
-// ======================================================
-// TESTE DE UPLOAD
-// ======================================================
+
+// ============================================================
+// ROOT
+// ============================================================
+
+app.get(
+    "/",
+    (req, res) => {
+
+        res.status(200).json({
+
+            ok: true,
+
+            message:
+                "SI - Tradutor Universal API",
+
+            status: "online",
+
+            endpoints: {
+
+                health:
+                    "/api/health",
+
+                upload:
+                    "POST /api/test-upload",
+
+                status:
+                    "GET /api/status/:jobId",
+
+                video:
+                    "GET /api/video/:jobId"
+            }
+        });
+    }
+);
+
+
+// ============================================================
+// UPLOAD + INICIAR PROCESSAMENTO
+// ============================================================
 
 app.post(
     "/api/test-upload",
-    uploadVideo.single("video"),
-
-    function (req, res) {
+    upload.single("video"),
+    async (req, res) => {
 
         try {
 
+            // ------------------------------------------------
+            // Verificar arquivo
+            // ------------------------------------------------
+
             if (!req.file) {
 
-                return res
-                    .status(400)
-                    .json({
-
-                        ok: false,
-
-                        error:
-                            "Nenhum arquivo recebido."
-                    });
-            }
-
-            console.log("========================================");
-            console.log("TESTE DE UPLOAD");
-            console.log("Nome:", req.file.originalname);
-            console.log("Tamanho:", req.file.size);
-            console.log("Tipo:", req.file.mimetype);
-            console.log("Arquivo:", req.file.path);
-            console.log("========================================");
-
-            return res.json({
-
-                ok: true,
-
-                message:
-                    "Upload funcionando!",
-
-                filename:
-                    req.file.filename,
-
-                originalname:
-                    req.file.originalname,
-
-                size:
-                    req.file.size,
-
-                mimetype:
-                    req.file.mimetype
-            });
-
-        } catch (error) {
-
-            console.error(
-                "TEST UPLOAD ERROR:",
-                error
-            );
-
-            return res
-                .status(500)
-                .json({
+                return res.status(400).json({
 
                     ok: false,
 
                     error:
-                        error.message
+                        "Nenhum vídeo foi enviado."
                 });
-        }
-    }
-);
-
-// ======================================================
-// DUBLAR VÍDEO
-// ======================================================
-
-app.post(
-    "/api/dublar",
-    uploadVideo.single("video"),
-
-    function (req, res) {
-
-        try {
-
-            console.log("========================================");
-            console.log("NOVO UPLOAD DE VÍDEO");
-            console.log("========================================");
-
-            if (!req.file) {
-
-                return res
-                    .status(400)
-                    .json({
-
-                        ok: false,
-
-                        error:
-                            "Nenhum vídeo foi enviado."
-                    });
             }
 
-            console.log(
-                "Arquivo:",
-                req.file.originalname
-            );
 
-            console.log(
-                "Tamanho:",
-                req.file.size
-            );
-
-            console.log(
-                "Tipo:",
-                req.file.mimetype
-            );
+            // ------------------------------------------------
+            // Idioma
+            // ------------------------------------------------
 
             const targetLang =
-                allowedLanguages.includes(
-                    req.body.targetLang
+                String(
+                    req.body.targetLang ||
+                    req.body.targetLanguage ||
+                    "pt"
                 )
-                    ? req.body.targetLang
-                    : "pt";
+                    .trim()
+                    .toLowerCase();
+
+
+            const allowedLanguages = [
+                "pt",
+                "en",
+                "es",
+                "fr",
+                "de",
+                "it",
+                "ja",
+                "ko",
+                "zh",
+                "ru",
+                "ar",
+                "hi",
+                "tr",
+                "nl",
+                "pl",
+                "sv",
+                "da",
+                "no",
+                "fi",
+                "cs",
+                "el",
+                "he",
+                "id",
+                "vi",
+                "th"
+            ];
 
-            const jobId =
-                req.jobId;
-
-            jobs.set(
-                jobId,
-                {
-
-                    id:
-                        jobId,
-
-                    status:
-                        "queued",
-
-                    progress:
-                        0,
-
-                    stage:
-                        "Na fila...",
-
-                    inputPath:
-                        req.file.path,
-
-                    outputPath:
-                        null,
-
-                    targetLang:
-                        targetLang,
-
-                    error:
-                        null,
-
-                    createdAt:
-                        Date.now()
-                }
-            );
-
-            enqueue(jobId);
-
-            return res
-                .status(202)
-                .json({
-
-                    ok:
-                        true,
-
-                    jobId:
-                        jobId,
-
-                    status:
-                        "queued",
-
-                    message:
-                        "Vídeo recebido e colocado na fila."
-                });
-
-        } catch (error) {
-
-            console.error(
-                "ERRO /api/dublar:",
-                error
-            );
-
-            return res
-                .status(500)
-                .json({
-
-                    ok:
-                        false,
-
-                    error:
-                        error.message
-                });
-        }
-    }
-);
-
-// ======================================================
-// STATUS DO JOB
-// ======================================================
-
-app.get(
-    "/api/status/:jobId",
-
-    function (req, res) {
-
-        const job =
-            jobs.get(
-                req.params.jobId
-            );
-
-        if (!job) {
-
-            return res
-                .status(404)
-                .json({
-
-                    ok:
-                        false,
-
-                    error:
-                        "Job não encontrado."
-                });
-        }
-
-        return res.json({
-
-            ok:
-                true,
-
-            id:
-                job.id,
-
-            status:
-                job.status,
-
-            progress:
-                job.progress,
-
-            stage:
-                job.stage,
-
-            error:
-                job.error,
-
-            downloadUrl:
-                job.status === "done"
-                    ? `/outputs/${job.id}.mp4`
-                    : null
-        });
-    }
-);
-
-// ======================================================
-// INICIAR LIVE
-// ======================================================
-
-app.post(
-    "/api/live/start",
-
-    function (req, res) {
-
-        const sessionId =
-            uuidv4();
-
-        const targetLang =
-            allowedLanguages.includes(
-                req.body.targetLang
-            )
-                ? req.body.targetLang
-                : "pt";
-
-        liveSessions.set(
-            sessionId,
-            {
-
-                id:
-                    sessionId,
-
-                targetLang:
-                    targetLang,
-
-                status:
-                    "active",
-
-                chunks:
-                    0,
-
-                createdAt:
-                    Date.now(),
-
-                lastAudio:
-                    Date.now()
-            }
-        );
-
-        console.log(
-            "LIVE START:",
-            sessionId
-        );
-
-        return res.json({
-
-            ok:
-                true,
-
-            sessionId:
-                sessionId,
-
-            targetLang:
-                targetLang,
-
-            status:
-                "active"
-        });
-    }
-);
-
-// ======================================================
-// PROCESSAR ÁUDIO LIVE
-// ======================================================
-
-app.post(
-    "/api/live/audio",
-    uploadLive.single("audio"),
-
-    function (req, res) {
-
-        try {
-
-            if (!req.file) {
-
-                return res
-                    .status(400)
-                    .json({
-
-                        ok:
-                            false,
-
-                        error:
-                            "Áudio não enviado."
-                    });
-            }
-
-            let sessionId =
-                req.body.sessionId;
-
-            const targetLang =
-                allowedLanguages.includes(
-                    req.body.targetLang
-                )
-                    ? req.body.targetLang
-                    : "pt";
 
             if (
-                !sessionId ||
-                !liveSessions.has(sessionId)
+                !allowedLanguages.includes(
+                    targetLang
+                )
             ) {
 
-                sessionId =
-                    uuidv4();
-
-                liveSessions.set(
-                    sessionId,
-                    {
-
-                        id:
-                            sessionId,
-
-                        targetLang:
-                            targetLang,
-
-                        status:
-                            "active",
-
-                        chunks:
-                            0,
-
-                        createdAt:
-                            Date.now(),
-
-                        lastAudio:
-                            Date.now()
-                    }
+                safeDelete(
+                    req.file.path
                 );
+
+                return res.status(400).json({
+
+                    ok: false,
+
+                    error:
+                        `Idioma não suportado: ${targetLang}`
+                });
             }
 
-            const session =
-                liveSessions.get(
-                    sessionId
-                );
 
-            session.targetLang =
-                targetLang;
+            // ------------------------------------------------
+            // ID DO JOB
+            // ------------------------------------------------
 
-            session.chunks += 1;
+            const jobId =
+                crypto.randomUUID();
 
-            session.lastAudio =
-                Date.now();
 
-            const outputName =
-                `${uuidv4()}.wav`;
+            const inputExtension =
+                path.extname(
+                    req.file.originalname || ".mp4"
+                ).toLowerCase();
+
+
+            const inputPath =
+                req.file.path;
+
 
             const outputPath =
                 path.join(
-                    LIVE_DIR,
-                    outputName
+                    OUTPUT_DIR,
+                    `${jobId}.mp4`
                 );
 
-            const livePipeline =
-                path.join(
-                    __dirname,
-                    "live_pipeline.py"
+
+            // ------------------------------------------------
+            // Criar JOB
+            // ------------------------------------------------
+
+            const job =
+                createJob(
+                    jobId,
+                    inputPath,
+                    outputPath,
+                    targetLang
                 );
+
+
+            job.status = "processing";
+
+            job.stage =
+                "Iniciando processamento";
+
+            job.progress = 1;
+
+            job.startedAt =
+                new Date().toISOString();
+
+
+            addJobLog(
+                job,
+                `Vídeo recebido: ${req.file.originalname}`
+            );
+
+            addJobLog(
+                job,
+                `Tamanho: ${req.file.size} bytes`
+            );
+
+            addJobLog(
+                job,
+                `Idioma de destino: ${targetLang}`
+            );
+
+
+            // ------------------------------------------------
+            // Pipeline
+            // ------------------------------------------------
+
+            const pipelinePath =
+                path.join(
+                    BASE_DIR,
+                    "pipeline.py"
+                );
+
 
             if (
-                !fs.existsSync(livePipeline)
+                !fs.existsSync(
+                    pipelinePath
+                )
             ) {
 
-                return res
-                    .status(500)
-                    .json({
+                safeDelete(
+                    inputPath
+                );
 
-                        ok:
-                            false,
+                jobs.delete(
+                    jobId
+                );
 
-                        error:
-                            "live_pipeline.py não foi encontrado."
-                    });
+                return res.status(500).json({
+
+                    ok: false,
+
+                    error:
+                        "pipeline.py não foi encontrado no servidor."
+                });
             }
+
+
+            // ------------------------------------------------
+            // Python
+            // ------------------------------------------------
+
+            const pythonCommand =
+                process.env.PYTHON_COMMAND ||
+                "python3";
+
 
             const args = [
 
-                livePipeline,
+                pipelinePath,
 
                 "--input",
-                req.file.path,
+                inputPath,
 
                 "--output",
                 outputPath,
@@ -944,399 +562,1047 @@ app.post(
                 targetLang
             ];
 
-            console.log(
-                "Executando live_pipeline.py"
+
+            addJobLog(
+                job,
+                `Executando: ${pythonCommand} ${args.join(" ")}`
             );
 
-            const py =
+
+            // =================================================
+            // IMPORTANTE
+            //
+            // spawn NÃO bloqueia o servidor Node.
+            //
+            // Enquanto o Python trabalha, o Node continua
+            // atendendo:
+            //
+            // GET /api/status/:jobId
+            //
+            // =================================================
+
+            const child =
                 spawn(
-                    getPythonCommand(),
+                    pythonCommand,
                     args,
                     {
-                        cwd:
-                            __dirname,
+
+                        cwd: BASE_DIR,
 
                         env: {
                             ...process.env,
 
-                            PYTHONUNBUFFERED:
-                                "1"
-                        }
+                            // Render Free:
+                            // reduz consumo de threads
+                            OMP_NUM_THREADS:
+                                process.env.OMP_NUM_THREADS ||
+                                "1",
+
+                            OPENBLAS_NUM_THREADS:
+                                process.env.OPENBLAS_NUM_THREADS ||
+                                "1",
+
+                            MKL_NUM_THREADS:
+                                process.env.MKL_NUM_THREADS ||
+                                "1",
+
+                            NUMEXPR_NUM_THREADS:
+                                process.env.NUMEXPR_NUM_THREADS ||
+                                "1",
+
+                            // Whisper tiny
+                            WHISPER_MODEL:
+                                process.env.WHISPER_MODEL ||
+                                "tiny"
+                        },
+
+                        stdio: [
+                            "ignore",
+                            "pipe",
+                            "pipe"
+                        ]
                     }
                 );
 
-            let stdoutBuffer = "";
-            let stderrBuffer = "";
 
-            py.stdout.on(
+            job.pid =
+                child.pid;
+
+
+            addJobLog(
+                job,
+                `Processo Python iniciado. PID: ${child.pid}`
+            );
+
+
+            // =================================================
+            // STDOUT
+            // =================================================
+
+            let stdoutBuffer = "";
+
+
+            child.stdout.on(
                 "data",
-                function (data) {
+                (data) => {
 
                     const text =
                         data.toString();
 
                     stdoutBuffer += text;
 
-                    console.log(
-                        "[LIVE PYTHON]",
-                        text.trim()
-                    );
+                    const lines =
+                        stdoutBuffer.split(
+                            /\r?\n/
+                        );
+
+                    stdoutBuffer =
+                        lines.pop() || "";
+
+
+                    for (
+                        const line
+                        of lines
+                    ) {
+
+                        const clean =
+                            line.trim();
+
+                        if (!clean) {
+                            continue;
+                        }
+
+                        console.log(
+                            `[PIPELINE ${jobId}] ${clean}`
+                        );
+
+                        updateProgressFromLine(
+                            job,
+                            clean
+                        );
+                    }
                 }
             );
 
-            py.stderr.on(
+
+            // =================================================
+            // STDERR
+            // =================================================
+            //
+            // Atenção:
+            // Whisper pode escrever barra de download/progresso
+            // no stderr mesmo sem ser um erro fatal.
+            //
+            // Portanto NÃO marcamos o job como failed apenas
+            // porque chegou algo no stderr.
+            //
+
+            let stderrBuffer = "";
+
+
+            child.stderr.on(
                 "data",
-                function (data) {
+                (data) => {
 
                     const text =
                         data.toString();
 
                     stderrBuffer += text;
 
-                    console.error(
-                        "[LIVE PYTHON ERROR]",
-                        text.trim()
-                    );
-                }
-            );
+                    const lines =
+                        stderrBuffer.split(
+                            /\r?\n/
+                        );
 
-            py.on(
-                "error",
-                function (error) {
+                    stderrBuffer =
+                        lines.pop() || "";
 
-                    console.error(
-                        "Erro no live_pipeline:",
-                        error
-                    );
-                }
-            );
 
-            py.on(
-                "close",
-                function (code) {
+                    for (
+                        const line
+                        of lines
+                    ) {
 
-                    try {
+                        const clean =
+                            line.trim();
 
+                        if (!clean) {
+                            continue;
+                        }
+
+                        console.error(
+                            `[PIPELINE STDERR ${jobId}] ${clean}`
+                        );
+
+                        updateProgressFromLine(
+                            job,
+                            clean
+                        );
+
+                        // Guardamos apenas mensagens
+                        // realmente importantes.
                         if (
-                            fs.existsSync(
-                                req.file.path
+                            clean.includes(
+                                "[PIPELINE ERROR]"
+                            ) ||
+                            clean.includes(
+                                "Traceback"
+                            ) ||
+                            clean.includes(
+                                "Error"
+                            ) ||
+                            clean.includes(
+                                "Exception"
                             )
                         ) {
 
-                            fs.unlinkSync(
-                                req.file.path
+                            addJobLog(
+                                job,
+                                clean
                             );
                         }
+                    }
+                }
+            );
 
-                    } catch (error) {
 
-                        console.error(
-                            "Erro removendo áudio:",
-                            error
+            // =================================================
+            // ERROR DO PROCESSO
+            // =================================================
+
+            child.on(
+                "error",
+                (error) => {
+
+                    console.error(
+                        `[JOB ${jobId}] Erro ao iniciar Python:`,
+                        error
+                    );
+
+
+                    job.status =
+                        "failed";
+
+                    job.stage =
+                        "Erro ao iniciar processamento";
+
+                    job.error =
+                        error.message;
+
+                    job.finishedAt =
+                        new Date().toISOString();
+
+
+                    addJobLog(
+                        job,
+                        `Falha ao iniciar pipeline: ${error.message}`
+                    );
+                }
+            );
+
+
+            // =================================================
+            // FINALIZAÇÃO
+            // =================================================
+
+            child.on(
+                "close",
+                (code, signal) => {
+
+                    // Processar qualquer texto restante
+                    if (
+                        stdoutBuffer.trim()
+                    ) {
+
+                        updateProgressFromLine(
+                            job,
+                            stdoutBuffer.trim()
                         );
                     }
 
-                    if (code !== 0) {
-
-                        return res
-                            .status(500)
-                            .json({
-
-                                ok:
-                                    false,
-
-                                sessionId:
-                                    sessionId,
-
-                                error:
-                                    stderrBuffer ||
-                                    "Erro no processamento do áudio."
-                            });
-                    }
-
-                    let text = "";
-                    let translation = "";
-
-                    const lines =
-                        stdoutBuffer.split(/\r?\n/);
-
-                    lines.forEach(
-                        function (line) {
-
-                            if (
-                                line.startsWith(
-                                    "RESULT_TEXT:"
-                                )
-                            ) {
-
-                                text =
-                                    line
-                                        .replace(
-                                            "RESULT_TEXT:",
-                                            ""
-                                        )
-                                        .trim();
-                            }
-
-                            if (
-                                line.startsWith(
-                                    "RESULT_TRANSLATION:"
-                                )
-                            ) {
-
-                                translation =
-                                    line
-                                        .replace(
-                                            "RESULT_TRANSLATION:",
-                                            ""
-                                        )
-                                        .trim();
-                            }
-                        }
-                    );
-
-                    let audioUrl = null;
 
                     if (
+                        stderrBuffer.trim()
+                    ) {
+
+                        updateProgressFromLine(
+                            job,
+                            stderrBuffer.trim()
+                        );
+                    }
+
+
+                    job.finishedAt =
+                        new Date().toISOString();
+
+
+                    // ------------------------------------------------
+                    // SUCESSO
+                    // ------------------------------------------------
+
+                    if (
+                        code === 0 &&
                         fs.existsSync(
                             outputPath
                         )
                     ) {
 
-                        audioUrl =
-                            `/live_audio/${outputName}`;
+                        const outputSize =
+                            fs.statSync(
+                                outputPath
+                            ).size;
+
+
+                        if (
+                            outputSize <= 0
+                        ) {
+
+                            job.status =
+                                "failed";
+
+                            job.stage =
+                                "Vídeo final vazio";
+
+                            job.error =
+                                "O pipeline terminou, mas o vídeo final está vazio.";
+
+                            addJobLog(
+                                job,
+                                job.error
+                            );
+
+                        } else {
+
+                            job.status =
+                                "completed";
+
+                            job.stage =
+                                "Concluído";
+
+                            job.progress =
+                                100;
+
+                            job.outputUrl =
+                                `/api/video/${jobId}`;
+
+                            addJobLog(
+                                job,
+                                `Processamento concluído. Saída: ${outputSize} bytes`
+                            );
+                        }
+
                     }
 
-                    return res.json({
+                    // ------------------------------------------------
+                    // FALHA
+                    // ------------------------------------------------
 
-                        ok:
-                            true,
+                    else {
 
-                        sessionId:
-                            sessionId,
+                        job.status =
+                            "failed";
 
-                        chunk:
-                            session.chunks,
+                        job.stage =
+                            "Processamento falhou";
 
-                        text:
-                            text,
+                        let reason =
+                            `Pipeline finalizou com código ${code}`;
 
-                        translation:
-                            translation,
+                        if (signal) {
 
-                        audioUrl:
-                            audioUrl,
+                            reason +=
+                                ` e sinal ${signal}`;
+                        }
 
-                        status:
-                            "processed"
-                    });
+                        job.error =
+                            reason;
+
+
+                        addJobLog(
+                            job,
+                            reason
+                        );
+
+
+                        // ------------------------------------------------
+                        // Diagnóstico específico do Render
+                        // ------------------------------------------------
+
+                        if (
+                            code === 137
+                        ) {
+
+                            job.error =
+                                "O processo foi encerrado pelo sistema (código 137). No Render Free isso geralmente indica falta de memória durante o processamento.";
+
+                            addJobLog(
+                                job,
+                                job.error
+                            );
+                        }
+
+
+                        if (
+                            code === 143
+                        ) {
+
+                            job.error =
+                                "O processo foi encerrado pelo sistema (código 143). O serviço pode ter sido reiniciado ou encerrado.";
+
+                            addJobLog(
+                                job,
+                                job.error
+                            );
+                        }
+                    }
+
+
+                    // ------------------------------------------------
+                    // Remover vídeo original depois que terminou
+                    // ------------------------------------------------
+
+                    setTimeout(
+                        () => {
+
+                            safeDelete(
+                                inputPath
+                            );
+
+                        },
+                        60 * 1000
+                    );
                 }
             );
+
+
+            // =================================================
+            // RESPONDER IMEDIATAMENTE AO NAVEGADOR
+            // =================================================
+
+            return res.status(202).json({
+
+                ok: true,
+
+                jobId,
+
+                status:
+                    job.status,
+
+                stage:
+                    job.stage,
+
+                progress:
+                    job.progress,
+
+                targetLang,
+
+                message:
+                    "Vídeo recebido e processamento iniciado.",
+
+                statusUrl:
+                    `/api/status/${jobId}`,
+
+                outputUrl:
+                    null
+            });
+
 
         } catch (error) {
 
             console.error(
-                "ERRO LIVE:",
+                "Erro no upload:",
                 error
             );
 
-            return res
-                .status(500)
-                .json({
 
-                    ok:
-                        false,
+            if (
+                req.file &&
+                req.file.path
+            ) {
 
-                    error:
-                        error.message
-                });
+                safeDelete(
+                    req.file.path
+                );
+            }
+
+
+            return res.status(500).json({
+
+                ok: false,
+
+                error:
+                    error.message ||
+                    "Erro interno no servidor."
+            });
         }
     }
 );
 
-// ======================================================
-// PARAR LIVE
-// ======================================================
 
-app.post(
-    "/api/live/stop",
+// ============================================================
+// STATUS DO JOB
+// ============================================================
 
-    function (req, res) {
+app.get(
+    "/api/status/:jobId",
+    (req, res) => {
 
-        const sessionId =
-            req.body.sessionId;
+        const jobId =
+            req.params.jobId;
 
-        if (sessionId) {
 
-            liveSessions.delete(
-                sessionId
-            );
+        const job =
+            jobs.get(jobId);
+
+
+        if (!job) {
+
+            return res.status(404).json({
+
+                ok: false,
+
+                error:
+                    "Job não encontrado ou o servidor foi reiniciado.",
+
+                jobId
+            });
         }
 
-        return res.json({
 
-            ok:
-                true,
+        // ----------------------------------------------------
+        // Não enviar caminhos internos do servidor
+        // ----------------------------------------------------
+
+        return res.status(200).json({
+
+            ok: true,
+
+            jobId:
+                job.id,
 
             status:
-                "stopped"
+                job.status,
+
+            stage:
+                job.stage,
+
+            progress:
+                job.progress,
+
+            targetLang:
+                job.targetLang,
+
+            outputUrl:
+                job.outputUrl,
+
+            error:
+                job.error,
+
+            startedAt:
+                job.startedAt,
+
+            finishedAt:
+                job.finishedAt,
+
+            pid:
+                job.pid,
+
+            logs:
+                job.logs.slice(-30)
         });
     }
 );
 
-// ======================================================
-// ERROS DO MULTER / UPLOAD
-// ======================================================
 
-app.use(
-    function (error, req, res, next) {
+// ============================================================
+// VÍDEO FINAL
+// ============================================================
+
+app.get(
+    "/api/video/:jobId",
+    (req, res) => {
+
+        const jobId =
+            req.params.jobId;
+
+
+        const job =
+            jobs.get(jobId);
+
+
+        if (!job) {
+
+            return res.status(404).json({
+
+                ok: false,
+
+                error:
+                    "Job não encontrado."
+            });
+        }
+
 
         if (
-            error &&
-            error.code === "LIMIT_FILE_SIZE"
+            job.status !== "completed"
         ) {
 
-            return res
-                .status(413)
-                .json({
+            return res.status(409).json({
 
-                    ok:
-                        false,
+                ok: false,
+
+                error:
+                    "O vídeo ainda não está pronto.",
+
+                status:
+                    job.status,
+
+                progress:
+                    job.progress
+            });
+        }
+
+
+        if (
+            !job.outputPath ||
+            !fs.existsSync(
+                job.outputPath
+            )
+        ) {
+
+            return res.status(404).json({
+
+                ok: false,
+
+                error:
+                    "O vídeo final não foi encontrado no servidor."
+            });
+        }
+
+
+        const stat =
+            fs.statSync(
+                job.outputPath
+            );
+
+
+        // =====================================================
+        // SUPORTE A RANGE
+        // Permite reprodução/download no celular.
+        // =====================================================
+
+        const range =
+            req.headers.range;
+
+
+        if (!range) {
+
+            res.setHeader(
+                "Content-Type",
+                "video/mp4"
+            );
+
+            res.setHeader(
+                "Content-Length",
+                stat.size
+            );
+
+            res.setHeader(
+                "Accept-Ranges",
+                "bytes"
+            );
+
+            res.setHeader(
+                "Cache-Control",
+                "no-cache"
+            );
+
+            return fs
+                .createReadStream(
+                    job.outputPath
+                )
+                .pipe(res);
+        }
+
+
+        const parts =
+            range
+                .replace(
+                    /bytes=/,
+                    ""
+                )
+                .split("-");
+
+
+        const start =
+            parseInt(
+                parts[0],
+                10
+            );
+
+
+        const end =
+            parts[1]
+                ? parseInt(
+                    parts[1],
+                    10
+                )
+                : stat.size - 1;
+
+
+        if (
+            Number.isNaN(start) ||
+            start >= stat.size ||
+            end >= stat.size
+        ) {
+
+            res.status(416);
+
+            res.setHeader(
+                "Content-Range",
+                `bytes */${stat.size}`
+            );
+
+            return res.end();
+        }
+
+
+        const chunkSize =
+            end - start + 1;
+
+
+        res.status(206);
+
+        res.setHeader(
+            "Content-Range",
+            `bytes ${start}-${end}/${stat.size}`
+        );
+
+        res.setHeader(
+            "Accept-Ranges",
+            "bytes"
+        );
+
+        res.setHeader(
+            "Content-Length",
+            chunkSize
+        );
+
+        res.setHeader(
+            "Content-Type",
+            "video/mp4"
+        );
+
+        res.setHeader(
+            "Cache-Control",
+            "no-cache"
+        );
+
+
+        fs
+            .createReadStream(
+                job.outputPath,
+                {
+                    start,
+                    end
+                }
+            )
+            .pipe(res);
+    }
+);
+
+
+// ============================================================
+// DOWNLOAD
+// ============================================================
+
+app.get(
+    "/api/download/:jobId",
+    (req, res) => {
+
+        const job =
+            jobs.get(
+                req.params.jobId
+            );
+
+
+        if (!job) {
+
+            return res.status(404).json({
+
+                ok: false,
+
+                error:
+                    "Job não encontrado."
+            });
+        }
+
+
+        if (
+            job.status !== "completed"
+        ) {
+
+            return res.status(409).json({
+
+                ok: false,
+
+                error:
+                    "O vídeo ainda está sendo processado."
+            });
+        }
+
+
+        if (
+            !fs.existsSync(
+                job.outputPath
+            )
+        ) {
+
+            return res.status(404).json({
+
+                ok: false,
+
+                error:
+                    "Arquivo final não encontrado."
+            });
+        }
+
+
+        res.download(
+            job.outputPath,
+            `SI-dublado-${job.id}.mp4`
+        );
+    }
+);
+
+
+// ============================================================
+// ERRO DO MULTER
+// ============================================================
+
+app.use(
+    (error, req, res, next) => {
+
+        if (
+            error instanceof multer.MulterError
+        ) {
+
+            if (
+                error.code ===
+                "LIMIT_FILE_SIZE"
+            ) {
+
+                return res.status(413).json({
+
+                    ok: false,
 
                     error:
-                        "Arquivo maior que o limite permitido."
+                        "O vídeo é muito grande. O limite é 500 MB."
                 });
+            }
+
+
+            return res.status(400).json({
+
+                ok: false,
+
+                error:
+                    error.message
+            });
         }
+
 
         if (error) {
 
             console.error(
-                "ERRO DO SERVIDOR:",
+                "Erro geral:",
                 error
             );
 
-            return res
-                .status(500)
-                .json({
 
-                    ok:
-                        false,
+            return res.status(500).json({
 
-                    error:
-                        error.message ||
-                        "Erro interno do servidor."
-                });
+                ok: false,
+
+                error:
+                    error.message ||
+                    "Erro interno do servidor."
+            });
         }
+
 
         next();
     }
 );
 
-// ======================================================
+
+// ============================================================
 // 404
-// ======================================================
+// ============================================================
 
 app.use(
-    function (req, res) {
+    (req, res) => {
 
-        return res
-            .status(404)
-            .json({
+        res.status(404).json({
 
-                ok:
-                    false,
+            ok: false,
 
-                error:
-                    "Endpoint não encontrado.",
+            error:
+                "Endpoint não encontrado.",
 
-                path:
-                    req.originalUrl
-            });
+            path:
+                req.originalUrl
+        });
     }
 );
 
-// ======================================================
-// LIMPEZA AUTOMÁTICA
-// ======================================================
+
+// ============================================================
+// SERVIDOR
+// ============================================================
+
+const server =
+    app.listen(
+        PORT,
+        "0.0.0.0",
+        () => {
+
+            console.log(
+                "========================================"
+            );
+
+            console.log(
+                "       SI - TRADUTOR UNIVERSAL"
+            );
+
+            console.log(
+                "========================================"
+            );
+
+            console.log(
+                `Servidor rodando na porta ${PORT}`
+            );
+
+            console.log(
+                `Modo vídeo: ATIVO`
+            );
+
+            console.log(
+                `Polling de status: ATIVO`
+            );
+
+            console.log(
+                `Whisper: ${
+                    process.env.WHISPER_MODEL ||
+                    "tiny"
+                }`
+            );
+
+            console.log(
+                `OpenAI: ${
+                    process.env.OPENAI_API_KEY
+                        ? "CONFIGURADO"
+                        : "NÃO CONFIGURADO"
+                }`
+            );
+
+            console.log(
+                `ElevenLabs: ${
+                    process.env.ELEVENLABS_API_KEY
+                        ? "CONFIGURADO"
+                        : "NÃO CONFIGURADO"
+                }`
+            );
+
+            console.log(
+                "========================================"
+            );
+        }
+    );
+
+
+// ============================================================
+// TIMEOUTS
+// ============================================================
+//
+// Não deixar o Node matar uploads/processamentos HTTP
+// por timeout curto.
+//
+
+server.timeout =
+    30 * 60 * 1000;
+
+server.requestTimeout =
+    30 * 60 * 1000;
+
+server.headersTimeout =
+    31 * 60 * 1000;
+
+server.keepAliveTimeout =
+    65 * 1000;
+
+
+// ============================================================
+// LIMPEZA AUTOMÁTICA DE JOBS
+// ============================================================
+//
+// Mantém memória do Render Free sob controle.
+// Jobs antigos são removidos depois de 2 horas.
+//
 
 setInterval(
-    function () {
+    () => {
 
         const now =
             Date.now();
 
-        // Jobs com mais de 1 hora
+        const MAX_AGE =
+            2 * 60 * 60 * 1000;
+
 
         for (
-            const [jobId, job]
-            of jobs.entries()
+            const [
+                jobId,
+                job
+            ] of jobs.entries()
         ) {
 
-            if (
+            const referenceTime =
+                job.finishedAt ||
+                job.startedAt;
+
+
+            if (!referenceTime) {
+                continue;
+            }
+
+
+            const age =
                 now -
-                job.createdAt >
-                60 *
-                60 *
-                1000
+                new Date(
+                    referenceTime
+                ).getTime();
+
+
+            if (
+                age > MAX_AGE
             ) {
 
-                try {
+                console.log(
+                    `[CLEANUP] Removendo job ${jobId}`
+                );
 
-                    if (
-                        job.inputPath &&
-                        fs.existsSync(
-                            job.inputPath
-                        )
-                    ) {
 
-                        fs.unlinkSync(
-                            job.inputPath
-                        );
-                    }
+                safeDelete(
+                    job.inputPath
+                );
 
-                    if (
-                        job.outputPath &&
-                        fs.existsSync(
-                            job.outputPath
-                        )
-                    ) {
+                safeDelete(
+                    job.outputPath
+                );
 
-                        fs.unlinkSync(
-                            job.outputPath
-                        );
-                    }
-
-                } catch (error) {
-
-                    console.error(
-                        "Erro na limpeza:",
-                        error
-                    );
-                }
 
                 jobs.delete(
                     jobId
-                );
-            }
-        }
-
-        // Sessões LIVE antigas
-
-        for (
-            const [sessionId, session]
-            of liveSessions.entries()
-        ) {
-
-            if (
-                now -
-                session.lastAudio >
-                30 *
-                60 *
-                1000
-            ) {
-
-                liveSessions.delete(
-                    sessionId
                 );
             }
         }
@@ -1345,50 +1611,49 @@ setInterval(
     10 * 60 * 1000
 );
 
-// ======================================================
-// SERVIDOR
-// ======================================================
 
-app.listen(
-    PORT,
-    "0.0.0.0",
-    function () {
+// ============================================================
+// ENCERRAMENTO SEGURO
+// ============================================================
 
-        console.log(
-            "========================================"
-        );
+function gracefulShutdown(
+    signal
+) {
 
-        console.log(
-            "       SI - TRADUTOR UNIVERSAL"
-        );
+    console.log(
+        `Recebido ${signal}. Encerrando servidor...`
+    );
 
-        console.log(
-            "========================================"
-        );
 
-        console.log(
-            `Servidor rodando na porta ${PORT}`
-        );
+    server.close(
+        () => {
 
-        console.log(
-            "Modo vídeo: ATIVO"
-        );
+            console.log(
+                "Servidor encerrado."
+            );
 
-        console.log(
-            "Modo live: ATIVO"
-        );
+            process.exit(0);
+        }
+    );
 
-        console.log(
-            "ElevenLabs: " +
-            (
-                process.env.ELEVENLABS_API_KEY
-                    ? "CONFIGURADO"
-                    : "NÃO CONFIGURADO"
-            )
-        );
 
-        console.log(
-            "========================================"
-        );
-    }
+    setTimeout(
+        () => {
+
+            process.exit(1);
+
+        },
+        10000
+    );
+}
+
+
+process.on(
+    "SIGTERM",
+    () => gracefulShutdown("SIGTERM")
+);
+
+process.on(
+    "SIGINT",
+    () => gracefulShutdown("SIGINT")
 );
