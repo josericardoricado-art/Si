@@ -1,14 +1,18 @@
-#!/usr/bin/env python3
-
+import os
 import sys
 import traceback
 
+import argostranslate.package
+import argostranslate.translate
 
-# ============================================================
-# INSTALAÇÃO DOS MODELOS ARGOS
-# ============================================================
 
-LANGUAGE_PAIRS = [
+LANGUAGES = {
+    "pt": "Português",
+    "en": "English",
+    "es": "Español",
+}
+
+REQUIRED_PAIRS = [
     ("pt", "en"),
     ("en", "pt"),
 
@@ -21,380 +25,158 @@ LANGUAGE_PAIRS = [
 
 
 def log(message):
-    print(
-        f"[ARGOS INSTALL] {message}",
-        flush=True
+    print(f"[ARGOS] {message}", flush=True)
+
+
+def get_installed_pairs():
+    installed = set()
+
+    try:
+        languages = argostranslate.translate.get_installed_languages()
+
+        for language in languages:
+            for translation in language.translations_from:
+                installed.add(
+                    (
+                        translation.from_lang.code,
+                        translation.to_lang.code,
+                    )
+                )
+
+    except Exception as e:
+        log(f"Erro verificando idiomas instalados: {e}")
+
+    return installed
+
+
+def install_pair(from_code, to_code, available_packages):
+    log(
+        f"Procurando pacote "
+        f"{from_code} -> {to_code}"
+    )
+
+    package = None
+
+    for item in available_packages:
+        if (
+            item.from_code == from_code
+            and item.to_code == to_code
+        ):
+            package = item
+            break
+
+    if package is None:
+        raise RuntimeError(
+            f"Pacote Argos não encontrado: "
+            f"{from_code} -> {to_code}"
+        )
+
+    log(
+        f"Baixando pacote "
+        f"{from_code} -> {to_code}"
+    )
+
+    package_path = package.download()
+
+    if not package_path:
+        raise RuntimeError(
+            f"Download falhou: "
+            f"{from_code} -> {to_code}"
+        )
+
+    log(
+        f"Instalando pacote "
+        f"{from_code} -> {to_code}"
+    )
+
+    argostranslate.package.install_from_path(
+        package_path
+    )
+
+    log(
+        f"OK: "
+        f"{from_code} -> {to_code}"
     )
 
 
 def main():
-
     log("========================================")
-    log("INSTALAÇÃO DOS MODELOS ARGOS")
+    log("INSTALAÇÃO DOS IDIOMAS ARGOS")
     log("========================================")
 
-    try:
-        import argostranslate.package
-        import argostranslate.translate
+    log("Atualizando índice de pacotes...")
 
-    except ImportError as exc:
+    argostranslate.package.update_package_index()
 
-        log(
-            "ERRO: argostranslate não está instalado."
-        )
-
-        traceback.print_exc()
-
-        return 1
-
-    # ========================================================
-    # ATUALIZAR ÍNDICE DE PACOTES
-    # ========================================================
-
-    log(
-        "Atualizando lista de pacotes Argos..."
+    available_packages = (
+        argostranslate.package.get_available_packages()
     )
 
-    try:
+    log(
+        f"Pacotes disponíveis: "
+        f"{len(available_packages)}"
+    )
 
-        argostranslate.package.update_package_index()
+    installed_pairs = get_installed_pairs()
 
-    except Exception as exc:
+    log(
+        f"Pacotes de tradução já instalados: "
+        f"{len(installed_pairs)}"
+    )
 
-        log(
-            "Não foi possível atualizar o índice:"
-        )
+    for from_code, to_code in REQUIRED_PAIRS:
 
-        log(
-            str(exc)
-        )
+        pair = (from_code, to_code)
 
-        return 1
-
-    # ========================================================
-    # PACOTES DISPONÍVEIS
-    # ========================================================
-
-    try:
-
-        available_packages = (
-            argostranslate.package.get_available_packages()
-        )
-
-    except Exception as exc:
-
-        log(
-            "Erro obtendo pacotes disponíveis:"
-        )
-
-        log(
-            str(exc)
-        )
-
-        return 1
-
-    # ========================================================
-    # INSTALAR CADA DIREÇÃO
-    # ========================================================
-
-    for source_lang, target_lang in LANGUAGE_PAIRS:
-
-        log(
-            "----------------------------------------"
-        )
-
-        log(
-            f"Procurando: {source_lang} -> {target_lang}"
-        )
-
-        # ----------------------------------------------------
-        # Verificar se já existe
-        # ----------------------------------------------------
-
-        try:
-
-            installed_languages = (
-                argostranslate.translate
-                .get_installed_languages()
-            )
-
-            source = next(
-                (
-                    language
-                    for language
-                    in installed_languages
-                    if language.code == source_lang
-                ),
-                None
-            )
-
-            target = next(
-                (
-                    language
-                    for language
-                    in installed_languages
-                    if language.code == target_lang
-                ),
-                None
-            )
-
-            if source and target:
-
-                try:
-
-                    translation = (
-                        source.get_translation(
-                            target
-                        )
-                    )
-
-                    if translation:
-
-                        log(
-                            f"Já instalado: "
-                            f"{source_lang} -> {target_lang}"
-                        )
-
-                        continue
-
-                except Exception:
-                    pass
-
-        except Exception:
-            pass
-
-        # ----------------------------------------------------
-        # Procurar pacote
-        # ----------------------------------------------------
-
-        package = None
-
-        for candidate in available_packages:
-
-            candidate_from = getattr(
-                candidate,
-                "from_code",
-                None
-            )
-
-            candidate_to = getattr(
-                candidate,
-                "to_code",
-                None
-            )
-
-            if (
-                candidate_from == source_lang
-                and
-                candidate_to == target_lang
-            ):
-
-                package = candidate
-
-                break
-
-        if package is None:
-
+        if pair in installed_pairs:
             log(
-                f"AVISO: pacote não encontrado "
-                f"{source_lang} -> {target_lang}"
+                f"Já instalado: "
+                f"{from_code} -> {to_code}"
             )
-
             continue
 
-        # ----------------------------------------------------
-        # Instalar
-        # ----------------------------------------------------
-
         try:
-
-            log(
-                f"Instalando "
-                f"{source_lang} -> {target_lang}..."
+            install_pair(
+                from_code,
+                to_code,
+                available_packages,
             )
 
-            download_path = (
-                package.download()
-            )
-
-            argostranslate.package.install_from_path(
-                download_path
-            )
-
-            log(
-                f"OK: {source_lang} -> {target_lang}"
-            )
-
-        except Exception as exc:
-
+        except Exception as e:
             log(
                 f"ERRO instalando "
-                f"{source_lang} -> {target_lang}:"
+                f"{from_code} -> {to_code}: {e}"
             )
 
+            traceback.print_exc()
+
+            # Não escondemos o erro.
+            # O build precisa avisar caso o pacote
+            # realmente não possa ser instalado.
+            raise
+
+    log("")
+    log("========================================")
+    log("VERIFICANDO INSTALAÇÃO")
+    log("========================================")
+
+    final_pairs = get_installed_pairs()
+
+    for from_code, to_code in REQUIRED_PAIRS:
+        if (from_code, to_code) in final_pairs:
             log(
-                str(exc)
+                f"OK {from_code} -> {to_code}"
             )
-
-    # ========================================================
-    # VERIFICAÇÃO FINAL
-    # ========================================================
-
-    log(
-        "========================================"
-    )
-
-    log(
-        "VERIFICANDO IDIOMAS INSTALADOS"
-    )
-
-    log(
-        "========================================"
-    )
-
-    try:
-
-        installed_languages = (
-            argostranslate.translate
-            .get_installed_languages()
-        )
-
-        for language in installed_languages:
-
+        else:
             log(
-                f"Idioma: {language.code} "
-                f"({language.name})"
+                f"FALTA {from_code} -> {to_code}"
             )
 
-    except Exception as exc:
-
-        log(
-            "Erro verificando idiomas:"
-        )
-
-        log(
-            str(exc)
-        )
-
-    # ========================================================
-    # VERIFICAR DIREÇÕES
-    # ========================================================
-
-    log(
-        "========================================"
-    )
-
-    log(
-        "VERIFICANDO TRADUÇÕES"
-    )
-
-    log(
-        "========================================"
-    )
-
-    try:
-
-        installed_languages = (
-            argostranslate.translate
-            .get_installed_languages()
-        )
-
-        language_map = {
-            language.code: language
-            for language in installed_languages
-        }
-
-        for source_lang, target_lang in LANGUAGE_PAIRS:
-
-            source = language_map.get(
-                source_lang
-            )
-
-            target = language_map.get(
-                target_lang
-            )
-
-            if not source or not target:
-
-                log(
-                    f"FALTANDO: "
-                    f"{source_lang} -> {target_lang}"
-                )
-
-                continue
-
-            try:
-
-                translation = (
-                    source.get_translation(
-                        target
-                    )
-                )
-
-                if translation:
-
-                    log(
-                        f"OK: "
-                        f"{source_lang} -> {target_lang}"
-                    )
-
-                else:
-
-                    log(
-                        f"FALTANDO: "
-                        f"{source_lang} -> {target_lang}"
-                    )
-
-            except Exception:
-
-                log(
-                    f"FALTANDO: "
-                    f"{source_lang} -> {target_lang}"
-                )
-
-    except Exception as exc:
-
-        log(
-            "Erro na verificação:"
-        )
-
-        log(
-            str(exc)
-        )
-
-    log(
-        "========================================"
-    )
-
-    log(
-        "INSTALAÇÃO DO ARGOS FINALIZADA"
-    )
-
-    log(
-        "========================================"
-    )
-
-    return 0
+    log("")
+    log("========================================")
+    log("ARGOS CONFIGURADO")
+    log("========================================")
 
 
 if __name__ == "__main__":
-
-    try:
-
-        sys.exit(
-            main()
-        )
-
-    except Exception as exc:
-
-        log(
-            "ERRO FATAL:"
-        )
-
-        log(
-            str(exc)
-        )
-
-        traceback.print_exc()
-
-        sys.exit(1)
+    main()
