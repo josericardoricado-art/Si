@@ -1,37 +1,75 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
 
 <meta charset="UTF-8">
 
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0">
 
-<meta name="theme-color" content="#070b14">
+<meta name="theme-color"
+      content="#070b14">
 
-<!-- SEO -->
+<!-- =====================================================
+     SEO
+====================================================== -->
+
 <title>SI IA — Tradutor e Dublagem de Vídeos com Inteligência Artificial</title>
 
-<meta
-    name="description"
-    content="SI IA é um tradutor e sistema de dublagem automática de vídeos com inteligência artificial. Traduza e duble seus vídeos para português, inglês e espanhol."
->
+<meta name="description"
+      content="SI IA é uma ferramenta de tradução e dublagem automática de vídeos com inteligência artificial. Traduza vídeos para português, inglês e espanhol e gere uma nova voz dublada.">
 
-<meta
-    name="keywords"
-    content="tradutor de vídeos, dublagem automática, tradução de vídeos, inteligência artificial, IA, tradutor IA, dublagem IA, traduzir vídeo, dublar vídeo"
->
+<meta name="keywords"
+      content="tradutor de vídeos, tradução de vídeos, dublagem automática, dublagem IA, tradutor IA, traduzir vídeo, dublar vídeo, inteligência artificial, tradução automática, SI IA">
 
-<meta name="robots" content="index, follow">
+<meta name="robots"
+      content="index, follow">
 
-<meta name="googlebot" content="index, follow">
+<meta name="googlebot"
+      content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
 
-<meta name="author" content="SI IA">
+<meta name="author"
+      content="SI IA">
 
-<link
-    rel="canonical"
-    href="https://josericardoricado-art.github.io/Repository-name-tradutor-ia/"
->
+<meta name="language"
+      content="Portuguese">
 
+<meta name="revisit-after"
+      content="7 days">
+
+<!-- =====================================================
+     OPEN GRAPH
+====================================================== -->
+
+<meta property="og:type"
+      content="website">
+
+<meta property="og:title"
+      content="SI IA — Tradutor e Dublagem de Vídeos">
+
+<meta property="og:description"
+      content="Traduza e duble seus vídeos usando inteligência artificial.">
+
+<meta property="og:locale"
+      content="pt_BR">
+
+<!-- =====================================================
+     TWITTER
+====================================================== -->
+
+<meta name="twitter:card"
+      content="summary">
+
+<meta name="twitter:title"
+      content="SI IA — Tradutor e Dublagem de Vídeos">
+
+<meta name="twitter:description"
+      content="Traduza e duble vídeos automaticamente com inteligência artificial.">
+
+<!-- =====================================================
+     CSS
+====================================================== -->
 
 <style>
 
@@ -121,8 +159,7 @@ header {
     box-shadow:
         0 20px 60px rgba(0,0,0,.35);
 
-    backdrop-filter:
-        blur(12px);
+    backdrop-filter: blur(12px);
 }
 
 h1 {
@@ -191,6 +228,8 @@ h1 {
     margin-top: 7px;
 
     font-size: 14px;
+
+    line-height: 1.5;
 }
 
 #videoInput {
@@ -375,6 +414,8 @@ button {
     font-size: 14px;
 
     margin-bottom: 15px;
+
+    line-height: 1.5;
 }
 
 .progress-wrap {
@@ -600,6 +641,11 @@ footer {
 
         grid-template-columns: 1fr;
     }
+
+    h1 {
+
+        font-size: 22px;
+    }
 }
 
 </style>
@@ -638,10 +684,15 @@ footer {
 
         Escolha um vídeo do seu celular.
         O vídeo aparecerá aqui imediatamente.
-        Depois selecione o idioma e envie para o processamento.
+        Depois selecione o idioma e envie
+        para o processamento com inteligência artificial.
 
     </p>
 
+
+    <!-- =================================================
+         UPLOAD
+    ================================================== -->
 
     <label
         for="videoInput"
@@ -669,6 +720,10 @@ footer {
         accept="video/*,.mp4,.mov,.webm"
     >
 
+
+    <!-- =================================================
+         PRÉ-VISUALIZAÇÃO
+    ================================================== -->
 
     <div
         class="preview"
@@ -741,6 +796,10 @@ footer {
     </div>
 
 
+    <!-- =================================================
+         STATUS
+    ================================================== -->
+
     <div
         class="status-card"
         id="statusCard"
@@ -757,7 +816,6 @@ footer {
             Preparando...
         </div>
 
-
         <div class="progress-wrap">
 
             <div
@@ -766,7 +824,6 @@ footer {
             ></div>
 
         </div>
-
 
         <div class="progress-info">
 
@@ -783,11 +840,19 @@ footer {
     </div>
 
 
+    <!-- =================================================
+         ERRO
+    ================================================== -->
+
     <div
         class="error"
         id="errorBox"
     ></div>
 
+
+    <!-- =================================================
+         RESULTADO
+    ================================================== -->
 
     <div
         class="result"
@@ -827,6 +892,10 @@ footer {
 </div>
 
 
+<!-- =====================================================
+     CONEXÃO
+====================================================== -->
+
 <div class="connection">
 
     <span class="dot"></span>
@@ -838,7 +907,12 @@ footer {
 </div>
 
 
+<!-- =====================================================
+     RECURSOS
+====================================================== -->
+
 <div class="features">
+
 
     <div class="feature">
 
@@ -851,7 +925,8 @@ footer {
         </div>
 
         <div class="feature-text">
-            Reconhecimento automático da fala do vídeo.
+            Reconhecimento automático
+            da fala do vídeo.
         </div>
 
     </div>
@@ -868,7 +943,8 @@ footer {
         </div>
 
         <div class="feature-text">
-            Conversão da fala para o idioma escolhido.
+            Conversão da fala para
+            o idioma escolhido.
         </div>
 
     </div>
@@ -885,10 +961,12 @@ footer {
         </div>
 
         <div class="feature-text">
-            Geração de uma nova faixa de áudio.
+            Geração de uma nova
+            faixa de áudio.
         </div>
 
     </div>
+
 
 </div>
 
@@ -900,6 +978,10 @@ footer {
 
     SI IA — Sistema de tradução e dublagem automática
 
+    <br>
+
+    Traduza e duble seus vídeos com inteligência artificial.
+
 </footer>
 
 
@@ -908,10 +990,9 @@ footer {
 
 <script>
 
-
 /* =====================================================
    CONFIGURAÇÃO DO BACKEND
-===================================================== */
+====================================================== */
 
 const BACKEND_URL =
     "https://si-u2ul.onrender.com";
@@ -919,7 +1000,7 @@ const BACKEND_URL =
 
 /* =====================================================
    ELEMENTOS
-===================================================== */
+====================================================== */
 
 const videoInput =
     document.getElementById("videoInput");
@@ -975,7 +1056,7 @@ const connectionText =
 
 /* =====================================================
    VARIÁVEIS
-===================================================== */
+====================================================== */
 
 let selectedFile = null;
 
@@ -988,7 +1069,7 @@ let previewObjectURL = null;
 
 /* =====================================================
    TESTAR BACKEND
-===================================================== */
+====================================================== */
 
 async function checkBackend() {
 
@@ -1009,7 +1090,6 @@ async function checkBackend() {
             throw new Error(
                 "Servidor respondeu com erro."
             );
-
         }
 
 
@@ -1038,19 +1118,17 @@ async function checkBackend() {
             "Backend:",
             error
         );
-
     }
-
 }
 
 
 /* =====================================================
    ESCOLHER VÍDEO
-===================================================== */
+====================================================== */
 
 videoInput.addEventListener(
     "change",
-    function() {
+    function () {
 
         const file =
             this.files[0];
@@ -1061,6 +1139,8 @@ videoInput.addEventListener(
         }
 
 
+        clearPolling();
+
         selectedFile =
             file;
 
@@ -1069,25 +1149,28 @@ videoInput.addEventListener(
             null;
 
 
-        clearPolling();
-
         hideError();
+
 
         result.classList.remove(
             "active"
         );
+
 
         statusCard.classList.remove(
             "active"
         );
 
 
+        /* ---------------------------------------------
+           LIBERAR URL ANTERIOR
+        --------------------------------------------- */
+
         if (previewObjectURL) {
 
             URL.revokeObjectURL(
                 previewObjectURL
             );
-
         }
 
 
@@ -1108,6 +1191,10 @@ videoInput.addEventListener(
             "active"
         );
 
+
+        /* ---------------------------------------------
+           INFORMAÇÕES DO ARQUIVO
+        --------------------------------------------- */
 
         const sizeMB =
             (
@@ -1137,12 +1224,12 @@ videoInput.addEventListener(
 
 
 /* =====================================================
-   DUBLAR
-===================================================== */
+   BOTÃO DUBLAR
+====================================================== */
 
 dubButton.addEventListener(
     "click",
-    async function() {
+    async function () {
 
         if (!selectedFile) {
 
@@ -1151,7 +1238,6 @@ dubButton.addEventListener(
             );
 
             return;
-
         }
 
 
@@ -1162,16 +1248,18 @@ dubButton.addEventListener(
 
 
 /* =====================================================
-   INICIAR PROCESSAMENTO
-===================================================== */
+   INICIAR DUBLAGEM
+====================================================== */
 
 async function startDubbing() {
 
     hideError();
 
+
     result.classList.remove(
         "active"
     );
+
 
     statusCard.classList.add(
         "active"
@@ -1203,9 +1291,16 @@ async function startDubbing() {
             false;
 
         return;
-
     }
 
+
+    console.log(
+        "========================================"
+    );
+
+    console.log(
+        "ENVIANDO VÍDEO"
+    );
 
     console.log(
         "Backend:",
@@ -1225,6 +1320,15 @@ async function startDubbing() {
     console.log(
         "Tipo:",
         selectedFile.type
+    );
+
+    console.log(
+        "Idioma:",
+        targetLang.value
+    );
+
+    console.log(
+        "========================================"
     );
 
 
@@ -1255,19 +1359,22 @@ async function startDubbing() {
 
 
         /*
-         * CORREÇÃO IMPORTANTE:
+         * IMPORTANTE:
          *
-         * O endpoint correto é /api/dublar
-         * porque essa rota cria o jobId
-         * e coloca o vídeo na fila.
+         * O server.js possui:
+         *
+         * POST /api/dublar
+         *
+         * Não usar /api/test-upload aqui.
          */
 
         const response =
             await fetch(
-                `${BACKEND_URL}/api/dublar`,
+                BACKEND_URL + "/api/dublar",
                 {
                     method: "POST",
-                    body: formData
+                    body: formData,
+                    cache: "no-store"
                 }
             );
 
@@ -1294,16 +1401,14 @@ async function startDubbing() {
         try {
 
             data =
-                JSON.parse(
-                    rawText
-                );
+                JSON.parse(rawText);
 
         } catch (e) {
 
             throw new Error(
-                `O servidor retornou uma resposta inválida. HTTP ${response.status}`
+                "O servidor retornou uma resposta inválida. HTTP " +
+                response.status
             );
-
         }
 
 
@@ -1311,9 +1416,9 @@ async function startDubbing() {
 
             throw new Error(
                 data.error ||
-                `Erro HTTP ${response.status}`
+                "Erro HTTP " +
+                response.status
             );
-
         }
 
 
@@ -1323,7 +1428,6 @@ async function startDubbing() {
                 data.error ||
                 "O servidor recusou o vídeo."
             );
-
         }
 
 
@@ -1332,7 +1436,6 @@ async function startDubbing() {
             throw new Error(
                 "O servidor recebeu o vídeo, mas não retornou o Job ID."
             );
-
         }
 
 
@@ -1340,9 +1443,15 @@ async function startDubbing() {
             data.jobId;
 
 
+        console.log(
+            "JOB ID:",
+            currentJobId
+        );
+
+
         setProgress(
             3,
-            "Vídeo enviado. Aguardando processamento...",
+            "Vídeo enviado com sucesso. Aguardando processamento...",
             "Na fila"
         );
 
@@ -1371,14 +1480,14 @@ async function startDubbing() {
         ) {
 
             mensagem =
-                "O navegador não conseguiu completar a conexão com o Render. " +
+                "O navegador não conseguiu conectar ao Render. " +
                 "Verifique se o backend está online e se o CORS permite o GitHub Pages.";
-
         }
 
 
         showError(
-            "❌ Não foi possível enviar o vídeo.<br><br>" +
+            "❌ Não foi possível enviar o vídeo." +
+            "<br><br>" +
             escapeHTML(mensagem) +
             "<br><br>" +
             "<small>Backend: " +
@@ -1406,7 +1515,7 @@ async function startDubbing() {
 
 /* =====================================================
    CONSULTAR STATUS
-===================================================== */
+====================================================== */
 
 async function pollStatus() {
 
@@ -1425,6 +1534,7 @@ async function pollStatus() {
                     currentJobId
                 ),
                 {
+                    method: "GET",
                     cache: "no-store"
                 }
             );
@@ -1440,16 +1550,13 @@ async function pollStatus() {
         try {
 
             data =
-                JSON.parse(
-                    rawText
-                );
+                JSON.parse(rawText);
 
         } catch {
 
             throw new Error(
                 "Resposta inválida do servidor."
             );
-
         }
 
 
@@ -1459,7 +1566,6 @@ async function pollStatus() {
                 data.error ||
                 "Erro consultando processamento."
             );
-
         }
 
 
@@ -1479,7 +1585,7 @@ async function pollStatus() {
         ) {
 
             message =
-                "Seu vídeo está na fila.";
+                "Seu vídeo está na fila de processamento.";
 
         }
 
@@ -1491,7 +1597,6 @@ async function pollStatus() {
             message =
                 data.stage ||
                 "Processando vídeo...";
-
         }
 
 
@@ -1504,7 +1609,7 @@ async function pollStatus() {
 
         /* =================================================
            CONCLUÍDO
-        ================================================= */
+        ================================================== */
 
         if (
             data.status === "done"
@@ -1525,15 +1630,20 @@ async function pollStatus() {
             ) {
 
                 throw new Error(
-                    "O servidor concluiu o processamento, mas não retornou o vídeo final."
+                    "O servidor terminou o processamento, mas não informou o arquivo final."
                 );
-
             }
 
 
             const downloadURL =
                 BACKEND_URL +
                 data.downloadUrl;
+
+
+            console.log(
+                "VÍDEO FINAL:",
+                downloadURL
+            );
 
 
             resultVideo.src =
@@ -1571,13 +1681,12 @@ async function pollStatus() {
 
 
             return;
-
         }
 
 
         /* =================================================
            ERRO
-        ================================================= */
+        ================================================== */
 
         if (
             data.status === "error"
@@ -1587,7 +1696,8 @@ async function pollStatus() {
 
 
             showError(
-                "❌ Erro no processamento.<br><br>" +
+                "❌ Erro no processamento." +
+                "<br><br>" +
                 escapeHTML(
                     data.error ||
                     "O servidor não conseguiu processar o vídeo."
@@ -1604,9 +1714,12 @@ async function pollStatus() {
 
 
             return;
-
         }
 
+
+        /* =================================================
+           CONTINUAR CONSULTANDO
+        ================================================= */
 
         pollingTimer =
             setTimeout(
@@ -1627,7 +1740,8 @@ async function pollStatus() {
 
 
         showError(
-            "❌ Erro ao consultar o processamento.<br><br>" +
+            "❌ Erro ao consultar o processamento." +
+            "<br><br>" +
             escapeHTML(
                 error.message ||
                 String(error)
@@ -1638,6 +1752,10 @@ async function pollStatus() {
         dubButton.disabled =
             false;
 
+
+        dubButton.textContent =
+            "🚀 Tentar novamente";
+
     }
 
 }
@@ -1645,7 +1763,7 @@ async function pollStatus() {
 
 /* =====================================================
    PROGRESSO
-===================================================== */
+====================================================== */
 
 function setProgress(
     percent,
@@ -1661,8 +1779,8 @@ function setProgress(
         Number.isNaN(value)
     ) {
 
-        value = 0;
-
+        value =
+            0;
     }
 
 
@@ -1681,7 +1799,8 @@ function setProgress(
 
 
     progressText.textContent =
-        Math.round(value) + "%";
+        Math.round(value) +
+        "%";
 
 
     stageText.textContent =
@@ -1698,11 +1817,11 @@ function setProgress(
 
 /* =====================================================
    NOVO VÍDEO
-===================================================== */
+====================================================== */
 
 newButton.addEventListener(
     "click",
-    function() {
+    function () {
 
         clearPolling();
 
@@ -1741,6 +1860,17 @@ newButton.addEventListener(
         resultVideo.load();
 
 
+        if (previewObjectURL) {
+
+            URL.revokeObjectURL(
+                previewObjectURL
+            );
+
+            previewObjectURL =
+                null;
+        }
+
+
         preview.classList.remove(
             "active"
         );
@@ -1759,18 +1889,6 @@ newButton.addEventListener(
         hideError();
 
 
-        dubButton.disabled =
-            false;
-
-
-        dubButton.textContent =
-            "🚀 Traduzir e dublar vídeo";
-
-
-        newButton.style.display =
-            "none";
-
-
         progressBar.style.width =
             "0%";
 
@@ -1787,13 +1905,24 @@ newButton.addEventListener(
             "Preparando...";
 
 
+        dubButton.disabled =
+            false;
+
+
+        dubButton.textContent =
+            "🚀 Traduzir e dublar vídeo";
+
+
+        newButton.style.display =
+            "none";
+
     }
 );
 
 
 /* =====================================================
-   ERRO
-===================================================== */
+   ERROS
+====================================================== */
 
 function showError(message) {
 
@@ -1810,7 +1939,6 @@ function showError(message) {
         behavior: "smooth",
         block: "center"
     });
-
 }
 
 
@@ -1823,13 +1951,12 @@ function hideError() {
 
     errorBox.innerHTML =
         "";
-
 }
 
 
 /* =====================================================
    LIMPAR POLLING
-===================================================== */
+====================================================== */
 
 function clearPolling() {
 
@@ -1842,7 +1969,6 @@ function clearPolling() {
 
         pollingTimer =
             null;
-
     }
 
 }
@@ -1850,7 +1976,7 @@ function clearPolling() {
 
 /* =====================================================
    SEGURANÇA
-===================================================== */
+====================================================== */
 
 function escapeHTML(text) {
 
@@ -1886,7 +2012,7 @@ function escapeHTML(text) {
 
 /* =====================================================
    INICIALIZAÇÃO
-===================================================== */
+====================================================== */
 
 checkBackend();
 
@@ -1896,8 +2022,8 @@ setInterval(
     30000
 );
 
-
 </script>
 
 </body>
+
     </html>
