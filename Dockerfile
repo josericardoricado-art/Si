@@ -1,62 +1,38 @@
 FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
 ENV PIP_NO_CACHE_DIR=1
-ENV WHISPER_MODEL=tiny
 
 WORKDIR /app
 
-# ==========================================
-# SISTEMA
-# ==========================================
-
-RUN apt-get update && apt-get install -y \
+# FFmpeg
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
     ffmpeg \
-    git \
-    build-essential \
+    ca-certificates \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# ==========================================
-# PYTHON
-# ==========================================
+# Atualiza ferramentas do Python
+RUN pip install --upgrade pip setuptools wheel
 
-RUN python -m pip install --upgrade pip setuptools wheel
-
+# Dependências Python
 COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-# ==========================================
-# ARQUIVOS DO PROJETO
-# ==========================================
-
+# Copia o projeto
 COPY . .
 
-# ==========================================
-# INSTALAR IDIOMAS ARGOS
-# ==========================================
+# Cria diretórios necessários
+RUN mkdir -p /app/uploads /app/outputs /app/models
 
-RUN python install_languages.py
+# Instala os idiomas do Argos
+RUN python3 install_languages.py
 
-# ==========================================
-# DIRETÓRIOS
-# ==========================================
-
-RUN mkdir -p /app/uploads \
-    /app/outputs \
-    /app/live_audio
-
-# ==========================================
-# PORTA RENDER
-# ==========================================
-
-ENV PORT=10000
-
+# Porta usada pelo Render
 EXPOSE 10000
 
-# ==========================================
-# SERVIDOR
-# ==========================================
-
-CMD ["node", "server.js"]
+# Servidor
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-10000} --workers 1 --threads 2 --timeout 1200 server:app"]
