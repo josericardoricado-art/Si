@@ -11,12 +11,6 @@ from pathlib import Path
 
 
 # ============================================================
-# SI - TRADUTOR UNIVERSAL
-# PIPELINE DE TRADUÇÃO E DUBLAGEM
-# ============================================================
-
-
-# ============================================================
 # LOG
 # ============================================================
 
@@ -25,13 +19,7 @@ def log_stage(message):
 
 
 def log_progress(value):
-    try:
-        value = int(value)
-    except Exception:
-        value = 0
-
-    value = max(0, min(100, value))
-
+    value = max(0, min(100, int(value)))
     print(f"PROGRESS:{value}", flush=True)
 
 
@@ -40,11 +28,7 @@ def log_info(message):
 
 
 def log_error(message):
-    print(
-        f"[PIPELINE ERROR] {message}",
-        file=sys.stderr,
-        flush=True
-    )
+    print(f"[PIPELINE ERROR] {message}", file=sys.stderr, flush=True)
 
 
 # ============================================================
@@ -76,7 +60,7 @@ LANGUAGES = {
     "he": "hebraico",
     "id": "indonésio",
     "vi": "vietnamita",
-    "th": "tailandês"
+    "th": "tailandês",
 }
 
 
@@ -101,41 +85,22 @@ def get_whisper_model():
             "openai-whisper não está instalado."
         ) from exc
 
-    # No Render Free usamos tiny por padrão.
-    # Se quiser outro modelo, configure:
-    #
-    # WHISPER_MODEL=base
-    #
-    # no Environment do Render.
-
     model_name = os.getenv(
         "WHISPER_MODEL",
-        "tiny"
-    ).strip().lower()
+        "base"
+    ).strip()
 
-    allowed_models = {
-        "tiny",
-        "base",
-        "small",
-        "medium",
-        "large",
-        "turbo"
-    }
-
-    if model_name not in allowed_models:
-        log_info(
-            f"Modelo Whisper inválido: {model_name}. "
-            "Usando tiny."
-        )
-
-        model_name = "tiny"
+    if not model_name:
+        model_name = "base"
 
     log_info(
-        f"Carregando Whisper: {model_name}"
+        f"Carregando modelo Whisper: {model_name}"
     )
 
     try:
 
+        # O Whisper usa stderr para mostrar a barra
+        # de download. Isso NÃO significa que ocorreu erro.
         _whisper_model = whisper.load_model(
             model_name
         )
@@ -148,7 +113,7 @@ def get_whisper_model():
         ) from exc
 
     log_info(
-        f"Whisper {model_name} carregado com sucesso."
+        f"Modelo Whisper '{model_name}' carregado com sucesso."
     )
 
     return _whisper_model
@@ -165,35 +130,67 @@ def get_openai_client():
     )
 
     if not api_key:
-
         raise RuntimeError(
             "OPENAI_API_KEY não configurada no Render."
         )
 
     try:
-
         from openai import OpenAI
-
     except ImportError as exc:
-
         raise RuntimeError(
             "A biblioteca openai não está instalada."
         ) from exc
 
+    return OpenAI(
+        api_key=api_key
+    )
+
+
+# ============================================================
+# EXECUTAR COMANDO
+# ============================================================
+
+def run_command(
+    command,
+    description,
+    error_limit=10000
+):
+
+    log_info(
+        f"Executando: {description}"
+    )
+
     try:
 
-        client = OpenAI(
-            api_key=api_key
+        result = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
         )
 
-    except Exception as exc:
+    except FileNotFoundError as exc:
 
         raise RuntimeError(
-            "Não foi possível inicializar a OpenAI: "
-            + str(exc)
+            f"Programa necessário não encontrado: "
+            f"{command[0]}"
         ) from exc
 
-    return client
+    if result.returncode != 0:
+
+        stderr = (
+            result.stderr
+            or ""
+        )
+
+        if len(stderr) > error_limit:
+            stderr = stderr[-error_limit:]
+
+        raise RuntimeError(
+            f"{description} falhou:\n{stderr}"
+        )
+
+    return result
 
 
 # ============================================================
@@ -217,7 +214,7 @@ def verify_file(
 
         size = path.stat().st_size
 
-    except Exception as exc:
+    except OSError as exc:
 
         raise RuntimeError(
             f"Não foi possível verificar {description}: {exc}"
@@ -249,17 +246,7 @@ def extract_audio(
 
     log_progress(5)
 
-    if not os.path.exists(video_path):
-
-        raise RuntimeError(
-            f"Vídeo não encontrado: {video_path}"
-        )
-
-    # --------------------------------------------------------
-    # Verificar se existe faixa de áudio
-    # --------------------------------------------------------
-
-    probe = subprocess.run(
+    probe = run_command(
         [
             "ffprobe",
             "-v",
@@ -272,19 +259,14 @@ def extract_audio(
             "default=noprint_wrappers=1:nokey=1",
             video_path
         ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
+        "análise do vídeo com FFprobe",
+        error_limit=5000
     )
 
-    if probe.returncode != 0:
-
-        raise RuntimeError(
-            "FFprobe não conseguiu analisar o vídeo:\n"
-            + probe.stderr[-5000:]
-        )
-
-    codec = probe.stdout.strip()
+    codec = (
+        probe.stdout
+        or ""
+    ).strip()
 
     if not codec:
 
@@ -296,11 +278,7 @@ def extract_audio(
         f"Codec de áudio: {codec}"
     )
 
-    # --------------------------------------------------------
-    # Extrair áudio WAV 16 kHz mono
-    # --------------------------------------------------------
-
-    result = subprocess.run(
+    result = run_command(
         [
             "ffmpeg",
             "-y",
@@ -317,26 +295,20 @@ def extract_audio(
             "pcm_s16le",
             audio_path
         ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
+        "extração do áudio com FFmpeg",
+        error_limit=5000
     )
-
-    if result.returncode != 0:
-
-        raise RuntimeError(
-            "FFmpeg não conseguiu extrair o áudio:\n"
-            + result.stderr[-5000:]
-        )
 
     verify_file(
         audio_path,
         "Áudio original"
     )
 
+    log_progress(10)
+
 
 # ============================================================
-# TRANSCRIÇÃO WHISPER
+# TRANSCRIÇÃO
 # ============================================================
 
 def transcribe_audio(
@@ -359,15 +331,13 @@ def transcribe_audio(
 
         result = model.transcribe(
             audio_path,
-            fp16=False,
-            verbose=False
+            fp16=False
         )
 
     except Exception as exc:
 
         raise RuntimeError(
-            "Erro durante a transcrição com Whisper: "
-            + str(exc)
+            f"Erro durante a transcrição com Whisper: {exc}"
         ) from exc
 
     text = (
@@ -378,7 +348,7 @@ def transcribe_audio(
     language = (
         result.get("language")
         or "unknown"
-    ).strip()
+    )
 
     if not text:
 
@@ -400,7 +370,7 @@ def transcribe_audio(
 
 
 # ============================================================
-# TRADUÇÃO OPENAI
+# TRADUÇÃO
 # ============================================================
 
 def translate_text(
@@ -422,9 +392,7 @@ def translate_text(
 
     client = get_openai_client()
 
-    target_name = LANGUAGES[
-        target_lang
-    ]
+    target_name = LANGUAGES[target_lang]
 
     prompt = f"""
 Traduza o texto abaixo para {target_name}.
@@ -435,12 +403,13 @@ Regras:
 - Não coloque aspas.
 - Preserve nomes próprios.
 - Preserve números.
-- Preserve o significado original.
 - Faça uma tradução natural para dublagem.
 - Não acrescente informações.
-- Não remova informações.
+- Mantenha o sentido original.
+- Não escreva observações.
 
 Texto:
+
 {text}
 """.strip()
 
@@ -448,6 +417,9 @@ Texto:
         "TRANSLATION_MODEL",
         "gpt-4o-mini"
     ).strip()
+
+    if not model_name:
+        model_name = "gpt-4o-mini"
 
     log_info(
         f"Modelo de tradução: {model_name}"
@@ -463,16 +435,11 @@ Texto:
     except Exception as exc:
 
         raise RuntimeError(
-            "Erro na tradução pela OpenAI: "
-            + str(exc)
+            f"Erro na tradução OpenAI: {exc}"
         ) from exc
 
     translated = (
-        getattr(
-            response,
-            "output_text",
-            ""
-        )
+        response.output_text
         or ""
     ).strip()
 
@@ -528,92 +495,86 @@ def generate_elevenlabs_voice(
             "Adicione elevenlabs ao requirements.txt."
         ) from exc
 
-    try:
-
-        client = ElevenLabs(
-            api_key=api_key
-        )
-
-    except Exception as exc:
-
-        raise RuntimeError(
-            "Não foi possível iniciar a ElevenLabs: "
-            + str(exc)
-        ) from exc
+    client = ElevenLabs(
+        api_key=api_key
+    )
 
     # ========================================================
     # BUSCAR VOZ
     # ========================================================
 
-    log_info(
-        "Buscando uma voz disponível na conta ElevenLabs..."
-    )
-
-    try:
-
-        voices = client.voices.get_all()
-
-        voice_list = getattr(
-            voices,
-            "voices",
-            []
-        )
-
-    except Exception as exc:
-
-        raise RuntimeError(
-            "Não foi possível consultar as vozes da ElevenLabs: "
-            + str(exc)
-        ) from exc
-
-    if not voice_list:
-
-        raise RuntimeError(
-            "Nenhuma voz disponível foi encontrada "
-            "na conta ElevenLabs."
-        )
-
-    # ========================================================
-    # VOZ DEFINIDA PELO USUÁRIO
-    # ========================================================
-
-    configured_voice_id = os.getenv(
-        "ELEVENLABS_VOICE_ID"
-    )
+    voice_id_env = os.getenv(
+        "ELEVENLABS_VOICE_ID",
+        ""
+    ).strip()
 
     selected_voice = None
 
-    if configured_voice_id:
+    if voice_id_env:
 
         log_info(
-            "Procurando a voz definida em ELEVENLABS_VOICE_ID."
+            "Usando ELEVENLABS_VOICE_ID configurado."
         )
 
-        for voice in voice_list:
+        try:
 
-            voice_id = getattr(
-                voice,
-                "voice_id",
-                None
+            voices = client.voices.get_all()
+
+            voice_list = getattr(
+                voices,
+                "voices",
+                []
             )
 
-            if voice_id == configured_voice_id:
+            for voice in voice_list:
 
-                selected_voice = voice
-                break
+                current_id = getattr(
+                    voice,
+                    "voice_id",
+                    ""
+                )
 
-        if selected_voice is None:
+                if current_id == voice_id_env:
+
+                    selected_voice = voice
+                    break
+
+        except Exception as exc:
 
             log_info(
-                "A voz configurada não foi encontrada. "
-                "Será escolhida uma voz disponível."
+                "Não foi possível consultar a voz configurada. "
+                f"Será feita uma nova tentativa: {exc}"
             )
 
-    # ========================================================
-    # VOZ PREFERIDA
-    # ========================================================
-
     if selected_voice is None:
+
+        log_info(
+            "Buscando uma voz disponível na conta..."
+        )
+
+        try:
+
+            voices = client.voices.get_all()
+
+            voice_list = getattr(
+                voices,
+                "voices",
+                []
+            )
+
+        except Exception as exc:
+
+            raise RuntimeError(
+                "Não foi possível consultar as vozes "
+                f"da ElevenLabs: {exc}"
+            ) from exc
+
+        if not voice_list:
+
+            raise RuntimeError(
+                "Nenhuma voz disponível foi encontrada "
+                "na conta ElevenLabs."
+            )
 
         preferred_names = [
             "Rachel",
@@ -647,13 +608,9 @@ def generate_elevenlabs_voice(
             if selected_voice:
                 break
 
-    # ========================================================
-    # PRIMEIRA VOZ DISPONÍVEL
-    # ========================================================
+        if selected_voice is None:
 
-    if selected_voice is None:
-
-        selected_voice = voice_list[0]
+            selected_voice = voice_list[0]
 
     voice_id = getattr(
         selected_voice,
@@ -677,18 +634,14 @@ def generate_elevenlabs_voice(
         f"Voz selecionada: {voice_name}"
     )
 
-    log_info(
-        f"Voice ID: {voice_id}"
-    )
-
-    # ========================================================
-    # MODELO
-    # ========================================================
-
     model_id = os.getenv(
         "ELEVENLABS_MODEL",
         "eleven_multilingual_v2"
     ).strip()
+
+    if not model_id:
+
+        model_id = "eleven_multilingual_v2"
 
     log_info(
         f"Modelo ElevenLabs: {model_id}"
@@ -736,8 +689,7 @@ def generate_elevenlabs_voice(
     except Exception as exc:
 
         raise RuntimeError(
-            "Erro salvando áudio da ElevenLabs: "
-            + str(exc)
+            f"Erro salvando áudio da ElevenLabs: {exc}"
         ) from exc
 
     verify_file(
@@ -765,7 +717,7 @@ def normalize_audio(
         "Preparando áudio da dublagem"
     )
 
-    result = subprocess.run(
+    result = run_command(
         [
             "ffmpeg",
             "-y",
@@ -782,17 +734,9 @@ def normalize_audio(
             "192k",
             output_audio
         ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
+        "normalização do áudio com FFmpeg",
+        error_limit=5000
     )
-
-    if result.returncode != 0:
-
-        raise RuntimeError(
-            "Não foi possível preparar o áudio:\n"
-            + result.stderr[-5000:]
-        )
 
     verify_file(
         output_audio,
@@ -839,7 +783,7 @@ def create_dubbed_video(
             os.remove(
                 temp_output
             )
-        except Exception:
+        except OSError:
             pass
 
     command = [
@@ -875,23 +819,28 @@ def create_dubbed_video(
         temp_output
     ]
 
-    log_info(
-        "Executando FFmpeg para criar o MP4 final..."
-    )
+    try:
 
-    result = subprocess.run(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
-    )
-
-    if result.returncode != 0:
-
-        raise RuntimeError(
-            "FFmpeg não conseguiu criar o MP4:\n"
-            + result.stderr[-10000:]
+        run_command(
+            command,
+            "criação do vídeo final com FFmpeg",
+            error_limit=10000
         )
+
+    except Exception:
+
+        if os.path.exists(
+            temp_output
+        ):
+
+            try:
+                os.remove(
+                    temp_output
+                )
+            except OSError:
+                pass
+
+        raise
 
     verify_file(
         temp_output,
@@ -908,8 +857,7 @@ def create_dubbed_video(
     except Exception as exc:
 
         raise RuntimeError(
-            "Não foi possível salvar o vídeo final: "
-            + str(exc)
+            f"Não foi possível mover o vídeo final: {exc}"
         ) from exc
 
     verify_file(
@@ -936,20 +884,17 @@ def main():
 
     parser.add_argument(
         "--input",
-        required=True,
-        help="Vídeo de entrada"
+        required=True
     )
 
     parser.add_argument(
         "--output",
-        required=True,
-        help="Vídeo final"
+        required=True
     )
 
     parser.add_argument(
         "--target-lang",
-        default="pt",
-        help="Idioma de destino"
+        default="pt"
     )
 
     args = parser.parse_args()
@@ -966,10 +911,6 @@ def main():
         args.target_lang
         or "pt"
     ).lower().strip()
-
-    # ========================================================
-    # INFORMAÇÕES
-    # ========================================================
 
     log_info(
         "========================================"
@@ -1000,19 +941,11 @@ def main():
     )
 
     log_info(
-        "Whisper: " +
-        os.getenv(
-            "WHISPER_MODEL",
-            "tiny"
-        )
-    )
-
-    log_info(
         "========================================"
     )
 
     # ========================================================
-    # VALIDAR ENTRADA
+    # VERIFICAÇÕES
     # ========================================================
 
     if not os.path.exists(
@@ -1023,20 +956,51 @@ def main():
             f"Vídeo não encontrado: {input_video}"
         )
 
-    verify_file(
-        input_video,
-        "Vídeo de entrada"
-    )
-
     if target_lang not in LANGUAGES:
 
         raise RuntimeError(
             f"Idioma não suportado: {target_lang}"
         )
 
-    # ========================================================
-    # DIRETÓRIO TEMPORÁRIO
-    # ========================================================
+    # Verificar FFmpeg
+
+    try:
+
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-version"
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True
+        )
+
+    except Exception as exc:
+
+        raise RuntimeError(
+            "FFmpeg não está instalado ou não está disponível."
+        ) from exc
+
+    # Verificar FFprobe
+
+    try:
+
+        subprocess.run(
+            [
+                "ffprobe",
+                "-version"
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True
+        )
+
+    except Exception as exc:
+
+        raise RuntimeError(
+            "FFprobe não está instalado ou não está disponível."
+        ) from exc
 
     temp_dir = tempfile.mkdtemp(
         prefix="si_pipeline_"
@@ -1078,6 +1042,10 @@ def main():
             )
         )
 
+        log_info(
+            f"Idioma original detectado: {detected_language}"
+        )
+
         # ====================================================
         # 3. TRADUZIR
         # ====================================================
@@ -1088,7 +1056,7 @@ def main():
         )
 
         # ====================================================
-        # 4. GERAR VOZ
+        # 4. ELEVENLABS
         # ====================================================
 
         generate_elevenlabs_voice(
@@ -1107,7 +1075,7 @@ def main():
         )
 
         # ====================================================
-        # 6. CRIAR VÍDEO FINAL
+        # 6. CRIAR MP4
         # ====================================================
 
         create_dubbed_video(
@@ -1129,9 +1097,7 @@ def main():
             "Concluído"
         )
 
-        log_progress(
-            100
-        )
+        log_progress(100)
 
         log_info(
             "========================================"
@@ -1146,13 +1112,7 @@ def main():
         )
 
         log_info(
-            "Tamanho: " +
-            str(
-                os.path.getsize(
-                    output_video
-                )
-            ) +
-            " bytes"
+            f"Tamanho: {os.path.getsize(output_video)} bytes"
         )
 
         log_info(
@@ -1187,23 +1147,10 @@ def main():
 
     finally:
 
-        # ====================================================
-        # LIMPAR ARQUIVOS TEMPORÁRIOS
-        # ====================================================
-
-        try:
-
-            shutil.rmtree(
-                temp_dir,
-                ignore_errors=True
-            )
-
-        except Exception as exc:
-
-            log_error(
-                "Erro limpando diretório temporário: "
-                + str(exc)
-            )
+        shutil.rmtree(
+            temp_dir,
+            ignore_errors=True
+        )
 
 
 # ============================================================
