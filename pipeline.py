@@ -1,238 +1,227 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
-"""
-SI - TRADUTOR UNIVERSAL
-Pipeline de tradução e dublagem de vídeo
+# ============================================================
+# SI - TRADUTOR UNIVERSAL
+# PIPELINE RENDER FREE
+#
+# Whisper tiny
+# Argos Translate
+# ElevenLabs
+# FFmpeg
+#
+# SEM OPENAI
+# ============================================================
 
-Compatível com Render Free:
-- Python
-- FFmpeg
-- Whisper tiny
-- OpenAI para tradução, quando configurado
-- Argos Translate como fallback de tradução
-- ElevenLabs para geração de voz
-- FFmpeg para substituir o áudio do vídeo
-- Logs de progresso para o server.js
-"""
-
+import argparse
 import os
 import sys
-import json
-import uuid
-import shutil
-import signal
-import argparse
-import tempfile
 import subprocess
+import tempfile
+import shutil
+import traceback
 from pathlib import Path
-
-# ============================================================
-# CONFIGURAÇÃO
-# ============================================================
-
-WHISPER_MODEL = os.getenv("WHISPER_MODEL", "tiny")
-
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
-
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "").strip()
-
-ELEVENLABS_VOICE_ID = os.getenv(
-    "ELEVENLABS_VOICE_ID",
-    ""
-).strip()
-
-# Modelo ElevenLabs
-ELEVENLABS_MODEL = os.getenv(
-    "ELEVENLABS_MODEL",
-    "eleven_multilingual_v2"
-)
-
-# Limite de tamanho de texto enviado para TTS por bloco
-TTS_MAX_CHARS = int(
-    os.getenv("TTS_MAX_CHARS", "2500")
-)
-
-# Idiomas permitidos
-SUPPORTED_LANGUAGES = {
-    "pt": "Português",
-    "en": "Inglês",
-    "es": "Espanhol"
-}
-
-# ============================================================
-# IMPORTS OPCIONAIS
-# ============================================================
-
-whisper = None
-openai_client = None
-argos_translate = None
-requests = None
-
-# ============================================================
-# CONTROLE DE ENCERRAMENTO
-# ============================================================
-
-STOP_REQUESTED = False
-
-
-def handle_signal(signum, frame):
-    global STOP_REQUESTED
-
-    STOP_REQUESTED = True
-
-    print(
-        f"[PIPELINE] Sinal recebido: {signum}",
-        flush=True
-    )
-
-
-signal.signal(signal.SIGTERM, handle_signal)
-signal.signal(signal.SIGINT, handle_signal)
 
 
 # ============================================================
 # LOG
 # ============================================================
 
-def log(message):
+def log_stage(message):
+    print(f"STAGE:{message}", flush=True)
+
+
+def log_progress(value):
+    try:
+        value = int(value)
+    except Exception:
+        value = 0
+
+    value = max(0, min(100, value))
+
+    print(f"PROGRESS:{value}", flush=True)
+
+
+def log_info(message):
+    print(f"[PIPELINE] {message}", flush=True)
+
+
+def log_error(message):
     print(
-        f"[PIPELINE] {message}",
+        f"[PIPELINE ERROR] {message}",
+        file=sys.stderr,
         flush=True
     )
 
 
-def stage(message, progress=None):
-    print(
-        f"STAGE:{message}",
-        flush=True
-    )
+# ============================================================
+# IDIOMAS
+# ============================================================
 
-    if progress is not None:
-        print(
-            f"PROGRESS:{progress}",
-            flush=True
-        )
+LANGUAGES = {
+    "pt": "português",
+    "en": "inglês",
+    "es": "espanhol"
+}
 
 
 # ============================================================
-# EXECUTAR COMANDO
+# WHISPER
 # ============================================================
 
-def run_command(
-    command,
-    description="comando",
-    timeout=None
-):
-    log(f"Executando: {description}")
+_whisper_model = None
 
-    log(
-        "Comando: " +
-        " ".join(str(x) for x in command)
+
+def get_whisper_model():
+
+    global _whisper_model
+
+    if _whisper_model is not None:
+        return _whisper_model
+
+    log_stage(
+        "Carregando Whisper tiny"
     )
 
     try:
-        process = subprocess.run(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=timeout
-        )
+        import whisper
+    except ImportError as exc:
 
-    except subprocess.TimeoutExpired:
         raise RuntimeError(
-            f"Tempo limite excedido: {description}"
+            "openai-whisper não está instalado."
+        ) from exc
+
+    model_name = os.getenv(
+        "WHISPER_MODEL",
+        "tiny"
+    ).strip()
+
+    if not model_name:
+        model_name = "tiny"
+
+    # No Render Free usamos CPU
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+
+    log_info(
+        f"Modelo Whisper: {model_name}"
+    )
+
+    log_info(
+        "Modo CPU ativado."
+    )
+
+    try:
+
+        _whisper_model = whisper.load_model(
+            model_name,
+            device="cpu"
         )
 
-    if process.stdout:
-        for line in process.stdout.splitlines():
-            print(
-                f"[PIPELINE] {line}",
-                flush=True
-            )
+    except Exception as exc:
 
-    if process.stderr:
-        for line in process.stderr.splitlines():
-            print(
-                f"[PIPELINE ERROR] {line}",
-                flush=True
-            )
-
-    if process.returncode != 0:
         raise RuntimeError(
-            f"{description} falhou "
-            f"(código {process.returncode})"
-        )
+            "Não foi possível carregar o Whisper "
+            f"'{model_name}': {exc}"
+        ) from exc
 
-    return process.stdout
+    log_info(
+        "Whisper carregado com sucesso."
+    )
+
+    return _whisper_model
 
 
 # ============================================================
-# VERIFICAR FFmpeg
+# FFmpeg
 # ============================================================
 
 def check_ffmpeg():
 
-    stage(
+    log_stage(
         "Verificando FFmpeg"
     )
 
-    ffmpeg = shutil.which("ffmpeg")
-    ffprobe = shutil.which("ffprobe")
+    ffmpeg_path = shutil.which(
+        "ffmpeg"
+    )
 
-    if not ffmpeg:
+    ffprobe_path = shutil.which(
+        "ffprobe"
+    )
+
+    if not ffmpeg_path:
+
         raise RuntimeError(
-            "FFmpeg não encontrado no sistema."
+            "FFmpeg não foi encontrado no Render."
         )
 
-    if not ffprobe:
+    if not ffprobe_path:
+
         raise RuntimeError(
-            "FFprobe não encontrado no sistema."
+            "FFprobe não foi encontrado no Render."
         )
 
-    log(f"ffmpeg: {ffmpeg}")
-    log(f"ffprobe: {ffprobe}")
+    log_info(
+        f"ffmpeg: {ffmpeg_path}"
+    )
 
-    return ffmpeg, ffprobe
+    log_info(
+        f"ffprobe: {ffprobe_path}"
+    )
 
 
 # ============================================================
 # VERIFICAR ARQUIVO
 # ============================================================
 
-def check_input_file(input_file):
+def verify_file(
+    file_path,
+    description
+):
 
-    if not os.path.exists(input_file):
-        raise FileNotFoundError(
-            f"Vídeo não encontrado: {input_file}"
+    path = Path(
+        file_path
+    )
+
+    if not path.exists():
+
+        raise RuntimeError(
+            f"{description} não foi criado: {file_path}"
         )
 
-    size = os.path.getsize(input_file)
+    size = path.stat().st_size
 
     if size <= 0:
+
         raise RuntimeError(
-            "O vídeo recebido está vazio."
+            f"{description} está vazio."
         )
 
-    log(
-        f"Vídeo de entrada: {size} bytes"
+    log_info(
+        f"{description}: {size} bytes"
     )
 
 
 # ============================================================
-# ANALISAR ÁUDIO
+# EXTRAIR ÁUDIO
 # ============================================================
 
-def check_audio_stream(
-    ffprobe,
-    input_file
+def extract_audio(
+    video_path,
+    audio_path
 ):
 
-    log("Executando: análise do áudio")
+    log_stage(
+        "Extraindo áudio do vídeo"
+    )
 
-    command = [
-        ffprobe,
+    log_progress(5)
+
+    log_info(
+        "Executando: análise do áudio"
+    )
+
+    probe_command = [
+        "ffprobe",
         "-v",
         "error",
         "-select_streams",
@@ -241,51 +230,52 @@ def check_audio_stream(
         "stream=codec_name",
         "-of",
         "default=noprint_wrappers=1:nokey=1",
-        input_file
+        video_path
     ]
 
-    output = run_command(
-        command,
-        "análise do áudio"
+    log_info(
+        "Comando: " +
+        " ".join(probe_command)
     )
 
-    codec = output.strip()
+    probe = subprocess.run(
+        probe_command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
 
-    if not codec:
+    if probe.returncode != 0:
+
         raise RuntimeError(
-            "O vídeo não possui faixa de áudio."
+            "FFprobe não conseguiu analisar o vídeo:\n"
+            + probe.stderr[-5000:]
         )
 
-    log(
+    codec = probe.stdout.strip()
+
+    if not codec:
+
+        raise RuntimeError(
+            "Este vídeo não possui faixa de áudio."
+        )
+
+    log_info(
         f"Codec de áudio: {codec}"
     )
 
-    return codec
-
-
-# ============================================================
-# EXTRAIR ÁUDIO
-# ============================================================
-
-def extract_audio(
-    ffmpeg,
-    input_file,
-    output_wav
-):
-
-    stage(
-        "Extraindo áudio do vídeo",
-        5
+    log_info(
+        "Executando: extração do áudio"
     )
 
     command = [
-        ffmpeg,
+        "ffmpeg",
         "-y",
         "-hide_banner",
         "-loglevel",
         "error",
         "-i",
-        input_file,
+        video_path,
         "-map",
         "0:a:0",
         "-vn",
@@ -295,94 +285,32 @@ def extract_audio(
         "16000",
         "-c:a",
         "pcm_s16le",
-        output_wav
+        audio_path
     ]
 
-    run_command(
+    log_info(
+        "Comando: " +
+        " ".join(command)
+    )
+
+    result = subprocess.run(
         command,
-        "extração do áudio"
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
     )
 
-    if not os.path.exists(output_wav):
-        raise RuntimeError(
-            "O áudio WAV não foi criado."
-        )
-
-    size = os.path.getsize(output_wav)
-
-    if size <= 0:
-        raise RuntimeError(
-            "O áudio extraído está vazio."
-        )
-
-    log(
-        f"Áudio original: {size} bytes"
-    )
-
-
-# ============================================================
-# CARREGAR WHISPER
-# ============================================================
-
-def load_whisper():
-
-    global whisper
-
-    stage(
-        "Transcrevendo áudio",
-        20
-    )
-
-    log(
-        f"Modelo Whisper: {WHISPER_MODEL}"
-    )
-
-    log(
-        "Modo CPU ativado."
-    )
-
-    try:
-        import whisper as whisper_module
-
-        whisper = whisper_module
-
-    except Exception as e:
-        raise RuntimeError(
-            "Não foi possível importar Whisper: "
-            + str(e)
-        )
-
-    try:
-
-        # Diretório temporário/cached do Render
-        cache_dir = os.getenv(
-            "XDG_CACHE_HOME",
-            "/tmp"
-        )
-
-        os.makedirs(
-            cache_dir,
-            exist_ok=True
-        )
-
-        model = whisper.load_model(
-            WHISPER_MODEL,
-            device="cpu",
-            download_root=cache_dir
-        )
-
-        log(
-            "Whisper carregado com sucesso."
-        )
-
-        return model
-
-    except Exception as e:
+    if result.returncode != 0:
 
         raise RuntimeError(
-            "Erro ao carregar Whisper: "
-            + str(e)
+            "FFmpeg não conseguiu extrair o áudio:\n"
+            + result.stderr[-5000:]
         )
+
+    verify_file(
+        audio_path,
+        "Áudio original"
+    )
 
 
 # ============================================================
@@ -390,184 +318,173 @@ def load_whisper():
 # ============================================================
 
 def transcribe_audio(
-    model,
-    audio_file
+    audio_path
 ):
 
-    stage(
-        "Transcrevendo áudio",
-        25
+    log_stage(
+        "Transcrevendo áudio"
     )
 
-    log(
-        "Iniciando transcrição com Whisper..."
+    log_progress(20)
+
+    model = get_whisper_model()
+
+    log_info(
+        "Iniciando transcrição..."
     )
 
     try:
 
         result = model.transcribe(
-            audio_file,
+            audio_path,
             fp16=False,
-            verbose=False,
-            temperature=0,
-            condition_on_previous_text=False
+            verbose=False
         )
 
-    except Exception as e:
+    except Exception as exc:
 
         raise RuntimeError(
-            "Erro na transcrição Whisper: "
-            + str(e)
-        )
+            "Erro durante a transcrição Whisper: "
+            + str(exc)
+        ) from exc
 
     text = (
-        result.get("text", "")
-        .strip()
-    )
+        result.get("text")
+        or ""
+    ).strip()
 
-    language = (
-        result.get("language", "")
-        .strip()
-        .lower()
-    )
-
-    log(
-        f"Idioma detectado: {language}"
-    )
-
-    log(
-        f"Caracteres transcritos: {len(text)}"
-    )
+    detected_language = (
+        result.get("language")
+        or "unknown"
+    ).lower().strip()
 
     if not text:
 
         raise RuntimeError(
-            "Whisper não encontrou fala no vídeo."
+            "O Whisper não encontrou fala no vídeo."
         )
 
-    return result, text, language
+    log_info(
+        f"Idioma detectado: {detected_language}"
+    )
+
+    log_info(
+        f"Texto detectado: {len(text)} caracteres"
+    )
+
+    log_info(
+        f"Transcrição: {text[:500]}"
+    )
+
+    log_progress(40)
+
+    return text, detected_language
 
 
 # ============================================================
-# CARREGAR OPENAI
+# ARGOS
 # ============================================================
 
-def load_openai():
-
-    global openai_client
-
-    if not OPENAI_API_KEY:
-        log(
-            "OpenAI não configurado."
-        )
-        return None
+def get_argos_languages():
 
     try:
 
-        from openai import OpenAI
+        import argostranslate.translate
 
-        openai_client = OpenAI(
-            api_key=OPENAI_API_KEY
+    except ImportError as exc:
+
+        raise RuntimeError(
+            "Argos Translate não está instalado. "
+            "Adicione argostranslate ao requirements.txt."
+        ) from exc
+
+    try:
+
+        installed_languages = (
+            argostranslate.translate.get_installed_languages()
         )
 
-        log(
-            "OpenAI configurado."
-        )
+    except Exception as exc:
 
-        return openai_client
+        raise RuntimeError(
+            "Não foi possível consultar os idiomas "
+            f"instalados no Argos: {exc}"
+        ) from exc
 
-    except Exception as e:
-
-        log(
-            "Não foi possível carregar OpenAI: "
-            + str(e)
-        )
-
-        return None
+    return installed_languages
 
 
 # ============================================================
-# TRADUÇÃO COM OPENAI
+# LISTAR IDIOMAS ARGOS
 # ============================================================
 
-def translate_with_openai(
-    client,
-    text,
-    source_lang,
-    target_lang
+def log_argos_languages():
+
+    try:
+
+        languages = get_argos_languages()
+
+        names = []
+
+        for language in languages:
+
+            code = getattr(
+                language,
+                "code",
+                "?"
+            )
+
+            name = getattr(
+                language,
+                "name",
+                "?"
+            )
+
+            names.append(
+                f"{code} ({name})"
+            )
+
+        log_info(
+            "Idiomas Argos instalados: " +
+            ", ".join(names)
+        )
+
+    except Exception as exc:
+
+        log_error(
+            f"Não foi possível listar Argos: {exc}"
+        )
+
+
+# ============================================================
+# ENCONTRAR IDIOMA ARGOS
+# ============================================================
+
+def find_argos_language(
+    languages,
+    code
 ):
 
-    if not client:
-        return None
+    for language in languages:
 
-    target_name = SUPPORTED_LANGUAGES.get(
-        target_lang,
-        target_lang
-    )
-
-    source_name = SUPPORTED_LANGUAGES.get(
-        source_lang,
-        source_lang
-    )
-
-    prompt = f"""
-Traduza o texto abaixo de {source_name}
-para {target_name}.
-
-Regras:
-- mantenha o significado original;
-- não explique nada;
-- não coloque aspas;
-- não acrescente comentários;
-- preserve nomes próprios;
-- produza somente a tradução.
-
-Texto:
-
-{text}
-"""
-
-    try:
-
-        response = client.chat.completions.create(
-            model=os.getenv(
-                "OPENAI_TRANSLATION_MODEL",
-                "gpt-4o-mini"
-            ),
-            messages=[
-                {
-                    "role": "system",
-                    "content":
-                    "Você é um tradutor profissional."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            temperature=0
+        language_code = getattr(
+            language,
+            "code",
+            ""
         )
 
-        translated = (
-            response.choices[0]
-            .message.content
-            .strip()
-        )
+        if (
+            language_code.lower()
+            == code.lower()
+        ):
 
-        return translated
+            return language
 
-    except Exception as e:
-
-        log(
-            "Erro na tradução OpenAI: "
-            + str(e)
-        )
-
-        return None
+    return None
 
 
 # ============================================================
-# TRADUÇÃO COM ARGOS
+# TRADUÇÃO ARGOS
 # ============================================================
 
 def translate_with_argos(
@@ -576,11 +493,106 @@ def translate_with_argos(
     target_lang
 ):
 
+    log_stage(
+        "Traduzindo com Argos Translate"
+    )
+
+    log_progress(50)
+
+    source_lang = (
+        source_lang
+        or ""
+    ).lower().strip()
+
+    target_lang = (
+        target_lang
+        or ""
+    ).lower().strip()
+
+    # --------------------------------------------------------
+    # Se já estiver no idioma escolhido
+    # --------------------------------------------------------
+
+    if source_lang == target_lang:
+
+        log_info(
+            "O áudio já está no idioma de destino."
+        )
+
+        log_progress(60)
+
+        return text
+
+    if source_lang not in LANGUAGES:
+
+        log_info(
+            "Idioma detectado pelo Whisper "
+            f"'{source_lang}' não está configurado."
+        )
+
+        raise RuntimeError(
+            "O Whisper detectou o idioma "
+            f"'{source_lang}', mas o Argos deste projeto "
+            "está configurado para pt, en e es."
+        )
+
+    if target_lang not in LANGUAGES:
+
+        raise RuntimeError(
+            f"Idioma de destino não suportado: {target_lang}"
+        )
+
+    log_info(
+        f"Tradução: {source_lang} -> {target_lang}"
+    )
+
     try:
 
         import argostranslate.translate
 
-        translated = (
+    except ImportError as exc:
+
+        raise RuntimeError(
+            "Argos Translate não está instalado."
+        ) from exc
+
+    installed_languages = (
+        get_argos_languages()
+    )
+
+    source = find_argos_language(
+        installed_languages,
+        source_lang
+    )
+
+    target = find_argos_language(
+        installed_languages,
+        target_lang
+    )
+
+    if source is None:
+
+        raise RuntimeError(
+            f"Idioma de origem '{source_lang}' "
+            "não está instalado no Argos."
+        )
+
+    if target is None:
+
+        raise RuntimeError(
+            f"Idioma de destino '{target_lang}' "
+            "não está instalado no Argos."
+        )
+
+    log_info(
+        "Procurando pacote de tradução Argos..."
+    )
+
+    translation = None
+
+    try:
+
+        translation = (
             argostranslate.translate.translate(
                 text,
                 source_lang,
@@ -588,380 +600,406 @@ def translate_with_argos(
             )
         )
 
-        if translated:
-            return translated.strip()
+    except Exception as first_error:
 
-    except Exception as e:
-
-        log(
-            "Argos não conseguiu traduzir: "
-            + str(e)
+        log_error(
+            "Tentativa direta do Argos falhou: "
+            + str(first_error)
         )
 
-    return None
+        # ----------------------------------------------------
+        # Tenta encontrar tradução instalada manualmente
+        # ----------------------------------------------------
 
+        try:
 
-# ============================================================
-# TRADUÇÃO
-# ============================================================
-
-def translate_text(
-    text,
-    source_lang,
-    target_lang,
-    client
-):
-
-    stage(
-        "Traduzindo áudio",
-        45
-    )
-
-    if not target_lang:
-        raise RuntimeError(
-            "Idioma de destino não informado."
-        )
-
-    if target_lang not in SUPPORTED_LANGUAGES:
-        raise RuntimeError(
-            f"Idioma não suportado: {target_lang}"
-        )
-
-    # Se já estiver no idioma desejado
-    if source_lang == target_lang:
-
-        log(
-            "Idioma original já é o idioma desejado."
-        )
-
-        return text
-
-    # Primeiro tenta OpenAI
-    if client:
-
-        log(
-            "Tentando tradução com OpenAI..."
-        )
-
-        translated = translate_with_openai(
-            client,
-            text,
-            source_lang,
-            target_lang
-        )
-
-        if translated:
-
-            log(
-                "Tradução realizada com OpenAI."
+            translation = (
+                argostranslate.translate.translate(
+                    text,
+                    source_lang,
+                    target_lang
+                )
             )
 
-            return translated
+        except Exception as second_error:
 
-    # Depois tenta Argos
-    log(
-        "Tentando tradução com Argos Translate..."
-    )
+            raise RuntimeError(
+                "O Argos não conseguiu traduzir "
+                f"{source_lang} -> {target_lang}.\n"
+                "Verifique se o modelo de idioma correspondente "
+                "está instalado no Render.\n"
+                f"Erro: {second_error}"
+            ) from second_error
 
-    translated = translate_with_argos(
-        text,
-        source_lang,
-        target_lang
-    )
+    translation = (
+        translation
+        or ""
+    ).strip()
 
-    if translated:
+    if not translation:
 
-        log(
-            "Tradução realizada com Argos."
+        raise RuntimeError(
+            "O Argos retornou uma tradução vazia."
         )
 
-        return translated
-
-    raise RuntimeError(
-        "Não foi possível traduzir o texto. "
-        "Configure OPENAI_API_KEY ou instale "
-        "o pacote de idioma correspondente "
-        "no Argos Translate."
+    log_info(
+        f"Tradução criada: {len(translation)} caracteres"
     )
 
+    log_info(
+        f"Tradução: {translation[:500]}"
+    )
 
-# ============================================================
-# DIVIDIR TEXTO PARA ELEVENLABS
-# ============================================================
+    log_progress(60)
 
-def split_text(text, max_chars):
-
-    words = text.split()
-
-    chunks = []
-    current = []
-
-    current_length = 0
-
-    for word in words:
-
-        new_length = (
-            current_length +
-            len(word) +
-            1
-        )
-
-        if (
-            current
-            and new_length > max_chars
-        ):
-
-            chunks.append(
-                " ".join(current)
-            )
-
-            current = [word]
-            current_length = len(word)
-
-        else:
-
-            current.append(word)
-            current_length = new_length
-
-    if current:
-        chunks.append(
-            " ".join(current)
-        )
-
-    return chunks
+    return translation
 
 
 # ============================================================
 # ELEVENLABS
 # ============================================================
 
-def generate_elevenlabs_audio(
+def generate_elevenlabs_voice(
     text,
-    output_audio
+    target_lang,
+    output_path
 ):
 
-    stage(
-        "Gerando voz com ElevenLabs",
-        60
+    log_stage(
+        "Gerando voz com ElevenLabs"
     )
 
-    if not ELEVENLABS_API_KEY:
+    log_progress(70)
+
+    api_key = os.getenv(
+        "ELEVENLABS_API_KEY"
+    )
+
+    if not api_key:
 
         raise RuntimeError(
-            "ELEVENLABS_API_KEY não configurada."
-        )
-
-    if not ELEVENLABS_VOICE_ID:
-
-        raise RuntimeError(
-            "ELEVENLABS_VOICE_ID não configurada."
+            "ELEVENLABS_API_KEY não está configurada no Render."
         )
 
     try:
 
-        import requests as requests_module
+        from elevenlabs.client import ElevenLabs
 
-        requests = requests_module
-
-    except Exception as e:
+    except ImportError as exc:
 
         raise RuntimeError(
-            "Biblioteca requests não disponível: "
-            + str(e)
-        )
+            "A biblioteca elevenlabs não está instalada. "
+            "Adicione elevenlabs ao requirements.txt."
+        ) from exc
 
-    chunks = split_text(
-        text,
-        TTS_MAX_CHARS
+    client = ElevenLabs(
+        api_key=api_key
     )
 
-    if not chunks:
+    # ========================================================
+    # VOICE ID
+    # ========================================================
 
-        raise RuntimeError(
-            "Texto vazio para ElevenLabs."
+    configured_voice_id = os.getenv(
+        "ELEVENLABS_VOICE_ID",
+        ""
+    ).strip()
+
+    selected_voice = None
+
+    # --------------------------------------------------------
+    # Se houver VOICE ID configurado, usa ele
+    # --------------------------------------------------------
+
+    if configured_voice_id:
+
+        log_info(
+            "Usando ELEVENLABS_VOICE_ID configurado."
         )
 
-    temporary_files = []
+        voice_id = configured_voice_id
 
-    try:
+        voice_name = "voz configurada"
 
-        for index, chunk in enumerate(chunks):
+    else:
 
-            if STOP_REQUESTED:
+        # ----------------------------------------------------
+        # Procurar voz automaticamente
+        # ----------------------------------------------------
 
-                raise RuntimeError(
-                    "Processamento interrompido."
-                )
-
-            log(
-                f"ElevenLabs: bloco "
-                f"{index + 1}/{len(chunks)}"
-            )
-
-            url = (
-                "https://api.elevenlabs.io/v1/text-to-speech/"
-                + ELEVENLABS_VOICE_ID
-            )
-
-            headers = {
-                "xi-api-key":
-                ELEVENLABS_API_KEY,
-                "Content-Type":
-                "application/json",
-                "Accept":
-                "audio/mpeg"
-            }
-
-            payload = {
-                "text": chunk,
-                "model_id":
-                ELEVENLABS_MODEL,
-                "voice_settings": {
-                    "stability": 0.5,
-                    "similarity_boost": 0.75
-                }
-            }
-
-            response = requests.post(
-                url,
-                headers=headers,
-                json=payload,
-                timeout=180
-            )
-
-            if response.status_code != 200:
-
-                error_text = response.text[:1000]
-
-                raise RuntimeError(
-                    "ElevenLabs retornou "
-                    f"HTTP {response.status_code}: "
-                    f"{error_text}"
-                )
-
-            temp_mp3 = os.path.join(
-                os.path.dirname(output_audio),
-                f"voice_{uuid.uuid4().hex}.mp3"
-            )
-
-            with open(
-                temp_mp3,
-                "wb"
-            ) as file:
-
-                file.write(
-                    response.content
-                )
-
-            temporary_files.append(
-                temp_mp3
-            )
-
-        # Se só houver um bloco
-        if len(temporary_files) == 1:
-
-            shutil.copyfile(
-                temporary_files[0],
-                output_audio
-            )
-
-            return
-
-        # Criar lista para concatenação
-        concat_file = os.path.join(
-            os.path.dirname(output_audio),
-            f"concat_{uuid.uuid4().hex}.txt"
+        log_info(
+            "ELEVENLABS_VOICE_ID não configurado."
         )
 
-        with open(
-            concat_file,
-            "w",
-            encoding="utf-8"
-        ) as file:
-
-            for temp_file in temporary_files:
-
-                safe_path = temp_file.replace(
-                    "'",
-                    "'\\''"
-                )
-
-                file.write(
-                    f"file '{safe_path}'\n"
-                )
-
-        ffmpeg = shutil.which("ffmpeg")
-
-        if not ffmpeg:
-            raise RuntimeError(
-                "FFmpeg não encontrado."
-            )
-
-        run_command(
-            [
-                ffmpeg,
-                "-y",
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-f",
-                "concat",
-                "-safe",
-                "0",
-                "-i",
-                concat_file,
-                "-c",
-                "copy",
-                output_audio
-            ],
-            "união dos áudios ElevenLabs"
+        log_info(
+            "Buscando uma voz disponível..."
         )
 
         try:
-            os.remove(concat_file)
-        except Exception:
-            pass
 
-    finally:
+            voices = client.voices.get_all()
 
-        for temp_file in temporary_files:
+            voice_list = getattr(
+                voices,
+                "voices",
+                []
+            )
 
-            try:
-                os.remove(temp_file)
-            except Exception:
-                pass
+        except Exception as exc:
+
+            raise RuntimeError(
+                "Não foi possível consultar as vozes "
+                f"da ElevenLabs: {exc}"
+            ) from exc
+
+        if not voice_list:
+
+            raise RuntimeError(
+                "Nenhuma voz disponível foi encontrada "
+                "na conta ElevenLabs."
+            )
+
+        preferred_names = [
+            "Rachel",
+            "Bella",
+            "Antoni",
+            "Adam",
+            "Domi",
+            "Josh",
+            "Elli"
+        ]
+
+        for preferred in preferred_names:
+
+            for voice in voice_list:
+
+                name = getattr(
+                    voice,
+                    "name",
+                    ""
+                )
+
+                if (
+                    name
+                    and
+                    name.lower()
+                    == preferred.lower()
+                ):
+
+                    selected_voice = voice
+                    break
+
+            if selected_voice:
+                break
+
+        if selected_voice is None:
+
+            selected_voice = voice_list[0]
+
+        voice_id = getattr(
+            selected_voice,
+            "voice_id",
+            None
+        )
+
+        voice_name = getattr(
+            selected_voice,
+            "name",
+            "voz"
+        )
+
+        if not voice_id:
+
+            raise RuntimeError(
+                "A ElevenLabs retornou uma voz sem voice_id."
+            )
+
+    log_info(
+        f"Voz selecionada: {voice_name}"
+    )
+
+    log_info(
+        f"Voice ID: {voice_id}"
+    )
+
+    model_id = os.getenv(
+        "ELEVENLABS_MODEL",
+        "eleven_multilingual_v2"
+    ).strip()
+
+    if not model_id:
+
+        model_id = "eleven_multilingual_v2"
+
+    log_info(
+        f"Modelo ElevenLabs: {model_id}"
+    )
+
+    # ========================================================
+    # GERAR ÁUDIO
+    # ========================================================
+
+    try:
+
+        audio_stream = (
+            client
+            .text_to_speech
+            .convert(
+                text=text,
+                voice_id=voice_id,
+                model_id=model_id,
+                output_format="mp3_44100_128"
+            )
+        )
+
+    except Exception as exc:
+
+        raise RuntimeError(
+            "Erro ao solicitar voz à ElevenLabs: "
+            + str(exc)
+        ) from exc
+
+    try:
+
+        with open(
+            output_path,
+            "wb"
+        ) as output_file:
+
+            for chunk in audio_stream:
+
+                if chunk:
+
+                    output_file.write(
+                        chunk
+                    )
+
+    except Exception as exc:
+
+        raise RuntimeError(
+            "Erro salvando áudio ElevenLabs: "
+            + str(exc)
+        ) from exc
+
+    verify_file(
+        output_path,
+        "Áudio ElevenLabs"
+    )
+
+    log_info(
+        "Áudio da dublagem criado."
+    )
+
+    log_progress(80)
 
 
 # ============================================================
-# COMBINAR ÁUDIO + VÍDEO
+# NORMALIZAR ÁUDIO
 # ============================================================
 
-def create_final_video(
-    ffmpeg,
-    input_video,
+def normalize_audio(
+    input_audio,
+    output_audio
+):
+
+    log_stage(
+        "Preparando áudio da dublagem"
+    )
+
+    command = [
+        "ffmpeg",
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        input_audio,
+        "-vn",
+        "-ac",
+        "2",
+        "-ar",
+        "48000",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        output_audio
+    ]
+
+    result = subprocess.run(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+
+    if result.returncode != 0:
+
+        raise RuntimeError(
+            "Não foi possível preparar o áudio:\n"
+            + result.stderr[-5000:]
+        )
+
+    verify_file(
+        output_audio,
+        "Áudio normalizado"
+    )
+
+
+# ============================================================
+# CRIAR VÍDEO FINAL
+# ============================================================
+
+def create_dubbed_video(
+    original_video,
     dubbed_audio,
     output_video
 ):
 
-    stage(
-        "Criando vídeo final",
-        80
+    log_stage(
+        "Criando vídeo final"
     )
 
-    os.makedirs(
-        os.path.dirname(output_video),
+    log_progress(88)
+
+    output_path = Path(
+        output_video
+    )
+
+    output_path.parent.mkdir(
+        parents=True,
         exist_ok=True
     )
 
+    temp_output = (
+        str(output_path)
+        + ".tmp.mp4"
+    )
+
+    if os.path.exists(
+        temp_output
+    ):
+
+        os.remove(
+            temp_output
+        )
+
+    # ========================================================
+    # IMPORTANTE
+    #
+    # Mantém o vídeo original sem recodificar.
+    # Troca somente a faixa de áudio.
+    # ========================================================
+
     command = [
-        ffmpeg,
+        "ffmpeg",
         "-y",
         "-hide_banner",
         "-loglevel",
         "error",
 
         "-i",
-        input_video,
+        original_video,
 
         "-i",
         dubbed_audio,
@@ -979,368 +1017,54 @@ def create_final_video(
         "aac",
 
         "-b:a",
-        "128k",
+        "192k",
 
         "-shortest",
 
         "-movflags",
         "+faststart",
 
-        output_video
+        temp_output
     ]
 
-    run_command(
-        command,
-        "criação do vídeo final"
+    log_info(
+        "Criando MP4 final..."
     )
 
-    if not os.path.exists(output_video):
+    result = subprocess.run(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+
+    if result.returncode != 0:
 
         raise RuntimeError(
-            "O vídeo final não foi criado."
+            "FFmpeg não conseguiu criar o MP4:\n"
+            + result.stderr[-10000:]
         )
 
-    size = os.path.getsize(
+    verify_file(
+        temp_output,
+        "Vídeo temporário"
+    )
+
+    os.replace(
+        temp_output,
         output_video
     )
 
-    if size <= 0:
-
-        raise RuntimeError(
-            "O vídeo final está vazio."
-        )
-
-    log(
-        f"Vídeo final criado: {size} bytes"
+    verify_file(
+        output_video,
+        "Vídeo final"
     )
 
+    log_progress(98)
 
-# ============================================================
-# SALVAR TEXTO
-# ============================================================
-
-def save_transcription(
-    directory,
-    original_text,
-    translated_text,
-    source_lang,
-    target_lang
-):
-
-    data = {
-        "source_language": source_lang,
-        "target_language": target_lang,
-        "original_text": original_text,
-        "translated_text": translated_text
-    }
-
-    path = os.path.join(
-        directory,
-        "transcription.json"
+    log_info(
+        "MP4 final criado com sucesso."
     )
-
-    try:
-
-        with open(
-            path,
-            "w",
-            encoding="utf-8"
-        ) as file:
-
-            json.dump(
-                data,
-                file,
-                ensure_ascii=False,
-                indent=2
-            )
-
-    except Exception as e:
-
-        log(
-            "Aviso: não foi possível salvar "
-            f"transcription.json: {e}"
-        )
-
-
-# ============================================================
-# PIPELINE PRINCIPAL
-# ============================================================
-
-def process_video(
-    input_file,
-    output_file,
-    target_lang
-):
-
-    log("========================================")
-    log("SI - TRADUTOR UNIVERSAL")
-    log("PIPELINE OTIMIZADO PARA RENDER")
-    log("========================================")
-
-    log(
-        f"Entrada: {input_file}"
-    )
-
-    log(
-        f"Saída: {output_file}"
-    )
-
-    log(
-        f"Idioma: {target_lang}"
-    )
-
-    log(
-        f"Whisper padrão: {WHISPER_MODEL}"
-    )
-
-    log(
-        "Dublagem: ElevenLabs"
-    )
-
-    if OPENAI_API_KEY:
-        log(
-            "Tradução: OpenAI"
-        )
-    else:
-        log(
-            "Tradução: Argos/OpenAI opcional"
-        )
-
-    log("========================================")
-
-    # --------------------------------------------------------
-    # VERIFICAÇÕES
-    # --------------------------------------------------------
-
-    check_input_file(
-        input_file
-    )
-
-    ffmpeg, ffprobe = check_ffmpeg()
-
-    check_audio_stream(
-        ffprobe,
-        input_file
-    )
-
-    # --------------------------------------------------------
-    # TEMP
-    # --------------------------------------------------------
-
-    temp_dir = tempfile.mkdtemp(
-        prefix="si_pipeline_"
-    )
-
-    log(
-        f"Diretório temporário: {temp_dir}"
-    )
-
-    try:
-
-        # ----------------------------------------------------
-        # ARQUIVOS
-        # ----------------------------------------------------
-
-        original_audio = os.path.join(
-            temp_dir,
-            "original.wav"
-        )
-
-        dubbed_audio = os.path.join(
-            temp_dir,
-            "dubbed.mp3"
-        )
-
-        # ----------------------------------------------------
-        # EXTRAIR ÁUDIO
-        # ----------------------------------------------------
-
-        extract_audio(
-            ffmpeg,
-            input_file,
-            original_audio
-        )
-
-        # ----------------------------------------------------
-        # WHISPER
-        # ----------------------------------------------------
-
-        model = load_whisper()
-
-        result, original_text, source_lang = (
-            transcribe_audio(
-                model,
-                original_audio
-            )
-        )
-
-        # ----------------------------------------------------
-        # NORMALIZAR IDIOMA
-        # ----------------------------------------------------
-
-        if source_lang not in SUPPORTED_LANGUAGES:
-
-            log(
-                f"Idioma detectado '{source_lang}' "
-                "não está na lista principal."
-            )
-
-        # ----------------------------------------------------
-        # OPENAI
-        # ----------------------------------------------------
-
-        client = load_openai()
-
-        # ----------------------------------------------------
-        # TRADUÇÃO
-        # ----------------------------------------------------
-
-        translated_text = translate_text(
-            original_text,
-            source_lang,
-            target_lang,
-            client
-        )
-
-        log(
-            "Texto traduzido com sucesso."
-        )
-
-        save_transcription(
-            temp_dir,
-            original_text,
-            translated_text,
-            source_lang,
-            target_lang
-        )
-
-        # ----------------------------------------------------
-        # ELEVENLABS
-        # ----------------------------------------------------
-
-        generate_elevenlabs_audio(
-            translated_text,
-            dubbed_audio
-        )
-
-        # ----------------------------------------------------
-        # VÍDEO FINAL
-        # ----------------------------------------------------
-
-        create_final_video(
-            ffmpeg,
-            input_file,
-            dubbed_audio,
-            output_file
-        )
-
-        # ----------------------------------------------------
-        # SUCESSO
-        # ----------------------------------------------------
-
-        stage(
-            "Processamento concluído",
-            100
-        )
-
-        log(
-            "========================================"
-        )
-
-        log(
-            "PROCESSAMENTO CONCLUÍDO COM SUCESSO"
-        )
-
-        log(
-            f"Arquivo final: {output_file}"
-        )
-
-        log(
-            "========================================"
-        )
-
-        return True
-
-    except Exception as e:
-
-        log(
-            "========================================"
-        )
-
-        log(
-            "ERRO NO PIPELINE"
-        )
-
-        log(
-            str(e)
-        )
-
-        log(
-            "========================================"
-        )
-
-        raise
-
-    finally:
-
-        # ----------------------------------------------------
-        # LIMPEZA
-        # ----------------------------------------------------
-
-        try:
-
-            shutil.rmtree(
-                temp_dir,
-                ignore_errors=True
-            )
-
-            log(
-                "Arquivos temporários removidos."
-            )
-
-        except Exception as e:
-
-            log(
-                "Aviso ao limpar temporários: "
-                + str(e)
-            )
-
-
-# ============================================================
-# ARGUMENTOS
-# ============================================================
-
-def parse_arguments():
-
-    parser = argparse.ArgumentParser(
-        description=
-        "SI - Tradutor Universal"
-    )
-
-    parser.add_argument(
-        "--input",
-        required=True,
-        help="Vídeo de entrada"
-    )
-
-    parser.add_argument(
-        "--output",
-        required=True,
-        help="Vídeo de saída"
-    )
-
-    parser.add_argument(
-        "--target-lang",
-        required=True,
-        choices=[
-            "pt",
-            "en",
-            "es"
-        ],
-        help="Idioma da dublagem"
-    )
-
-    return parser.parse_args()
 
 
 # ============================================================
@@ -1349,44 +1073,296 @@ def parse_arguments():
 
 def main():
 
-    args = parse_arguments()
+    parser = argparse.ArgumentParser(
+        description=
+        "SI Tradutor Universal - Whisper + Argos + ElevenLabs"
+    )
+
+    parser.add_argument(
+        "--input",
+        required=True
+    )
+
+    parser.add_argument(
+        "--output",
+        required=True
+    )
+
+    parser.add_argument(
+        "--target-lang",
+        default="pt"
+    )
+
+    args = parser.parse_args()
+
+    input_video = os.path.abspath(
+        args.input
+    )
+
+    output_video = os.path.abspath(
+        args.output
+    )
+
+    target_lang = (
+        args.target_lang
+        or "pt"
+    ).lower().strip()
+
+    # ========================================================
+    # CABEÇALHO
+    # ========================================================
+
+    log_info(
+        "========================================"
+    )
+
+    log_info(
+        "SI - TRADUTOR UNIVERSAL"
+    )
+
+    log_info(
+        "PIPELINE RENDER FREE"
+    )
+
+    log_info(
+        "========================================"
+    )
+
+    log_info(
+        f"Entrada: {input_video}"
+    )
+
+    log_info(
+        f"Saída: {output_video}"
+    )
+
+    log_info(
+        f"Idioma: {target_lang}"
+    )
+
+    log_info(
+        "Whisper: tiny"
+    )
+
+    log_info(
+        "Tradução: Argos Translate"
+    )
+
+    log_info(
+        "Dublagem: ElevenLabs"
+    )
+
+    log_info(
+        "OpenAI: DESATIVADA"
+    )
+
+    log_info(
+        "========================================"
+    )
+
+    # ========================================================
+    # VERIFICAÇÕES
+    # ========================================================
+
+    check_ffmpeg()
+
+    if not os.path.exists(
+        input_video
+    ):
+
+        raise RuntimeError(
+            f"Vídeo não encontrado: {input_video}"
+        )
+
+    verify_file(
+        input_video,
+        "Vídeo de entrada"
+    )
+
+    if target_lang not in LANGUAGES:
+
+        raise RuntimeError(
+            f"Idioma não suportado: {target_lang}. "
+            "Use pt, en ou es."
+        )
+
+    # ========================================================
+    # DIRETÓRIO TEMPORÁRIO
+    # ========================================================
+
+    temp_dir = tempfile.mkdtemp(
+        prefix="si_pipeline_"
+    )
+
+    log_info(
+        f"Diretório temporário: {temp_dir}"
+    )
+
+    original_audio = os.path.join(
+        temp_dir,
+        "original.wav"
+    )
+
+    eleven_audio = os.path.join(
+        temp_dir,
+        "eleven.mp3"
+    )
+
+    normalized_audio = os.path.join(
+        temp_dir,
+        "dub.m4a"
+    )
 
     try:
 
-        process_video(
-            input_file=args.input,
-            output_file=args.output,
-            target_lang=args.target_lang
+        # ====================================================
+        # 1. EXTRAIR ÁUDIO
+        # ====================================================
+
+        extract_audio(
+            input_video,
+            original_audio
         )
 
-        print(
-            "PIPELINE_SUCCESS",
-            flush=True
+        # ====================================================
+        # 2. TRANSCRIÇÃO
+        # ====================================================
+
+        original_text, detected_language = (
+            transcribe_audio(
+                original_audio
+            )
         )
 
-        sys.exit(0)
+        # ====================================================
+        # 3. TRADUÇÃO ARGOS
+        # ====================================================
 
-    except KeyboardInterrupt:
-
-        log(
-            "Processamento interrompido pelo usuário."
+        translated_text = translate_with_argos(
+            original_text,
+            detected_language,
+            target_lang
         )
 
-        sys.exit(130)
+        # ====================================================
+        # 4. ELEVENLABS
+        # ====================================================
 
-    except Exception as e:
-
-        log(
-            f"PIPELINE_FAILED: {e}"
+        generate_elevenlabs_voice(
+            translated_text,
+            target_lang,
+            eleven_audio
         )
 
-        print(
-            "PIPELINE_FAILED",
-            flush=True
+        # ====================================================
+        # 5. NORMALIZAR ÁUDIO
+        # ====================================================
+
+        normalize_audio(
+            eleven_audio,
+            normalized_audio
+        )
+
+        # ====================================================
+        # 6. CRIAR VÍDEO
+        # ====================================================
+
+        create_dubbed_video(
+            input_video,
+            normalized_audio,
+            output_video
+        )
+
+        # ====================================================
+        # VERIFICAÇÃO FINAL
+        # ====================================================
+
+        verify_file(
+            output_video,
+            "Arquivo final"
+        )
+
+        log_stage(
+            "Concluído"
+        )
+
+        log_progress(100)
+
+        log_info(
+            "========================================"
+        )
+
+        log_info(
+            "PROCESSAMENTO CONCLUÍDO"
+        )
+
+        log_info(
+            f"Arquivo: {output_video}"
+        )
+
+        log_info(
+            "Tamanho: "
+            f"{os.path.getsize(output_video)} bytes"
+        )
+
+        log_info(
+            "========================================"
+        )
+
+        return 0
+
+    except Exception as exc:
+
+        log_error(
+            "========================================"
+        )
+
+        log_error(
+            "PROCESSAMENTO FALHOU"
+        )
+
+        log_error(
+            str(exc)
+        )
+
+        traceback.print_exc(
+            file=sys.stderr
+        )
+
+        log_error(
+            "========================================"
+        )
+
+        return 1
+
+    finally:
+
+        shutil.rmtree(
+            temp_dir,
+            ignore_errors=True
+        )
+
+
+# ============================================================
+# EXECUÇÃO
+# ============================================================
+
+if __name__ == "__main__":
+
+    try:
+
+        sys.exit(
+            main()
+        )
+
+    except Exception as exc:
+
+        log_error(
+            str(exc)
+        )
+
+        traceback.print_exc(
+            file=sys.stderr
         )
 
         sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()
