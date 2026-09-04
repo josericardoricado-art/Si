@@ -1,38 +1,37 @@
 FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
 ENV PIP_NO_CACHE_DIR=1
+ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
-# FFmpeg
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
+# Dependências do sistema
+RUN apt-get update && apt-get install -y \
     ffmpeg \
-    ca-certificates \
+    build-essential \
+    git \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Atualiza ferramentas do Python
-RUN pip install --upgrade pip setuptools wheel
+# Versões compatíveis do pip/setuptools
+RUN python -m pip install --upgrade pip==24.3.1
+RUN python -m pip install setuptools==80.9.0 wheel
 
-# Dependências Python
+# Instala primeiro o Whisper sem isolamento de build
+RUN pip install --no-build-isolation openai-whisper==20240930
+
+# Instala o restante
 COPY requirements.txt .
 
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install -r requirements.txt
 
 # Copia o projeto
 COPY . .
 
-# Cria diretórios necessários
-RUN mkdir -p /app/uploads /app/outputs /app/models
+# Porta do Render
+ENV PORT=10000
 
-# Instala os idiomas do Argos
-RUN python3 install_languages.py
-
-# Porta usada pelo Render
 EXPOSE 10000
 
-# Servidor
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-10000} --workers 1 --threads 2 --timeout 1200 server:app"]
+CMD ["python", "server.py"]
