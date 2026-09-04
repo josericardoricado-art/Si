@@ -1,2029 +1,2478 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-
 <head>
+  <meta charset="UTF-8">
 
-<meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0">
 
-<meta name="viewport"
-      content="width=device-width, initial-scale=1.0">
+  <title>LinguaLive — Tradutor e Dublagem com IA</title>
 
-<meta name="theme-color"
-      content="#070b14">
+  <meta name="description"
+        content="LinguaLive traduz e dubla vídeos e áudios com inteligência artificial em vários idiomas.">
 
-<!-- =====================================================
-     SEO
-====================================================== -->
+  <meta name="keywords"
+        content="tradutor IA, tradução de vídeo, dublagem IA, tradutor em tempo real, inteligência artificial">
 
-<title>SI IA — Tradutor e Dublagem de Vídeos com Inteligência Artificial</title>
+  <meta name="author" content="LinguaLive">
 
-<meta name="description"
-      content="SI IA é uma ferramenta de tradução e dublagem automática de vídeos com inteligência artificial. Traduza vídeos para português, inglês e espanhol e gere uma nova voz dublada.">
+  <meta property="og:title"
+        content="LinguaLive — Tradutor com IA">
 
-<meta name="keywords"
-      content="tradutor de vídeos, tradução de vídeos, dublagem automática, dublagem IA, tradutor IA, traduzir vídeo, dublar vídeo, inteligência artificial, tradução automática, SI IA">
+  <meta property="og:description"
+        content="Traduza e duble seus vídeos com inteligência artificial.">
 
-<meta name="robots"
-      content="index, follow">
+  <meta property="og:type" content="website">
 
-<meta name="googlebot"
-      content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+  <style>
 
-<meta name="author"
-      content="SI IA">
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
 
-<meta name="language"
-      content="Portuguese">
+    html {
+      scroll-behavior: smooth;
+    }
 
-<meta name="revisit-after"
-      content="7 days">
-
-<!-- =====================================================
-     OPEN GRAPH
-====================================================== -->
-
-<meta property="og:type"
-      content="website">
-
-<meta property="og:title"
-      content="SI IA — Tradutor e Dublagem de Vídeos">
-
-<meta property="og:description"
-      content="Traduza e duble seus vídeos usando inteligência artificial.">
-
-<meta property="og:locale"
-      content="pt_BR">
-
-<!-- =====================================================
-     TWITTER
-====================================================== -->
-
-<meta name="twitter:card"
-      content="summary">
-
-<meta name="twitter:title"
-      content="SI IA — Tradutor e Dublagem de Vídeos">
-
-<meta name="twitter:description"
-      content="Traduza e duble vídeos automaticamente com inteligência artificial.">
-
-<!-- =====================================================
-     CSS
-====================================================== -->
-
-<style>
-
-* {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-}
-
-body {
-
-    font-family:
-        Arial,
-        Helvetica,
+    body {
+      font-family:
+        Inter,
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
         sans-serif;
 
-    background:
+      background:
         radial-gradient(
-            circle at top,
-            #172554 0%,
-            #080b14 45%,
-            #03050a 100%
-        );
-
-    color: #fff;
-
-    min-height: 100vh;
-}
-
-.container {
-
-    width: 100%;
-
-    max-width: 1050px;
-
-    margin: auto;
-
-    padding: 20px;
-}
-
-header {
-
-    padding: 25px 0;
-
-    text-align: center;
-}
-
-.logo {
-
-    font-size: 38px;
-
-    font-weight: 900;
-
-    letter-spacing: 3px;
-}
-
-.logo span {
-
-    color: #4ade80;
-}
-
-.subtitle {
-
-    margin-top: 8px;
-
-    color: #aab4c8;
-
-    font-size: 15px;
-
-    line-height: 1.5;
-}
-
-.card {
-
-    background:
-        rgba(15, 23, 42, 0.88);
-
-    border:
-        1px solid rgba(255,255,255,.09);
-
-    border-radius: 24px;
-
-    padding: 22px;
-
-    margin-top: 20px;
-
-    box-shadow:
-        0 20px 60px rgba(0,0,0,.35);
-
-    backdrop-filter: blur(12px);
-}
-
-h1 {
-
-    font-size: 25px;
-
-    margin-bottom: 8px;
-}
-
-.description {
-
-    color: #9ca3af;
-
-    line-height: 1.5;
-
-    margin-bottom: 20px;
-}
-
-.upload-area {
-
-    border:
-        2px dashed #334155;
-
-    border-radius: 20px;
-
-    padding: 30px 20px;
-
-    text-align: center;
-
-    cursor: pointer;
-
-    transition: .25s;
-
-    background:
-        rgba(2,6,23,.45);
-
-    display: block;
-}
-
-.upload-area:hover {
-
-    border-color: #4ade80;
-
-    background:
-        rgba(34,197,94,.05);
-}
-
-.upload-icon {
-
-    font-size: 45px;
-
-    margin-bottom: 12px;
-}
-
-.upload-title {
-
-    font-size: 18px;
-
-    font-weight: bold;
-}
-
-.upload-text {
-
-    color: #94a3b8;
-
-    margin-top: 7px;
-
-    font-size: 14px;
-
-    line-height: 1.5;
-}
-
-#videoInput {
-
-    display: none;
-}
-
-.preview {
-
-    display: none;
-
-    margin-top: 20px;
-}
-
-.preview.active {
-
-    display: block;
-}
-
-.video-box {
-
-    background: #000;
-
-    border-radius: 18px;
-
-    overflow: hidden;
-
-    border:
-        1px solid #263244;
-}
-
-video {
-
-    width: 100%;
-
-    max-height: 500px;
-
-    display: block;
-
-    background: #000;
-}
-
-.file-info {
-
-    padding: 13px;
-
-    background: #111827;
-
-    color: #cbd5e1;
-
-    font-size: 13px;
-
-    word-break: break-word;
-}
-
-.controls {
-
-    margin-top: 20px;
-}
-
-label {
-
-    display: block;
-
-    color: #cbd5e1;
-
-    margin-bottom: 8px;
-
-    font-size: 14px;
-
-    font-weight: bold;
-}
-
-select {
-
-    width: 100%;
-
-    padding: 15px;
-
-    border-radius: 12px;
-
-    background: #0f172a;
-
-    border:
-        1px solid #334155;
-
-    color: #fff;
-
-    font-size: 16px;
-}
-
-button {
-
-    width: 100%;
-
-    border: 0;
-
-    border-radius: 14px;
-
-    padding: 17px;
-
-    margin-top: 15px;
-
-    font-size: 16px;
-
-    font-weight: 800;
-
-    cursor: pointer;
-
-    transition: .2s;
-}
-
-.primary {
-
-    background:
-        linear-gradient(
-            135deg,
-            #22c55e,
-            #16a34a
-        );
-
-    color: white;
-
-    box-shadow:
-        0 10px 30px rgba(34,197,94,.2);
-}
-
-.primary:hover {
-
-    transform:
-        translateY(-1px);
-}
-
-.primary:disabled {
-
-    opacity: .5;
-
-    cursor: not-allowed;
-
-    transform: none;
-}
-
-.secondary {
-
-    background: #1e293b;
-
-    color: #fff;
-}
-
-.status-card {
-
-    display: none;
-
-    margin-top: 20px;
-
-    padding: 20px;
-
-    border-radius: 18px;
-
-    background: #0b1220;
-
-    border:
-        1px solid #263244;
-}
-
-.status-card.active {
-
-    display: block;
-}
-
-.status-title {
-
-    font-weight: 800;
-
-    margin-bottom: 10px;
-}
-
-.status-message {
-
-    color: #94a3b8;
-
-    font-size: 14px;
-
-    margin-bottom: 15px;
-
-    line-height: 1.5;
-}
-
-.progress-wrap {
-
-    width: 100%;
-
-    height: 12px;
-
-    background: #1e293b;
-
-    border-radius: 20px;
-
-    overflow: hidden;
-}
-
-.progress-bar {
-
-    width: 0%;
-
-    height: 100%;
-
-    background:
-        linear-gradient(
-            90deg,
-            #22c55e,
-            #4ade80
-        );
-
-    transition:
-        width .4s ease;
-}
-
-.progress-info {
-
-    display: flex;
-
-    justify-content: space-between;
-
-    margin-top: 8px;
-
-    font-size: 13px;
-
-    color: #94a3b8;
-}
-
-.result {
-
-    display: none;
-
-    margin-top: 20px;
-}
-
-.result.active {
-
-    display: block;
-}
-
-.result h2 {
-
-    font-size: 20px;
-
-    margin-bottom: 12px;
-}
-
-.download {
-
-    display: block;
-
-    text-align: center;
-
-    text-decoration: none;
-
-    background: #22c55e;
-
-    color: white;
-
-    padding: 16px;
-
-    border-radius: 13px;
-
-    font-weight: 800;
-
-    margin-top: 15px;
-}
-
-.error {
-
-    display: none;
-
-    margin-top: 20px;
-
-    padding: 16px;
-
-    border-radius: 14px;
-
-    background:
-        rgba(127,29,29,.35);
-
-    border:
-        1px solid #7f1d1d;
-
-    color: #fecaca;
-
-    line-height: 1.5;
-
-    word-break: break-word;
-}
-
-.error.active {
-
-    display: block;
-}
-
-.connection {
-
-    text-align: center;
-
-    margin-top: 15px;
-
-    font-size: 13px;
-
-    color: #94a3b8;
-}
-
-.dot {
-
-    display: inline-block;
-
-    width: 8px;
-
-    height: 8px;
-
-    background: #22c55e;
-
-    border-radius: 50%;
-
-    margin-right: 5px;
-}
-
-.features {
-
-    display: grid;
-
-    grid-template-columns:
-        repeat(3,1fr);
-
-    gap: 12px;
-
-    margin-top: 20px;
-}
-
-.feature {
-
-    padding: 18px;
-
-    border-radius: 15px;
-
-    background:
-        rgba(30,41,59,.65);
-
-    border:
-        1px solid rgba(255,255,255,.06);
-}
-
-.feature-icon {
-
-    font-size: 25px;
-
-    margin-bottom: 8px;
-}
-
-.feature-title {
-
-    font-weight: bold;
-
-    font-size: 14px;
-}
-
-.feature-text {
-
-    color: #94a3b8;
-
-    font-size: 12px;
-
-    margin-top: 5px;
-
-    line-height: 1.4;
-}
-
-footer {
-
-    text-align: center;
-
-    color: #64748b;
-
-    font-size: 12px;
-
-    padding: 30px 0;
-
-    line-height: 1.5;
-}
-
-@media(max-width:700px) {
-
-    .container {
-
-        padding: 12px;
+          circle at 50% 0%,
+          rgba(126, 52, 255, .20),
+          transparent 35%
+        ),
+        #07050d;
+
+      color: #ffffff;
+      overflow-x: hidden;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    /* =========================
+       FUNDO
+    ========================= */
+
+    .background-glow {
+      position: fixed;
+      width: 500px;
+      height: 500px;
+      border-radius: 50%;
+      background: #741cff;
+      filter: blur(180px);
+      opacity: .12;
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    .glow-1 {
+      top: -250px;
+      left: -150px;
+    }
+
+    .glow-2 {
+      right: -250px;
+      top: 500px;
+      background: #b517ff;
+    }
+
+    /* =========================
+       HEADER
+    ========================= */
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+
+      background: rgba(7, 5, 13, .78);
+      backdrop-filter: blur(20px);
+
+      border-bottom: 1px solid rgba(255,255,255,.07);
+    }
+
+    .nav {
+      max-width: 1200px;
+      margin: auto;
+
+      height: 74px;
+
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+
+      padding: 0 22px;
     }
 
     .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
 
-        font-size: 30px;
+      font-size: 21px;
+      font-weight: 800;
+      letter-spacing: -.5px;
     }
 
-    .card {
+    .logo-icon {
+      width: 38px;
+      height: 38px;
 
-        padding: 16px;
+      border-radius: 12px;
 
-        border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      background:
+        linear-gradient(
+          135deg,
+          #9d4dff,
+          #5c13e8
+        );
+
+      box-shadow:
+        0 0 30px rgba(139, 50, 255, .35);
     }
+
+    .logo-icon span {
+      font-size: 20px;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 30px;
+
+      color: #aaa4b7;
+      font-size: 14px;
+    }
+
+    .nav-links a {
+      transition: .2s;
+    }
+
+    .nav-links a:hover {
+      color: white;
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn-login {
+      padding: 10px 17px;
+      border-radius: 10px;
+      color: #c8c2d0;
+      font-size: 14px;
+    }
+
+    .btn-login:hover {
+      color: white;
+    }
+
+    .btn-small {
+      padding: 11px 18px;
+
+      border: 0;
+      border-radius: 11px;
+
+      color: white;
+      font-weight: 700;
+      font-size: 14px;
+
+      cursor: pointer;
+
+      background:
+        linear-gradient(
+          135deg,
+          #9747ff,
+          #6818dc
+        );
+
+      box-shadow:
+        0 8px 25px rgba(111, 30, 220, .25);
+    }
+
+    .mobile-menu {
+      display: none;
+
+      border: 0;
+      background: transparent;
+      color: white;
+
+      font-size: 26px;
+      cursor: pointer;
+    }
+
+    /* =========================
+       HERO
+    ========================= */
+
+    .hero {
+      max-width: 1150px;
+      margin: auto;
+
+      min-height: 700px;
+
+      padding:
+        90px 22px
+        70px;
+
+      text-align: center;
+
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+
+      padding: 8px 14px;
+
+      border: 1px solid rgba(160,90,255,.30);
+      border-radius: 50px;
+
+      background: rgba(122, 40, 255, .08);
+
+      color: #cba8ff;
+
+      font-size: 13px;
+      margin-bottom: 25px;
+    }
+
+    .badge-dot {
+      width: 7px;
+      height: 7px;
+
+      background: #a45cff;
+      border-radius: 50%;
+
+      box-shadow: 0 0 12px #a45cff;
+    }
+
+    .hero h1 {
+      max-width: 850px;
+
+      font-size:
+        clamp(43px, 7vw, 78px);
+
+      line-height: .98;
+      letter-spacing: -4px;
+
+      margin-bottom: 25px;
+
+      background:
+        linear-gradient(
+          180deg,
+          #ffffff 15%,
+          #bda8d7 100%
+        );
+
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .hero h1 .purple {
+      background:
+        linear-gradient(
+          90deg,
+          #b36cff,
+          #7a2bff
+        );
+
+      -webkit-background-clip: text;
+      background-clip: text;
+
+      color: transparent;
+    }
+
+    .hero-description {
+      max-width: 680px;
+
+      color: #aaa3b4;
+
+      font-size: 18px;
+      line-height: 1.7;
+
+      margin-bottom: 35px;
+    }
+
+    .hero-buttons {
+      display: flex;
+      gap: 13px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn-primary {
+      border: 0;
+      cursor: pointer;
+
+      padding: 15px 24px;
+
+      border-radius: 13px;
+
+      color: white;
+      font-weight: 800;
+
+      background:
+        linear-gradient(
+          135deg,
+          #a452ff,
+          #6817e6
+        );
+
+      box-shadow:
+        0 12px 35px rgba(111, 30, 220, .30);
+
+      transition: .2s;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+
+      box-shadow:
+        0 16px 40px rgba(111, 30, 220, .42);
+    }
+
+    .btn-secondary {
+      padding: 15px 24px;
+
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 13px;
+
+      background: rgba(255,255,255,.035);
+
+      color: #e6e0ed;
+
+      font-weight: 700;
+
+      cursor: pointer;
+
+      transition: .2s;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255,255,255,.07);
+    }
+
+    /* =========================
+       TRANSLATOR CARD
+    ========================= */
+
+    .translator {
+      width: 100%;
+      max-width: 940px;
+
+      margin-top: 70px;
+
+      padding: 1px;
+
+      border-radius: 25px;
+
+      background:
+        linear-gradient(
+          135deg,
+          rgba(159,76,255,.45),
+          rgba(255,255,255,.07),
+          rgba(109,35,255,.35)
+        );
+
+      box-shadow:
+        0 30px 100px rgba(0,0,0,.45);
+    }
+
+    .translator-inner {
+      border-radius: 24px;
+
+      background:
+        linear-gradient(
+          145deg,
+          #100b19,
+          #0b0811
+        );
+
+      padding: 27px;
+
+      text-align: left;
+    }
+
+    .translator-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+
+      margin-bottom: 22px;
+    }
+
+    .translator-title {
+      font-size: 17px;
+      font-weight: 800;
+    }
+
+    .online {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+
+      color: #9bffb0;
+      font-size: 12px;
+    }
+
+    .online-dot {
+      width: 7px;
+      height: 7px;
+
+      border-radius: 50%;
+      background: #4cff70;
+
+      box-shadow: 0 0 10px #4cff70;
+    }
+
+    .upload-area {
+      min-height: 180px;
+
+      border:
+        1px dashed rgba(176, 119, 255, .40);
+
+      border-radius: 18px;
+
+      background:
+        rgba(111, 33, 220, .045);
+
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      text-align: center;
+
+      cursor: pointer;
+
+      transition: .2s;
+    }
+
+    .upload-area:hover {
+      background:
+        rgba(111, 33, 220, .09);
+
+      border-color:
+        rgba(176,119,255,.75);
+    }
+
+    .upload-content {
+      padding: 25px;
+    }
+
+    .upload-icon {
+      width: 55px;
+      height: 55px;
+
+      margin: 0 auto 13px;
+
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      border-radius: 15px;
+
+      background: rgba(142,56,255,.13);
+
+      font-size: 25px;
+    }
+
+    .upload-content h3 {
+      font-size: 16px;
+      margin-bottom: 6px;
+    }
+
+    .upload-content p {
+      color: #8d8797;
+      font-size: 13px;
+    }
+
+    #videoInput {
+      display: none;
+    }
+
+    .preview {
+      display: none;
+
+      margin-top: 20px;
+
+      border-radius: 16px;
+
+      overflow: hidden;
+
+      background: #050408;
+
+      border: 1px solid rgba(255,255,255,.08);
+    }
+
+    .preview video {
+      display: block;
+
+      width: 100%;
+      max-height: 400px;
+
+      background: black;
+    }
+
+    .controls {
+      display: grid;
+
+      grid-template-columns:
+        1fr 1fr auto;
+
+      gap: 12px;
+
+      margin-top: 18px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .field label {
+      color: #8f8999;
+      font-size: 12px;
+    }
+
+    .field select {
+      width: 100%;
+
+      padding: 13px;
+
+      border-radius: 11px;
+
+      color: white;
+
+      background: #17121e;
+
+      border:
+        1px solid rgba(255,255,255,.09);
+
+      outline: none;
+    }
+
+    .dub-button {
+      align-self: end;
+
+      padding: 13px 22px;
+
+      border: 0;
+      border-radius: 11px;
+
+      color: white;
+      font-weight: 800;
+
+      background:
+        linear-gradient(
+          135deg,
+          #9c48ff,
+          #6716df
+        );
+
+      cursor: pointer;
+    }
+
+    .status {
+      display: none;
+
+      margin-top: 15px;
+
+      padding: 13px;
+
+      border-radius: 10px;
+
+      background: rgba(143, 65, 255, .08);
+
+      color: #cdb6e8;
+
+      font-size: 13px;
+
+      text-align: center;
+    }
+
+    /* =========================
+       STATS
+    ========================= */
+
+    .stats {
+      width: 100%;
+      max-width: 950px;
+
+      margin-top: 65px;
+
+      display: grid;
+      grid-template-columns: repeat(3,1fr);
+
+      border-top:
+        1px solid rgba(255,255,255,.07);
+
+      border-bottom:
+        1px solid rgba(255,255,255,.07);
+    }
+
+    .stat {
+      padding: 28px 10px;
+      text-align: center;
+    }
+
+    .stat + .stat {
+      border-left:
+        1px solid rgba(255,255,255,.07);
+    }
+
+    .stat strong {
+      display: block;
+
+      font-size: 28px;
+      margin-bottom: 5px;
+    }
+
+    .stat span {
+      color: #8e8798;
+      font-size: 12px;
+    }
+
+    /* =========================
+       SEÇÕES
+    ========================= */
+
+    section {
+      max-width: 1150px;
+      margin: auto;
+      padding: 100px 22px;
+    }
+
+    .section-heading {
+      text-align: center;
+
+      margin-bottom: 55px;
+    }
+
+    .section-heading span {
+      color: #a85cff;
+
+      font-size: 13px;
+      font-weight: 800;
+
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+
+    .section-heading h2 {
+      margin-top: 12px;
+
+      font-size:
+        clamp(32px, 5vw, 52px);
+
+      letter-spacing: -2px;
+    }
+
+    .section-heading p {
+      max-width: 600px;
+
+      margin: 15px auto 0;
+
+      color: #938d9d;
+
+      line-height: 1.7;
+    }
+
+    /* =========================
+       FEATURES
+    ========================= */
 
     .features {
+      display: grid;
 
+      grid-template-columns:
+        repeat(3, 1fr);
+
+      gap: 17px;
+    }
+
+    .feature {
+      padding: 28px;
+
+      border-radius: 18px;
+
+      border:
+        1px solid rgba(255,255,255,.07);
+
+      background:
+        linear-gradient(
+          145deg,
+          rgba(255,255,255,.045),
+          rgba(255,255,255,.015)
+        );
+
+      transition: .25s;
+    }
+
+    .feature:hover {
+      transform: translateY(-5px);
+
+      border-color:
+        rgba(156,72,255,.35);
+    }
+
+    .feature-icon {
+      width: 48px;
+      height: 48px;
+
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      margin-bottom: 20px;
+
+      border-radius: 13px;
+
+      background:
+        rgba(145,57,255,.12);
+
+      font-size: 22px;
+    }
+
+    .feature h3 {
+      margin-bottom: 10px;
+      font-size: 17px;
+    }
+
+    .feature p {
+      color: #8e8897;
+
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    /* =========================
+       COMO FUNCIONA
+    ========================= */
+
+    .steps {
+      display: grid;
+
+      grid-template-columns:
+        repeat(3, 1fr);
+
+      gap: 18px;
+    }
+
+    .step {
+      position: relative;
+
+      padding: 30px;
+
+      border-radius: 18px;
+
+      background: #0d0912;
+
+      border:
+        1px solid rgba(255,255,255,.07);
+    }
+
+    .number {
+      width: 42px;
+      height: 42px;
+
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      border-radius: 12px;
+
+      background:
+        linear-gradient(
+          135deg,
+          #9d4cff,
+          #6717db
+        );
+
+      font-weight: 900;
+
+      margin-bottom: 20px;
+    }
+
+    .step h3 {
+      margin-bottom: 10px;
+    }
+
+    .step p {
+      color: #8e8797;
+
+      line-height: 1.7;
+      font-size: 14px;
+    }
+
+    /* =========================
+       IDIOMAS
+    ========================= */
+
+    .languages {
+      display: flex;
+
+      flex-wrap: wrap;
+
+      justify-content: center;
+
+      gap: 10px;
+    }
+
+    .language {
+      padding: 12px 17px;
+
+      border-radius: 50px;
+
+      background: rgba(255,255,255,.035);
+
+      border:
+        1px solid rgba(255,255,255,.08);
+
+      color: #bdb5c8;
+
+      font-size: 13px;
+    }
+
+    /* =========================
+       PREÇOS
+    ========================= */
+
+    .pricing {
+      display: grid;
+
+      grid-template-columns:
+        repeat(3, 1fr);
+
+      gap: 18px;
+
+      align-items: stretch;
+    }
+
+    .price-card {
+      padding: 30px;
+
+      border-radius: 20px;
+
+      background:
+        linear-gradient(
+          145deg,
+          #100b17,
+          #0b0810
+        );
+
+      border:
+        1px solid rgba(255,255,255,.08);
+
+      position: relative;
+    }
+
+    .price-card.featured {
+      border-color:
+        rgba(157,75,255,.55);
+
+      box-shadow:
+        0 20px 70px rgba(107,30,220,.18);
+    }
+
+    .popular {
+      position: absolute;
+
+      top: 18px;
+      right: 18px;
+
+      padding: 6px 10px;
+
+      border-radius: 30px;
+
+      background: #7926e9;
+
+      font-size: 10px;
+      font-weight: 800;
+    }
+
+    .price-card h3 {
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+
+    .price-description {
+      color: #88818f;
+      font-size: 13px;
+    }
+
+    .price {
+      margin: 25px 0;
+
+      font-size: 40px;
+      font-weight: 900;
+    }
+
+    .price small {
+      color: #827b89;
+
+      font-size: 13px;
+      font-weight: 400;
+    }
+
+    .price-list {
+      list-style: none;
+
+      display: flex;
+      flex-direction: column;
+
+      gap: 13px;
+
+      margin-bottom: 27px;
+    }
+
+    .price-list li {
+      color: #b4adba;
+      font-size: 13px;
+    }
+
+    .price-list li::before {
+      content: "✓";
+
+      color: #a85cff;
+
+      font-weight: 900;
+
+      margin-right: 9px;
+    }
+
+    .price-button {
+      width: 100%;
+
+      padding: 13px;
+
+      border-radius: 11px;
+
+      border: 1px solid rgba(255,255,255,.10);
+
+      background: rgba(255,255,255,.035);
+
+      color: white;
+
+      font-weight: 700;
+
+      cursor: pointer;
+    }
+
+    .price-card.featured .price-button {
+      border: 0;
+
+      background:
+        linear-gradient(
+          135deg,
+          #9b48ff,
+          #6919df
+        );
+    }
+
+    /* =========================
+       CTA
+    ========================= */
+
+    .cta {
+      max-width: 1000px;
+      margin: 40px auto 100px;
+
+      padding: 70px 25px;
+
+      text-align: center;
+
+      border-radius: 25px;
+
+      border:
+        1px solid rgba(153,70,255,.25);
+
+      background:
+        radial-gradient(
+          circle at center,
+          rgba(127,38,255,.16),
+          rgba(255,255,255,.025)
+        );
+    }
+
+    .cta h2 {
+      font-size:
+        clamp(32px, 5vw, 53px);
+
+      letter-spacing: -2px;
+
+      margin-bottom: 15px;
+    }
+
+    .cta p {
+      color: #99929f;
+
+      max-width: 580px;
+
+      margin: 0 auto 27px;
+
+      line-height: 1.7;
+    }
+
+    /* =========================
+       FOOTER
+    ========================= */
+
+    footer {
+      border-top:
+        1px solid rgba(255,255,255,.07);
+
+      padding: 45px 22px;
+    }
+
+    .footer-inner {
+      max-width: 1150px;
+      margin: auto;
+
+      display: flex;
+
+      justify-content: space-between;
+      align-items: center;
+
+      gap: 25px;
+    }
+
+    .footer-text {
+      color: #716a78;
+      font-size: 12px;
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 22px;
+
+      color: #817a88;
+
+      font-size: 12px;
+    }
+
+    /* =========================
+       CHAT
+    ========================= */
+
+    .chat-button {
+      position: fixed;
+
+      right: 20px;
+      bottom: 20px;
+
+      width: 57px;
+      height: 57px;
+
+      border: 0;
+      border-radius: 50%;
+
+      background:
+        linear-gradient(
+          135deg,
+          #a24dff,
+          #6716dc
+        );
+
+      color: white;
+
+      font-size: 23px;
+
+      cursor: pointer;
+
+      box-shadow:
+        0 10px 35px rgba(106,30,215,.40);
+
+      z-index: 2000;
+    }
+
+    /* =========================
+       MOBILE
+    ========================= */
+
+    @media (max-width: 850px) {
+
+      .nav-links,
+      .nav-actions {
+        display: none;
+      }
+
+      .mobile-menu {
+        display: block;
+      }
+
+      .nav.mobile-open {
+        position: relative;
+      }
+
+      .nav.mobile-open .nav-links {
+        display: flex;
+
+        position: absolute;
+
+        left: 15px;
+        right: 15px;
+        top: 67px;
+
+        padding: 20px;
+
+        flex-direction: column;
+        align-items: flex-start;
+
+        border-radius: 15px;
+
+        background: #110c18;
+
+        border:
+          1px solid rgba(255,255,255,.08);
+      }
+
+      .features,
+      .steps,
+      .pricing {
         grid-template-columns: 1fr;
+      }
+
+      .controls {
+        grid-template-columns: 1fr;
+      }
+
+      .dub-button {
+        width: 100%;
+      }
+
+      .hero {
+        padding-top: 65px;
+      }
+
+      .hero h1 {
+        letter-spacing: -2.5px;
+      }
+
+      .hero-description {
+        font-size: 16px;
+      }
+
+      .stats {
+        grid-template-columns: 1fr;
+      }
+
+      .stat + .stat {
+        border-left: 0;
+
+        border-top:
+          1px solid rgba(255,255,255,.07);
+      }
+
+      .translator-inner {
+        padding: 17px;
+      }
+
+      .footer-inner {
+        flex-direction: column;
+
+        text-align: center;
+      }
+
+      .footer-links {
+        flex-wrap: wrap;
+        justify-content: center;
+      }
     }
 
-    h1 {
-
-        font-size: 22px;
-    }
-}
-
-</style>
-
+  </style>
 </head>
-
 
 <body>
 
-<div class="container">
+  <div class="background-glow glow-1"></div>
+  <div class="background-glow glow-2"></div>
 
+  <!-- =========================
+       MENU
+  ========================= -->
 
-<header>
+  <header>
 
-    <div class="logo">
-        SI <span>IA</span>
-    </div>
+    <nav class="nav" id="navbar">
 
-    <div class="subtitle">
-        Tradutor universal e dublagem automática
-        com inteligência artificial
-    </div>
+      <a href="#" class="logo">
 
-</header>
-
-
-<main>
-
-<div class="card">
-
-    <h1>
-        🎬 Traduzir e dublar vídeo
-    </h1>
-
-    <p class="description">
-
-        Escolha um vídeo do seu celular.
-        O vídeo aparecerá aqui imediatamente.
-        Depois selecione o idioma e envie
-        para o processamento com inteligência artificial.
-
-    </p>
-
-
-    <!-- =================================================
-         UPLOAD
-    ================================================== -->
-
-    <label
-        for="videoInput"
-        class="upload-area"
-    >
-
-        <div class="upload-icon">
-            📹
+        <div class="logo-icon">
+          <span>◈</span>
         </div>
 
-        <div class="upload-title">
-            Escolher vídeo
-        </div>
+        <span>LinguaLive</span>
 
-        <div class="upload-text">
-            MP4, MOV, WebM e outros formatos de vídeo
-        </div>
+      </a>
 
-    </label>
+      <div class="nav-links">
+
+        <a href="#tradutor">Tradutor</a>
+
+        <a href="#recursos">Recursos</a>
+
+        <a href="#como-funciona">Como funciona</a>
+
+        <a href="#precos">Preços</a>
+
+      </div>
+
+      <div class="nav-actions">
+
+        <a href="#" class="btn-login">
+          Entrar
+        </a>
+
+        <button
+          class="btn-small"
+          onclick="document.getElementById('tradutor').scrollIntoView()">
+
+          Começar agora
+
+        </button>
+
+      </div>
+
+      <button
+        class="mobile-menu"
+        onclick="toggleMenu()">
+
+        ☰
+
+      </button>
+
+    </nav>
+
+  </header>
 
 
-    <input
-        type="file"
-        id="videoInput"
-        accept="video/*,.mp4,.mov,.webm"
-    >
+  <!-- =========================
+       HERO
+  ========================= -->
+
+  <main>
+
+    <section class="hero">
+
+      <div class="badge">
+
+        <span class="badge-dot"></span>
+
+        Tradução com inteligência artificial
+
+      </div>
+
+      <h1>
+
+        Quebre as barreiras
+        <br>
+
+        <span class="purple">
+          da linguagem.
+        </span>
+
+      </h1>
+
+      <p class="hero-description">
+
+        Traduza e duble seus vídeos com inteligência artificial.
+        Transforme conteúdos de qualquer idioma em uma experiência
+        natural para o seu público.
+
+      </p>
+
+      <div class="hero-buttons">
+
+        <button
+          class="btn-primary"
+          onclick="document.getElementById('tradutor').scrollIntoView()">
+
+          Começar a traduzir →
+
+        </button>
+
+        <button
+          class="btn-secondary"
+          onclick="document.getElementById('como-funciona').scrollIntoView()">
+
+          Como funciona
+
+        </button>
+
+      </div>
 
 
-    <!-- =================================================
-         PRÉ-VISUALIZAÇÃO
-    ================================================== -->
+      <!-- =========================
+           TRADUTOR
+      ========================= -->
 
-    <div
-        class="preview"
-        id="preview"
-    >
+      <div
+        class="translator"
+        id="tradutor">
 
-        <div class="video-box">
+        <div class="translator-inner">
 
-            <video
-                id="previewVideo"
-                controls
-                playsinline
-                preload="metadata"
-            ></video>
+          <div class="translator-header">
 
-            <div
-                class="file-info"
-                id="fileInfo"
-            >
-                Vídeo carregado
+            <div class="translator-title">
+
+              🎙️ Tradutor & Dublagem IA
+
             </div>
 
-        </div>
+            <div class="online">
+
+              <span class="online-dot"></span>
+
+              Sistema online
+
+            </div>
+
+          </div>
 
 
-        <div class="controls">
+          <label
+            class="upload-area"
+            for="videoInput">
 
-            <label for="targetLang">
-                Idioma da dublagem
-            </label>
+            <div class="upload-content">
+
+              <div class="upload-icon">
+                ↑
+              </div>
+
+              <h3>
+                Envie seu vídeo
+              </h3>
+
+              <p>
+                Clique aqui ou arraste seu vídeo para começar
+              </p>
+
+              <p style="margin-top:7px">
+                MP4, MOV, AVI ou WEBM
+              </p>
+
+            </div>
+
+          </label>
 
 
-            <select id="targetLang">
+          <input
+            type="file"
+            id="videoInput"
+            accept="video/*">
+
+
+          <div
+            class="preview"
+            id="preview">
+
+            <video
+              id="videoPreview"
+              controls>
+            </video>
+
+          </div>
+
+
+          <div class="controls">
+
+            <div class="field">
+
+              <label>
+                Idioma original
+              </label>
+
+              <select id="sourceLang">
+
+                <option value="auto">
+                  Detectar automaticamente
+                </option>
 
                 <option value="pt">
-                    🇧🇷 Português
+                  🇧🇷 Português
                 </option>
 
                 <option value="en">
-                    🇺🇸 Inglês
+                  🇺🇸 Inglês
                 </option>
 
                 <option value="es">
-                    🇪🇸 Espanhol
+                  🇪🇸 Espanhol
                 </option>
 
-            </select>
+                <option value="fr">
+                  🇫🇷 Francês
+                </option>
+
+                <option value="de">
+                  🇩🇪 Alemão
+                </option>
+
+                <option value="it">
+                  🇮🇹 Italiano
+                </option>
+
+                <option value="ja">
+                  🇯🇵 Japonês
+                </option>
+
+              </select>
+
+            </div>
+
+
+            <div class="field">
+
+              <label>
+                Traduzir para
+              </label>
+
+              <select id="targetLang">
+
+                <option value="pt">
+                  🇧🇷 Português
+                </option>
+
+                <option value="en">
+                  🇺🇸 Inglês
+                </option>
+
+                <option value="es">
+                  🇪🇸 Espanhol
+                </option>
+
+                <option value="fr">
+                  🇫🇷 Francês
+                </option>
+
+                <option value="de">
+                  🇩🇪 Alemão
+                </option>
+
+                <option value="it">
+                  🇮🇹 Italiano
+                </option>
+
+                <option value="ja">
+                  🇯🇵 Japonês
+                </option>
+
+              </select>
+
+            </div>
 
 
             <button
-                id="dubButton"
-                class="primary"
-                type="button"
-            >
-                🚀 Traduzir e dublar vídeo
+              class="dub-button"
+              id="dubButton">
+
+              ✨ Traduzir e dublar
+
             </button>
 
-
-            <button
-                id="newButton"
-                class="secondary"
-                type="button"
-                style="display:none"
-            >
-                🔄 Escolher outro vídeo
-            </button>
-
-        </div>
-
-    </div>
+          </div>
 
 
-    <!-- =================================================
-         STATUS
-    ================================================== -->
+          <div
+            class="status"
+            id="status">
 
-    <div
-        class="status-card"
-        id="statusCard"
-    >
+            Aguardando vídeo...
 
-        <div class="status-title">
-            ⚙️ Processando vídeo
-        </div>
-
-        <div
-            class="status-message"
-            id="statusMessage"
-        >
-            Preparando...
-        </div>
-
-        <div class="progress-wrap">
-
-            <div
-                class="progress-bar"
-                id="progressBar"
-            ></div>
+          </div>
 
         </div>
 
-        <div class="progress-info">
+      </div>
 
-            <span id="stageText">
-                Aguardando
-            </span>
 
-            <span id="progressText">
-                0%
-            </span>
+      <!-- ESTATÍSTICAS -->
+
+      <div class="stats">
+
+        <div class="stat">
+
+          <strong>50+</strong>
+
+          <span>
+            idiomas disponíveis
+          </span>
 
         </div>
 
-    </div>
+        <div class="stat">
+
+          <strong>IA</strong>
+
+          <span>
+            tecnologia inteligente
+          </span>
+
+        </div>
+
+        <div class="stat">
+
+          <strong>24/7</strong>
+
+          <span>
+            disponível online
+          </span>
+
+        </div>
+
+      </div>
+
+    </section>
 
 
-    <!-- =================================================
-         ERRO
-    ================================================== -->
+    <!-- =========================
+         RECURSOS
+    ========================= -->
 
-    <div
-        class="error"
-        id="errorBox"
-    ></div>
+    <section id="recursos">
 
+      <div class="section-heading">
 
-    <!-- =================================================
-         RESULTADO
-    ================================================== -->
-
-    <div
-        class="result"
-        id="result"
-    >
+        <span>
+          Recursos
+        </span>
 
         <h2>
-            ✅ Vídeo dublado
+          Tradução feita para você
         </h2>
 
+        <p>
+          Ferramentas inteligentes para transformar
+          conteúdos em diferentes idiomas.
+        </p>
 
-        <div class="video-box">
+      </div>
 
-            <video
-                id="resultVideo"
-                controls
-                playsinline
-                preload="metadata"
-            ></video>
+
+      <div class="features">
+
+        <div class="feature">
+
+          <div class="feature-icon">
+            🎙️
+          </div>
+
+          <h3>
+            Dublagem com IA
+          </h3>
+
+          <p>
+            Transforme a voz do seu vídeo para outro
+            idioma de forma rápida e automatizada.
+          </p>
 
         </div>
 
 
-        <a
-            id="downloadButton"
-            class="download"
-            href="#"
-            target="_blank"
-            rel="noopener"
-            download
-        >
-            ⬇️ Baixar vídeo dublado
+        <div class="feature">
+
+          <div class="feature-icon">
+            ⚡
+          </div>
+
+          <h3>
+            Tradução rápida
+          </h3>
+
+          <p>
+            Nossa tecnologia processa o conteúdo
+            utilizando inteligência artificial.
+          </p>
+
+        </div>
+
+
+        <div class="feature">
+
+          <div class="feature-icon">
+            🌎
+          </div>
+
+          <h3>
+            Vários idiomas
+          </h3>
+
+          <p>
+            Alcance pessoas de diferentes países
+            traduzindo seu conteúdo.
+          </p>
+
+        </div>
+
+
+        <div class="feature">
+
+          <div class="feature-icon">
+            🎬
+          </div>
+
+          <h3>
+            Vídeos
+          </h3>
+
+          <p>
+            Envie vídeos diretamente pela plataforma
+            e acompanhe o processamento.
+          </p>
+
+        </div>
+
+
+        <div class="feature">
+
+          <div class="feature-icon">
+            🔊
+          </div>
+
+          <h3>
+            Áudio
+          </h3>
+
+          <p>
+            Processamento de áudio para ajudar na
+            tradução e geração da dublagem.
+          </p>
+
+        </div>
+
+
+        <div class="feature">
+
+          <div class="feature-icon">
+            🔒
+          </div>
+
+          <h3>
+            Processamento seguro
+          </h3>
+
+          <p>
+            Seu conteúdo é enviado somente para
+            processamento da tarefa solicitada.
+          </p>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- =========================
+         COMO FUNCIONA
+    ========================= -->
+
+    <section id="como-funciona">
+
+      <div class="section-heading">
+
+        <span>
+          Simples e rápido
+        </span>
+
+        <h2>
+          Como funciona?
+        </h2>
+
+        <p>
+          Em poucos passos você pode preparar seu
+          conteúdo para outro idioma.
+        </p>
+
+      </div>
+
+
+      <div class="steps">
+
+        <div class="step">
+
+          <div class="number">
+            1
+          </div>
+
+          <h3>
+            Envie o vídeo
+          </h3>
+
+          <p>
+            Selecione o vídeo que deseja traduzir
+            e envie para a plataforma.
+          </p>
+
+        </div>
+
+
+        <div class="step">
+
+          <div class="number">
+            2
+          </div>
+
+          <h3>
+            Escolha o idioma
+          </h3>
+
+          <p>
+            Selecione o idioma para o qual deseja
+            traduzir o conteúdo.
+          </p>
+
+        </div>
+
+
+        <div class="step">
+
+          <div class="number">
+            3
+          </div>
+
+          <h3>
+            Receba o resultado
+          </h3>
+
+          <p>
+            A inteligência artificial processa o
+            conteúdo e prepara o resultado.
+          </p>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- =========================
+         IDIOMAS
+    ========================= -->
+
+    <section>
+
+      <div class="section-heading">
+
+        <span>
+          Idiomas
+        </span>
+
+        <h2>
+          Fale com o mundo
+        </h2>
+
+        <p>
+          Comece com os principais idiomas e amplie
+          seu alcance.
+        </p>
+
+      </div>
+
+
+      <div class="languages">
+
+        <div class="language">🇧🇷 Português</div>
+        <div class="language">🇺🇸 Inglês</div>
+        <div class="language">🇪🇸 Espanhol</div>
+        <div class="language">🇫🇷 Francês</div>
+        <div class="language">🇩🇪 Alemão</div>
+        <div class="language">🇮🇹 Italiano</div>
+        <div class="language">🇯🇵 Japonês</div>
+        <div class="language">🇰🇷 Coreano</div>
+        <div class="language">🇨🇳 Chinês</div>
+        <div class="language">🇷🇺 Russo</div>
+        <div class="language">🇦🇪 Árabe</div>
+        <div class="language">🇮🇳 Hindi</div>
+
+      </div>
+
+    </section>
+
+
+    <!-- =========================
+         PREÇOS
+    ========================= -->
+
+    <section id="precos">
+
+      <div class="section-heading">
+
+        <span>
+          Planos
+        </span>
+
+        <h2>
+          Escolha seu plano
+        </h2>
+
+        <p>
+          Comece gratuitamente e escolha o plano
+          ideal conforme sua necessidade.
+        </p>
+
+      </div>
+
+
+      <div class="pricing">
+
+
+        <div class="price-card">
+
+          <h3>
+            Grátis
+          </h3>
+
+          <p class="price-description">
+            Para experimentar
+          </p>
+
+          <div class="price">
+            R$ 0
+            <small>/mês</small>
+          </div>
+
+          <ul class="price-list">
+
+            <li>
+              Teste da plataforma
+            </li>
+
+            <li>
+              Tradução básica
+            </li>
+
+            <li>
+              Alguns idiomas
+            </li>
+
+          </ul>
+
+          <button
+            class="price-button"
+            onclick="document.getElementById('tradutor').scrollIntoView()">
+
+            Começar grátis
+
+          </button>
+
+        </div>
+
+
+        <div class="price-card featured">
+
+          <div class="popular">
+            MAIS POPULAR
+          </div>
+
+          <h3>
+            Pro
+          </h3>
+
+          <p class="price-description">
+            Para criadores
+          </p>
+
+          <div class="price">
+            R$ 100
+            <small>/mês</small>
+          </div>
+
+          <ul class="price-list">
+
+            <li>
+              Traduções com IA
+            </li>
+
+            <li>
+              Dublagem de vídeos
+            </li>
+
+            <li>
+              Mais idiomas
+            </li>
+
+            <li>
+              Processamento prioritário
+            </li>
+
+          </ul>
+
+          <button
+            class="price-button"
+            onclick="assinarPlano()">
+
+            Assinar Pro
+
+          </button>
+
+        </div>
+
+
+        <div class="price-card">
+
+          <h3>
+            Empresarial
+          </h3>
+
+          <p class="price-description">
+            Para equipes
+          </p>
+
+          <div class="price">
+            R$ 200
+            <small>/mês</small>
+          </div>
+
+          <ul class="price-list">
+
+            <li>
+              Uso ampliado
+            </li>
+
+            <li>
+              Tradução e dublagem
+            </li>
+
+            <li>
+              Suporte prioritário
+            </li>
+
+          </ul>
+
+          <button
+            class="price-button"
+            onclick="contato()">
+
+            Falar conosco
+
+          </button>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- =========================
+         CTA
+    ========================= -->
+
+    <div class="cta">
+
+      <h2>
+        Pronto para falar
+        com o mundo?
+      </h2>
+
+      <p>
+        Comece agora a transformar seus vídeos
+        usando inteligência artificial.
+      </p>
+
+      <button
+        class="btn-primary"
+        onclick="document.getElementById('tradutor').scrollIntoView()">
+
+        Começar agora →
+
+      </button>
+
+    </div>
+
+  </main>
+
+
+  <!-- =========================
+       FOOTER
+  ========================= -->
+
+  <footer>
+
+    <div class="footer-inner">
+
+      <div>
+
+        <div class="logo">
+
+          <div class="logo-icon">
+            <span>◈</span>
+          </div>
+
+          LinguaLive
+
+        </div>
+
+        <p class="footer-text"
+           style="margin-top:10px">
+
+          Tradução inteligente para todos.
+
+        </p>
+
+      </div>
+
+
+      <div class="footer-links">
+
+        <a href="#recursos">
+          Recursos
         </a>
 
-    </div>
+        <a href="#precos">
+          Preços
+        </a>
 
-</div>
+        <a href="#">
+          Privacidade
+        </a>
 
+        <a href="#">
+          Termos
+        </a>
 
-<!-- =====================================================
-     CONEXÃO
-====================================================== -->
-
-<div class="connection">
-
-    <span class="dot"></span>
-
-    <span id="connectionText">
-        Verificando conexão com o servidor...
-    </span>
-
-</div>
-
-
-<!-- =====================================================
-     RECURSOS
-====================================================== -->
-
-<div class="features">
-
-
-    <div class="feature">
-
-        <div class="feature-icon">
-            🎙️
-        </div>
-
-        <div class="feature-title">
-            Transcrição IA
-        </div>
-
-        <div class="feature-text">
-            Reconhecimento automático
-            da fala do vídeo.
-        </div>
+      </div>
 
     </div>
 
-
-    <div class="feature">
-
-        <div class="feature-icon">
-            🌎
-        </div>
-
-        <div class="feature-title">
-            Tradução
-        </div>
-
-        <div class="feature-text">
-            Conversão da fala para
-            o idioma escolhido.
-        </div>
-
-    </div>
+  </footer>
 
 
-    <div class="feature">
+  <!-- CHAT -->
 
-        <div class="feature-icon">
-            🔊
-        </div>
+  <button
+    class="chat-button"
+    onclick="abrirChat()"
+    aria-label="Abrir suporte">
 
-        <div class="feature-title">
-            Voz dublada
-        </div>
+    💬
 
-        <div class="feature-text">
-            Geração de uma nova
-            faixa de áudio.
-        </div>
-
-    </div>
+  </button>
 
 
-</div>
+  <script>
+
+    /* ===================================
+       CONFIGURAÇÃO DO BACKEND
+    =================================== */
+
+    const BACKEND_URL =
+      "https://si-u2ul.onrender.com";
 
 
-</main>
+    /* ===================================
+       MENU MOBILE
+    =================================== */
+
+    function toggleMenu() {
+
+      document
+        .getElementById("navbar")
+        .classList
+        .toggle("mobile-open");
+
+    }
 
 
-<footer>
+    /* ===================================
+       UPLOAD DO VÍDEO
+    =================================== */
 
-    SI IA — Sistema de tradução e dublagem automática
+    const videoInput =
+      document.getElementById("videoInput");
 
-    <br>
+    const preview =
+      document.getElementById("preview");
 
-    Traduza e duble seus vídeos com inteligência artificial.
+    const videoPreview =
+      document.getElementById("videoPreview");
 
-</footer>
+    const status =
+      document.getElementById("status");
 
-
-</div>
-
-
-<script>
-
-/* =====================================================
-   CONFIGURAÇÃO DO BACKEND
-====================================================== */
-
-const BACKEND_URL =
-    "https://si-u2ul.onrender.com";
+    const dubButton =
+      document.getElementById("dubButton");
 
 
-/* =====================================================
-   ELEMENTOS
-====================================================== */
+    videoInput.addEventListener(
+      "change",
+      function() {
 
-const videoInput =
-    document.getElementById("videoInput");
+        const file = this.files[0];
 
-const preview =
-    document.getElementById("preview");
+        if (!file) {
+          return;
+        }
 
-const previewVideo =
-    document.getElementById("previewVideo");
+        const url =
+          URL.createObjectURL(file);
 
-const fileInfo =
-    document.getElementById("fileInfo");
+        videoPreview.src = url;
 
-const dubButton =
-    document.getElementById("dubButton");
+        preview.style.display = "block";
 
-const newButton =
-    document.getElementById("newButton");
+        status.style.display = "block";
 
-const targetLang =
-    document.getElementById("targetLang");
+        status.innerText =
+          "Vídeo selecionado: " + file.name;
 
-const statusCard =
-    document.getElementById("statusCard");
-
-const statusMessage =
-    document.getElementById("statusMessage");
-
-const stageText =
-    document.getElementById("stageText");
-
-const progressBar =
-    document.getElementById("progressBar");
-
-const progressText =
-    document.getElementById("progressText");
-
-const errorBox =
-    document.getElementById("errorBox");
-
-const result =
-    document.getElementById("result");
-
-const resultVideo =
-    document.getElementById("resultVideo");
-
-const downloadButton =
-    document.getElementById("downloadButton");
-
-const connectionText =
-    document.getElementById("connectionText");
+      }
+    );
 
 
-/* =====================================================
-   VARIÁVEIS
-====================================================== */
+    /* ===================================
+       TRADUZIR / DUBLAR
+    =================================== */
 
-let selectedFile = null;
+    dubButton.addEventListener(
+      "click",
+      async function() {
 
-let currentJobId = null;
+        const file =
+          videoInput.files[0];
 
-let pollingTimer = null;
+        if (!file) {
 
-let previewObjectURL = null;
+          alert(
+            "Primeiro selecione um vídeo."
+          );
 
-
-/* =====================================================
-   TESTAR BACKEND
-====================================================== */
-
-async function checkBackend() {
-
-    try {
-
-        const response =
-            await fetch(
-                BACKEND_URL + "/api/health",
-                {
-                    method: "GET",
-                    cache: "no-store"
-                }
-            );
-
-
-        if (!response.ok) {
-
-            throw new Error(
-                "Servidor respondeu com erro."
-            );
+          return;
         }
 
 
-        const data =
+        const targetLang =
+          document.getElementById(
+            "targetLang"
+          ).value;
+
+
+        const formData =
+          new FormData();
+
+        formData.append(
+          "video",
+          file
+        );
+
+        formData.append(
+          "targetLang",
+          targetLang
+        );
+
+
+        status.style.display =
+          "block";
+
+        status.innerText =
+          "⏳ Enviando vídeo para o servidor...";
+
+        dubButton.disabled = true;
+
+        dubButton.innerText =
+          "Processando...";
+
+
+        try {
+
+          const response =
+            await fetch(
+              BACKEND_URL +
+              "/api/test-upload",
+              {
+                method: "POST",
+                body: formData
+              }
+            );
+
+
+          const data =
             await response.json();
 
 
-        if (data.ok) {
+          if (!response.ok) {
 
-            connectionText.textContent =
-                "Conectado ao servidor de processamento";
+            throw new Error(
+              data.error ||
+              "Erro ao enviar vídeo."
+            );
+
+          }
+
+
+          status.innerText =
+            "✅ Vídeo enviado. Processamento iniciado.";
+
+
+          if (data.jobId) {
+
+            acompanharJob(
+              data.jobId
+            );
+
+          }
+
+
+        } catch (error) {
+
+          console.error(error);
+
+          status.innerText =
+            "❌ Erro: " +
+            error.message;
+
+        }
+
+
+        dubButton.disabled =
+          false;
+
+        dubButton.innerText =
+          "✨ Traduzir e dublar";
+
+      }
+    );
+
+
+    /* ===================================
+       ACOMPANHAR PROCESSAMENTO
+    =================================== */
+
+    async function acompanharJob(jobId) {
+
+      status.innerText =
+        "⏳ Processando seu vídeo...";
+
+
+      const intervalo =
+        setInterval(
+          async function() {
+
+            try {
+
+              const response =
+                await fetch(
+                  BACKEND_URL +
+                  "/api/status/" +
+                  jobId
+                );
+
+
+              if (!response.ok) {
+                return;
+              }
+
+
+              const data =
+                await response.json();
+
+
+              if (
+                data.status === "completed" ||
+                data.status === "done"
+              ) {
+
+                clearInterval(
+                  intervalo
+                );
+
+
+                status.innerText =
+                  "✅ Tradução concluída!";
+
+
+                if (data.url) {
+
+                  const resultado =
+                    document.createElement(
+                      "a"
+                    );
+
+                  resultado.href =
+                    data.url;
+
+                  resultado.target =
+                    "_blank";
+
+                  resultado.innerText =
+                    "▶ Abrir vídeo traduzido";
+
+                  resultado.style.display =
+                    "block";
+
+                  resultado.style.marginTop =
+                    "12px";
+
+                  resultado.style.color =
+                    "#b36cff";
+
+                  resultado.style.textAlign =
+                    "center";
+
+                  status.appendChild(
+                    resultado
+                  );
+
+                }
+
+              }
+
+
+              if (
+                data.status === "error" ||
+                data.status === "failed"
+              ) {
+
+                clearInterval(
+                  intervalo
+                );
+
+                status.innerText =
+                  "❌ Ocorreu um erro no processamento.";
+
+              }
+
+
+            } catch (error) {
+
+              console.log(
+                "Aguardando servidor..."
+              );
+
+            }
+
+          },
+          4000
+        );
+
+    }
+
+
+    /* ===================================
+       PLANO PRO
+    =================================== */
+
+    function assinarPlano() {
+
+      alert(
+        "O checkout do plano Pro será aberto aqui."
+      );
+
+      /*
+        QUANDO VOCÊ TIVER O LINK DO
+        MERCADO PAGO, TROQUE ESTE ALERT
+        POR:
+
+        window.location.href =
+          "SEU_LINK_DO_MERCADO_PAGO";
+      */
+
+    }
+
+
+    /* ===================================
+       CONTATO
+    =================================== */
+
+    function contato() {
+
+      window.location.href =
+        "mailto:contato@lingualive.com";
+
+    }
+
+
+    /* ===================================
+       CHAT
+    =================================== */
+
+    function abrirChat() {
+
+      alert(
+        "Olá! 👋 Como podemos ajudar?"
+      );
+
+    }
+
+
+    /* ===================================
+       TESTAR BACKEND
+    =================================== */
+
+    async function verificarServidor() {
+
+      try {
+
+        const response =
+          await fetch(
+            BACKEND_URL +
+            "/api/health"
+          );
+
+
+        if (response.ok) {
+
+          console.log(
+            "LinguaLive: servidor online."
+          );
 
         } else {
 
-            connectionText.textContent =
-                "Servidor respondeu, mas está com problema.";
+          console.log(
+            "Servidor respondeu com erro."
+          );
 
         }
 
-    } catch (error) {
-
-        connectionText.textContent =
-            "Não foi possível conectar ao backend.";
-
-        console.error(
-            "Backend:",
-            error
-        );
-    }
-}
-
-
-/* =====================================================
-   ESCOLHER VÍDEO
-====================================================== */
-
-videoInput.addEventListener(
-    "change",
-    function () {
-
-        const file =
-            this.files[0];
-
-
-        if (!file) {
-            return;
-        }
-
-
-        clearPolling();
-
-        selectedFile =
-            file;
-
-
-        currentJobId =
-            null;
-
-
-        hideError();
-
-
-        result.classList.remove(
-            "active"
-        );
-
-
-        statusCard.classList.remove(
-            "active"
-        );
-
-
-        /* ---------------------------------------------
-           LIBERAR URL ANTERIOR
-        --------------------------------------------- */
-
-        if (previewObjectURL) {
-
-            URL.revokeObjectURL(
-                previewObjectURL
-            );
-        }
-
-
-        previewObjectURL =
-            URL.createObjectURL(
-                file
-            );
-
-
-        previewVideo.src =
-            previewObjectURL;
-
-
-        previewVideo.load();
-
-
-        preview.classList.add(
-            "active"
-        );
-
-
-        /* ---------------------------------------------
-           INFORMAÇÕES DO ARQUIVO
-        --------------------------------------------- */
-
-        const sizeMB =
-            (
-                file.size /
-                1024 /
-                1024
-            ).toFixed(2);
-
-
-        fileInfo.textContent =
-            "📹 " +
-            file.name +
-            " • " +
-            sizeMB +
-            " MB";
-
-
-        dubButton.disabled =
-            false;
-
-
-        dubButton.textContent =
-            "🚀 Traduzir e dublar vídeo";
-
-    }
-);
-
-
-/* =====================================================
-   BOTÃO DUBLAR
-====================================================== */
-
-dubButton.addEventListener(
-    "click",
-    async function () {
-
-        if (!selectedFile) {
-
-            showError(
-                "Escolha um vídeo primeiro."
-            );
-
-            return;
-        }
-
-
-        await startDubbing();
-
-    }
-);
-
-
-/* =====================================================
-   INICIAR DUBLAGEM
-====================================================== */
-
-async function startDubbing() {
-
-    hideError();
-
-
-    result.classList.remove(
-        "active"
-    );
-
-
-    statusCard.classList.add(
-        "active"
-    );
-
-
-    dubButton.disabled =
-        true;
-
-
-    newButton.style.display =
-        "none";
-
-
-    setProgress(
-        1,
-        "Preparando envio do vídeo...",
-        "Preparando"
-    );
-
-
-    if (!selectedFile) {
-
-        showError(
-            "❌ Nenhum vídeo foi selecionado."
-        );
-
-        dubButton.disabled =
-            false;
-
-        return;
-    }
-
-
-    console.log(
-        "========================================"
-    );
-
-    console.log(
-        "ENVIANDO VÍDEO"
-    );
-
-    console.log(
-        "Backend:",
-        BACKEND_URL
-    );
-
-    console.log(
-        "Arquivo:",
-        selectedFile.name
-    );
-
-    console.log(
-        "Tamanho:",
-        selectedFile.size
-    );
-
-    console.log(
-        "Tipo:",
-        selectedFile.type
-    );
-
-    console.log(
-        "Idioma:",
-        targetLang.value
-    );
-
-    console.log(
-        "========================================"
-    );
-
-
-    const formData =
-        new FormData();
-
-
-    formData.append(
-        "video",
-        selectedFile,
-        selectedFile.name
-    );
-
-
-    formData.append(
-        "targetLang",
-        targetLang.value
-    );
-
-
-    try {
-
-        setProgress(
-            2,
-            "Enviando vídeo para o servidor...",
-            "Enviando"
-        );
-
-
-        /*
-         * IMPORTANTE:
-         *
-         * O server.js possui:
-         *
-         * POST /api/dublar
-         *
-         * Não usar /api/test-upload aqui.
-         */
-
-        const response =
-            await fetch(
-                BACKEND_URL + "/api/dublar",
-                {
-                    method: "POST",
-                    body: formData,
-                    cache: "no-store"
-                }
-            );
-
+      } catch (error) {
 
         console.log(
-            "HTTP:",
-            response.status
+          "Backend ainda não está acessível."
         );
 
-
-        const rawText =
-            await response.text();
-
-
-        console.log(
-            "Resposta:",
-            rawText
-        );
-
-
-        let data;
-
-
-        try {
-
-            data =
-                JSON.parse(rawText);
-
-        } catch (e) {
-
-            throw new Error(
-                "O servidor retornou uma resposta inválida. HTTP " +
-                response.status
-            );
-        }
-
-
-        if (!response.ok) {
-
-            throw new Error(
-                data.error ||
-                "Erro HTTP " +
-                response.status
-            );
-        }
-
-
-        if (!data.ok) {
-
-            throw new Error(
-                data.error ||
-                "O servidor recusou o vídeo."
-            );
-        }
-
-
-        if (!data.jobId) {
-
-            throw new Error(
-                "O servidor recebeu o vídeo, mas não retornou o Job ID."
-            );
-        }
-
-
-        currentJobId =
-            data.jobId;
-
-
-        console.log(
-            "JOB ID:",
-            currentJobId
-        );
-
-
-        setProgress(
-            3,
-            "Vídeo enviado com sucesso. Aguardando processamento...",
-            "Na fila"
-        );
-
-
-        pollStatus();
-
-
-    } catch (error) {
-
-        console.error(
-            "ERRO NO UPLOAD:",
-            error
-        );
-
-
-        let mensagem =
-            error.message ||
-            String(error);
-
-
-        if (
-            error.name === "TypeError" &&
-            mensagem
-                .toLowerCase()
-                .includes("fetch")
-        ) {
-
-            mensagem =
-                "O navegador não conseguiu conectar ao Render. " +
-                "Verifique se o backend está online e se o CORS permite o GitHub Pages.";
-        }
-
-
-        showError(
-            "❌ Não foi possível enviar o vídeo." +
-            "<br><br>" +
-            escapeHTML(mensagem) +
-            "<br><br>" +
-            "<small>Backend: " +
-            escapeHTML(BACKEND_URL) +
-            "</small>"
-        );
-
-
-        dubButton.disabled =
-            false;
-
-
-        dubButton.textContent =
-            "🚀 Tentar novamente";
-
-
-        statusCard.classList.remove(
-            "active"
-        );
+      }
 
     }
 
-}
 
+    verificarServidor();
 
-/* =====================================================
-   CONSULTAR STATUS
-====================================================== */
-
-async function pollStatus() {
-
-    if (!currentJobId) {
-        return;
-    }
-
-
-    try {
-
-        const response =
-            await fetch(
-                BACKEND_URL +
-                "/api/status/" +
-                encodeURIComponent(
-                    currentJobId
-                ),
-                {
-                    method: "GET",
-                    cache: "no-store"
-                }
-            );
-
-
-        const rawText =
-            await response.text();
-
-
-        let data;
-
-
-        try {
-
-            data =
-                JSON.parse(rawText);
-
-        } catch {
-
-            throw new Error(
-                "Resposta inválida do servidor."
-            );
-        }
-
-
-        if (!response.ok) {
-
-            throw new Error(
-                data.error ||
-                "Erro consultando processamento."
-            );
-        }
-
-
-        const progress =
-            Number(
-                data.progress || 0
-            );
-
-
-        let message =
-            data.stage ||
-            "Processando...";
-
-
-        if (
-            data.status === "queued"
-        ) {
-
-            message =
-                "Seu vídeo está na fila de processamento.";
-
-        }
-
-
-        if (
-            data.status === "processing"
-        ) {
-
-            message =
-                data.stage ||
-                "Processando vídeo...";
-        }
-
-
-        setProgress(
-            progress,
-            message,
-            data.status
-        );
-
-
-        /* =================================================
-           CONCLUÍDO
-        ================================================== */
-
-        if (
-            data.status === "done"
-        ) {
-
-            clearPolling();
-
-
-            setProgress(
-                100,
-                "Vídeo dublado com sucesso!",
-                "Concluído"
-            );
-
-
-            if (
-                !data.downloadUrl
-            ) {
-
-                throw new Error(
-                    "O servidor terminou o processamento, mas não informou o arquivo final."
-                );
-            }
-
-
-            const downloadURL =
-                BACKEND_URL +
-                data.downloadUrl;
-
-
-            console.log(
-                "VÍDEO FINAL:",
-                downloadURL
-            );
-
-
-            resultVideo.src =
-                downloadURL;
-
-
-            resultVideo.load();
-
-
-            downloadButton.href =
-                downloadURL;
-
-
-            result.classList.add(
-                "active"
-            );
-
-
-            dubButton.disabled =
-                false;
-
-
-            dubButton.textContent =
-                "🚀 Dublar novamente";
-
-
-            newButton.style.display =
-                "block";
-
-
-            result.scrollIntoView({
-                behavior: "smooth",
-                block: "center"
-            });
-
-
-            return;
-        }
-
-
-        /* =================================================
-           ERRO
-        ================================================== */
-
-        if (
-            data.status === "error"
-        ) {
-
-            clearPolling();
-
-
-            showError(
-                "❌ Erro no processamento." +
-                "<br><br>" +
-                escapeHTML(
-                    data.error ||
-                    "O servidor não conseguiu processar o vídeo."
-                )
-            );
-
-
-            dubButton.disabled =
-                false;
-
-
-            dubButton.textContent =
-                "🚀 Tentar novamente";
-
-
-            return;
-        }
-
-
-        /* =================================================
-           CONTINUAR CONSULTANDO
-        ================================================= */
-
-        pollingTimer =
-            setTimeout(
-                pollStatus,
-                2000
-            );
-
-
-    } catch (error) {
-
-        console.error(
-            "Status:",
-            error
-        );
-
-
-        clearPolling();
-
-
-        showError(
-            "❌ Erro ao consultar o processamento." +
-            "<br><br>" +
-            escapeHTML(
-                error.message ||
-                String(error)
-            )
-        );
-
-
-        dubButton.disabled =
-            false;
-
-
-        dubButton.textContent =
-            "🚀 Tentar novamente";
-
-    }
-
-}
-
-
-/* =====================================================
-   PROGRESSO
-====================================================== */
-
-function setProgress(
-    percent,
-    message,
-    stage
-) {
-
-    let value =
-        Number(percent);
-
-
-    if (
-        Number.isNaN(value)
-    ) {
-
-        value =
-            0;
-    }
-
-
-    value =
-        Math.max(
-            0,
-            Math.min(
-                100,
-                value
-            )
-        );
-
-
-    progressBar.style.width =
-        value + "%";
-
-
-    progressText.textContent =
-        Math.round(value) +
-        "%";
-
-
-    stageText.textContent =
-        stage ||
-        "Processando";
-
-
-    statusMessage.textContent =
-        message ||
-        "Processando...";
-
-}
-
-
-/* =====================================================
-   NOVO VÍDEO
-====================================================== */
-
-newButton.addEventListener(
-    "click",
-    function () {
-
-        clearPolling();
-
-
-        selectedFile =
-            null;
-
-
-        currentJobId =
-            null;
-
-
-        videoInput.value =
-            "";
-
-
-        previewVideo.pause();
-
-
-        previewVideo.removeAttribute(
-            "src"
-        );
-
-
-        previewVideo.load();
-
-
-        resultVideo.pause();
-
-
-        resultVideo.removeAttribute(
-            "src"
-        );
-
-
-        resultVideo.load();
-
-
-        if (previewObjectURL) {
-
-            URL.revokeObjectURL(
-                previewObjectURL
-            );
-
-            previewObjectURL =
-                null;
-        }
-
-
-        preview.classList.remove(
-            "active"
-        );
-
-
-        result.classList.remove(
-            "active"
-        );
-
-
-        statusCard.classList.remove(
-            "active"
-        );
-
-
-        hideError();
-
-
-        progressBar.style.width =
-            "0%";
-
-
-        progressText.textContent =
-            "0%";
-
-
-        stageText.textContent =
-            "Aguardando";
-
-
-        statusMessage.textContent =
-            "Preparando...";
-
-
-        dubButton.disabled =
-            false;
-
-
-        dubButton.textContent =
-            "🚀 Traduzir e dublar vídeo";
-
-
-        newButton.style.display =
-            "none";
-
-    }
-);
-
-
-/* =====================================================
-   ERROS
-====================================================== */
-
-function showError(message) {
-
-    errorBox.innerHTML =
-        message;
-
-
-    errorBox.classList.add(
-        "active"
-    );
-
-
-    errorBox.scrollIntoView({
-        behavior: "smooth",
-        block: "center"
-    });
-}
-
-
-function hideError() {
-
-    errorBox.classList.remove(
-        "active"
-    );
-
-
-    errorBox.innerHTML =
-        "";
-}
-
-
-/* =====================================================
-   LIMPAR POLLING
-====================================================== */
-
-function clearPolling() {
-
-    if (pollingTimer) {
-
-        clearTimeout(
-            pollingTimer
-        );
-
-
-        pollingTimer =
-            null;
-    }
-
-}
-
-
-/* =====================================================
-   SEGURANÇA
-====================================================== */
-
-function escapeHTML(text) {
-
-    return String(text)
-
-        .replace(
-            /&/g,
-            "&amp;"
-        )
-
-        .replace(
-            /</g,
-            "&lt;"
-        )
-
-        .replace(
-            />/g,
-            "&gt;"
-        )
-
-        .replace(
-            /"/g,
-            "&quot;"
-        )
-
-        .replace(
-            /'/g,
-            "&#039;"
-        );
-
-}
-
-
-/* =====================================================
-   INICIALIZAÇÃO
-====================================================== */
-
-checkBackend();
-
-
-setInterval(
-    checkBackend,
-    30000
-);
-
-</script>
+  </script>
 
 </body>
-
-    </html>
+</html>
