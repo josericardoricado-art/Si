@@ -2,13 +2,14 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  >
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <title>SI Tradutor Live</title>
+
+  <meta
+    name="description"
+    content="SI Tradutor Live - tradução e dublagem de vídeos e transmissões."
+  >
 
   <style>
     * {
@@ -19,7 +20,7 @@
       margin: 0;
       font-family: Arial, sans-serif;
       background: #0b1020;
-      color: white;
+      color: #fff;
     }
 
     .container {
@@ -63,6 +64,7 @@
       font-weight: bold;
       background: #27304a;
       color: white;
+      font-size: 15px;
     }
 
     .tab.active {
@@ -94,6 +96,10 @@
       font-size: 16px;
     }
 
+    input[type="file"] {
+      padding: 12px;
+    }
+
     button.action {
       width: 100%;
       margin-top: 18px;
@@ -123,6 +129,7 @@
       background: #0e1425;
       color: #cbd3e5;
       white-space: pre-wrap;
+      line-height: 1.5;
     }
 
     .video-box {
@@ -152,221 +159,266 @@
       line-height: 1.5;
       margin-top: 15px;
     }
+
+    .success {
+      color: #8fe3a5;
+    }
+
+    .error {
+      color: #ff7d8a;
+    }
   </style>
 </head>
 
 <body>
 
-  <div class="container">
+<div class="container">
 
-    <h1>🎙️ SI Tradutor Live</h1>
+  <h1>🎙️ SI Tradutor Live</h1>
 
-    <div class="subtitle">
-      Tradução e dublagem com ElevenLabs
+  <div class="subtitle">
+    Tradução e dublagem com ElevenLabs
+  </div>
+
+  <div class="card">
+
+    <div class="tabs">
+
+      <button
+        class="tab active"
+        id="videoTab"
+        onclick="showMode('video')"
+      >
+        🎬 Vídeo
+      </button>
+
+      <button
+        class="tab"
+        id="liveTab"
+        onclick="showMode('live')"
+      >
+        🔴 YouTube Live
+      </button>
+
     </div>
 
-    <div class="card">
 
-      <div class="tabs">
-
-        <button
-          class="tab active"
-          id="videoTab"
-          onclick="showMode('video')"
-        >
-          🎬 Vídeo
-        </button>
-
-        <button
-          class="tab"
-          id="liveTab"
-          onclick="showMode('live')"
-        >
-          🔴 YouTube Live
-        </button>
-
-      </div>
-
-
-      <!-- =================================================
-           VÍDEO
-      ================================================== -->
-
-      <div
-        id="videoMode"
-        class="mode active"
-      >
-
-        <label>
-          Escolha o vídeo
-        </label>
-
-        <input
-          type="file"
-          id="videoInput"
-          accept="video/*"
-        >
-
-        <label>
-          Traduzir para
-        </label>
-
-        <select id="videoLanguage">
-          <option value="pt">
-            🇧🇷 Português
-          </option>
-
-          <option value="en">
-            🇺🇸 Inglês
-          </option>
-
-          <option value="es">
-            🇪🇸 Espanhol
-          </option>
-
-          <option value="fr">
-            🇫🇷 Francês
-          </option>
-
-          <option value="de">
-            🇩🇪 Alemão
-          </option>
-
-          <option value="it">
-            🇮🇹 Italiano
-          </option>
-
-          <option value="ja">
-            🇯🇵 Japonês
-          </option>
-
-          <option value="ko">
-            🇰🇷 Coreano
-          </option>
-
-          <option value="zh">
-            🇨🇳 Chinês
-          </option>
-
-          <option value="ar">
-            🇸🇦 Árabe
-          </option>
-        </select>
-
-        <button
-          class="action"
-          id="videoButton"
-          onclick="sendVideo()"
-        >
-          🎬 DUBLAR VÍDEO
-        </button>
-
-        <div
-          class="status"
-          id="videoStatus"
-        >
-          Aguardando vídeo...
-        </div>
-
-      </div>
-
-
-      <!-- =================================================
-           YOUTUBE LIVE
-      ================================================== -->
-
-      <div
-        id="liveMode"
-        class="mode"
-      >
-
-        <label>
-          Cole o link da YouTube Live
-        </label>
-
-        <input
-          type="url"
-          id="youtubeUrl"
-          placeholder="https://www.youtube.com/watch?v=..."
-        >
-
-        <label>
-          Traduzir para
-        </label>
-
-        <select id="liveLanguage">
-
-          <option value="pt">
-            🇧🇷 Português
-          </option>
-
-          <option value="en">
-            🇺🇸 Inglês
-          </option>
-
-          <option value="es">
-            🇪🇸 Espanhol
-          </option>
-
-        </select>
-
-        <button
-          class="action"
-          id="liveButton"
-          onclick="startLive()"
-        >
-          🔴 INICIAR LIVE
-        </button>
-
-        <button
-          class="action stop"
-          id="stopButton"
-          onclick="stopLive()"
-          style="display:none"
-        >
-          ⏹️ PARAR
-        </button>
-
-        <div
-          class="status"
-          id="liveStatus"
-        >
-          Aguardando link da live...
-        </div>
-
-        <div
-          class="video-box"
-          id="youtubePlayer"
-        >
-          <iframe
-            id="youtubeFrame"
-            allow="autoplay; encrypted-media"
-            allowfullscreen
-          ></iframe>
-        </div>
-
-        <div class="warning">
-          ⚠️ Nesta primeira versão o link é conectado ao aplicativo
-          e a live é exibida no site. A captura automática do áudio
-          da transmissão para dublagem contínua será adicionada na
-          próxima etapa.
-        </div>
-
-      </div>
-
-    </div>
+    <!-- =====================================================
+         VÍDEO
+    ====================================================== -->
 
     <div
-      class="connection"
-      id="connectionStatus"
+      id="videoMode"
+      class="mode active"
     >
-      🔄 Verificando servidor...
+
+      <label>
+        Escolha o vídeo
+      </label>
+
+      <input
+        type="file"
+        id="videoInput"
+        accept="video/*"
+      >
+
+      <label>
+        Traduzir para
+      </label>
+
+      <select id="videoLanguage">
+
+        <option value="pt">
+          🇧🇷 Português
+        </option>
+
+        <option value="en">
+          🇺🇸 Inglês
+        </option>
+
+        <option value="es">
+          🇪🇸 Espanhol
+        </option>
+
+        <option value="fr">
+          🇫🇷 Francês
+        </option>
+
+        <option value="de">
+          🇩🇪 Alemão
+        </option>
+
+        <option value="it">
+          🇮🇹 Italiano
+        </option>
+
+        <option value="ja">
+          🇯🇵 Japonês
+        </option>
+
+        <option value="ko">
+          🇰🇷 Coreano
+        </option>
+
+        <option value="zh">
+          🇨🇳 Chinês
+        </option>
+
+        <option value="ar">
+          🇸🇦 Árabe
+        </option>
+
+      </select>
+
+      <button
+        class="action"
+        id="videoButton"
+        onclick="sendVideo()"
+      >
+        🎬 DUBLAR VÍDEO
+      </button>
+
+      <div
+        class="status"
+        id="videoStatus"
+      >
+        Aguardando vídeo...
+      </div>
+
+    </div>
+
+
+    <!-- =====================================================
+         YOUTUBE LIVE
+    ====================================================== -->
+
+    <div
+      id="liveMode"
+      class="mode"
+    >
+
+      <label>
+        Cole o link da YouTube Live
+      </label>
+
+      <input
+        type="url"
+        id="youtubeUrl"
+        placeholder="https://www.youtube.com/live/..."
+        autocomplete="off"
+      >
+
+      <label>
+        Traduzir para
+      </label>
+
+      <select id="liveLanguage">
+
+        <option value="pt">
+          🇧🇷 Português
+        </option>
+
+        <option value="en">
+          🇺🇸 Inglês
+        </option>
+
+        <option value="es">
+          🇪🇸 Espanhol
+        </option>
+
+        <option value="fr">
+          🇫🇷 Francês
+        </option>
+
+        <option value="de">
+          🇩🇪 Alemão
+        </option>
+
+        <option value="it">
+          🇮🇹 Italiano
+        </option>
+
+        <option value="ja">
+          🇯🇵 Japonês
+        </option>
+
+        <option value="ko">
+          🇰🇷 Coreano
+        </option>
+
+        <option value="zh">
+          🇨🇳 Chinês
+        </option>
+
+        <option value="ar">
+          🇸🇦 Árabe
+        </option>
+
+      </select>
+
+      <button
+        class="action"
+        id="liveButton"
+        onclick="startLive()"
+      >
+        🔴 INICIAR LIVE
+      </button>
+
+      <button
+        class="action stop"
+        id="stopButton"
+        onclick="stopLive()"
+        style="display:none"
+      >
+        ⏹️ PARAR
+      </button>
+
+      <div
+        class="status"
+        id="liveStatus"
+      >
+        Aguardando link da live...
+      </div>
+
+      <div
+        class="video-box"
+        id="youtubePlayer"
+      >
+
+        <iframe
+          id="youtubeFrame"
+          title="YouTube Live"
+          allow="autoplay; encrypted-media; picture-in-picture"
+          allowfullscreen
+        ></iframe>
+
+      </div>
+
+      <div class="warning">
+        ⚠️ A live será exibida aqui. A captura e tradução
+        automática do áudio da transmissão será ligada na
+        próxima etapa.
+      </div>
+
     </div>
 
   </div>
 
+  <div
+    class="connection"
+    id="connectionStatus"
+  >
+    🔄 Verificando servidor...
+  </div>
+
+</div>
+
 
 <script>
+
+/* ==========================================================
+   CONFIGURAÇÃO
+========================================================== */
 
 const BACKEND_URL =
   "https://si-u2ul.onrender.com";
@@ -374,13 +426,13 @@ const BACKEND_URL =
 const AGENT_ID =
   "agent_1601m1q929bhf2zvts65479fyzdw";
 
-let signedUrl = null;
 let agentSocket = null;
+let signedUrl = null;
 
 
-/* ========================================================
-   MODOS
-======================================================== */
+/* ==========================================================
+   TROCAR ABA
+========================================================== */
 
 function showMode(mode) {
 
@@ -395,6 +447,7 @@ function showMode(mode) {
 
   const liveTab =
     document.getElementById("liveTab");
+
 
   if (mode === "video") {
 
@@ -413,12 +466,13 @@ function showMode(mode) {
     liveTab.classList.add("active");
 
   }
+
 }
 
 
-/* ========================================================
-   HEALTH
-======================================================== */
+/* ==========================================================
+   TESTAR SERVIDOR
+========================================================== */
 
 async function checkHealth() {
 
@@ -445,7 +499,8 @@ async function checkHealth() {
     } else {
 
       status.textContent =
-        "🔴 " + data.message;
+        "🔴 " +
+        (data.message || "Erro no servidor.");
 
     }
 
@@ -455,12 +510,161 @@ async function checkHealth() {
       "🔴 Não foi possível conectar ao servidor.";
 
   }
+
 }
 
 
-/* ========================================================
-   VÍDEO
-======================================================== */
+/* ==========================================================
+   IDENTIFICAR ID DO YOUTUBE
+========================================================== */
+
+function getYouTubeId(url) {
+
+  if (!url) {
+    return null;
+  }
+
+  url = url.trim();
+
+
+  /* -----------------------------------------
+     youtube.com/live/VIDEO_ID
+  ----------------------------------------- */
+
+  const liveMatch =
+    url.match(
+      /youtube\.com\/live\/([^?&#/]+)/i
+    );
+
+  if (liveMatch && liveMatch[1]) {
+
+    return liveMatch[1];
+
+  }
+
+
+  /* -----------------------------------------
+     youtube.com/watch?v=VIDEO_ID
+  ----------------------------------------- */
+
+  try {
+
+    const parsed =
+      new URL(url);
+
+    const hostname =
+      parsed.hostname.toLowerCase();
+
+    const pathname =
+      parsed.pathname;
+
+
+    if (
+      hostname === "youtube.com" ||
+      hostname === "www.youtube.com" ||
+      hostname === "m.youtube.com"
+    ) {
+
+      const videoId =
+        parsed.searchParams.get("v");
+
+      if (videoId) {
+
+        return videoId;
+
+      }
+
+
+      /* -------------------------------------
+         /embed/VIDEO_ID
+      ------------------------------------- */
+
+      const embedMatch =
+        pathname.match(
+          /^\/embed\/([^/]+)/i
+        );
+
+      if (embedMatch) {
+
+        return embedMatch[1];
+
+      }
+
+
+      /* -------------------------------------
+         /shorts/VIDEO_ID
+      ------------------------------------- */
+
+      const shortsMatch =
+        pathname.match(
+          /^\/shorts\/([^/]+)/i
+        );
+
+      if (shortsMatch) {
+
+        return shortsMatch[1];
+
+      }
+
+    }
+
+
+    /* -----------------------------------------
+       youtu.be/VIDEO_ID
+    ----------------------------------------- */
+
+    if (
+      hostname === "youtu.be" ||
+      hostname === "www.youtu.be"
+    ) {
+
+      const id =
+        pathname
+          .replace(/^\/+/, "")
+          .split("/")[0];
+
+      if (id) {
+
+        return id;
+
+      }
+
+    }
+
+  } catch (error) {
+
+    console.log(
+      "Erro analisando URL:",
+      error
+    );
+
+  }
+
+
+  /* -----------------------------------------
+     Última tentativa:
+     procurar padrão v= ou /live/
+  ----------------------------------------- */
+
+  const fallback =
+    url.match(
+      /(?:v=|\/live\/|youtu\.be\/)([A-Za-z0-9_-]{6,})/i
+    );
+
+  if (fallback && fallback[1]) {
+
+    return fallback[1];
+
+  }
+
+
+  return null;
+}
+
+
+/* ==========================================================
+   ENVIAR VÍDEO
+========================================================== */
 
 async function sendVideo() {
 
@@ -484,13 +688,16 @@ async function sendVideo() {
       "videoLanguage"
     ).value;
 
+
   if (!input.files.length) {
 
     status.textContent =
       "❌ Escolha um vídeo primeiro.";
 
     return;
+
   }
+
 
   const formData =
     new FormData();
@@ -505,10 +712,12 @@ async function sendVideo() {
     language
   );
 
+
   button.disabled = true;
 
   status.textContent =
     "⏳ Enviando vídeo...";
+
 
   try {
 
@@ -522,10 +731,12 @@ async function sendVideo() {
         }
       );
 
+
     const data =
       await response.json();
 
-    if (!data.ok) {
+
+    if (!response.ok || !data.ok) {
 
       throw new Error(
         data.error ||
@@ -534,8 +745,11 @@ async function sendVideo() {
 
     }
 
+
     status.textContent =
-      "⏳ " + data.message;
+      "⏳ " +
+      data.message;
+
 
     pollVideo(
       data.jobId,
@@ -543,16 +757,23 @@ async function sendVideo() {
       button
     );
 
+
   } catch (error) {
 
     status.textContent =
-      "❌ " + error.message;
+      "❌ " +
+      error.message;
 
     button.disabled = false;
 
   }
+
 }
 
+
+/* ==========================================================
+   ACOMPANHAR VÍDEO
+========================================================== */
 
 async function pollVideo(
   jobId,
@@ -569,12 +790,29 @@ async function pollVideo(
         jobId
       );
 
+
     const data =
       await response.json();
 
+
+    if (!response.ok) {
+
+      throw new Error(
+        data.error ||
+        "Erro consultando status."
+      );
+
+    }
+
+
     status.textContent =
       "⏳ " +
-      (data.message || data.status);
+      (
+        data.message ||
+        data.status ||
+        "Processando..."
+      );
+
 
     if (
       data.status ===
@@ -583,17 +821,24 @@ async function pollVideo(
 
       status.innerHTML =
         "✅ Dublagem concluída!<br><br>" +
+
         "<a href=\"" +
         data.output_url +
         "\" target=\"_blank\" " +
+
         "style=\"color:#61c8ff\">" +
+
         "🔊 Abrir áudio dublado" +
+
         "</a>";
+
 
       button.disabled = false;
 
       return;
+
     }
+
 
     if (
       data.status ===
@@ -601,70 +846,46 @@ async function pollVideo(
     ) {
 
       status.textContent =
-        "❌ " + data.message;
+        "❌ " +
+        data.message;
 
       button.disabled = false;
 
       return;
+
     }
 
+
     setTimeout(
-      () => pollVideo(
-        jobId,
-        status,
-        button
-      ),
+      function() {
+
+        pollVideo(
+          jobId,
+          status,
+          button
+        );
+
+      },
       5000
     );
+
 
   } catch (error) {
 
     status.textContent =
-      "❌ Erro consultando status.";
+      "❌ " +
+      error.message;
 
     button.disabled = false;
 
   }
+
 }
 
 
-/* ========================================================
-   YOUTUBE
-======================================================== */
-
-function getYouTubeId(url) {
-
-  try {
-
-    const parsed =
-      new URL(url);
-
-    if (
-      parsed.hostname.includes(
-        "youtu.be"
-      )
-    ) {
-
-      return parsed.pathname
-        .replace("/", "");
-
-    }
-
-    return parsed.searchParams.get(
-      "v"
-    );
-
-  } catch {
-
-    return null;
-
-  }
-}
-
-
-/* ========================================================
-   INICIAR LIVE
-======================================================== */
+/* ==========================================================
+   INICIAR YOUTUBE LIVE
+========================================================== */
 
 async function startLive() {
 
@@ -698,13 +919,20 @@ async function startLive() {
       "youtubeFrame"
     );
 
+
   const youtubeUrl =
     urlInput.value.trim();
+
 
   const targetLanguage =
     document.getElementById(
       "liveLanguage"
     ).value;
+
+
+  /* -----------------------------------------
+     Verificar URL
+  ----------------------------------------- */
 
   if (!youtubeUrl) {
 
@@ -715,26 +943,48 @@ async function startLive() {
 
   }
 
+
+  /* -----------------------------------------
+     Pegar ID
+  ----------------------------------------- */
+
   const videoId =
     getYouTubeId(
       youtubeUrl
     );
 
+
+  console.log(
+    "YouTube ID:",
+    videoId
+  );
+
+
   if (!videoId) {
 
     status.textContent =
-      "❌ Não consegui identificar o vídeo do YouTube.";
+      "❌ Não consegui identificar o vídeo do YouTube.\n\n" +
+      "Exemplo válido:\n" +
+      "https://www.youtube.com/live/VIDEO_ID";
 
     return;
 
   }
 
-  startButton.disabled = true;
+
+  startButton.disabled =
+    true;
+
 
   status.textContent =
-    "⏳ Conectando ao servidor...";
+    "⏳ Conectando à YouTube Live...";
+
 
   try {
+
+    /* ---------------------------------------
+       Avisar backend
+    --------------------------------------- */
 
     const response =
       await fetch(
@@ -742,22 +992,34 @@ async function startLive() {
         "/api/youtube-live",
         {
           method: "POST",
+
           headers: {
             "Content-Type":
               "application/json"
           },
+
           body: JSON.stringify({
-            url: youtubeUrl,
+
+            url:
+              youtubeUrl,
+
             targetLang:
               targetLanguage
+
           })
+
         }
       );
+
 
     const data =
       await response.json();
 
-    if (!data.ok) {
+
+    if (
+      !response.ok ||
+      !data.ok
+    ) {
 
       throw new Error(
         data.error ||
@@ -766,17 +1028,24 @@ async function startLive() {
 
     }
 
+
+    /* ---------------------------------------
+       Mostrar YouTube
+    --------------------------------------- */
+
     frame.src =
       "https://www.youtube.com/embed/" +
-      videoId +
+      encodeURIComponent(videoId) +
       "?autoplay=1";
+
 
     player.style.display =
       "block";
 
-    status.textContent =
-      "🟢 Live conectada. " +
-      "Conectando ao SI Tradutor...";
+
+    /* ---------------------------------------
+       Botões
+    --------------------------------------- */
 
     startButton.style.display =
       "none";
@@ -784,27 +1053,53 @@ async function startLive() {
     stopButton.style.display =
       "block";
 
-    await connectAgent();
 
     status.textContent =
-      "🟢 Live aberta. " +
-      "Agent conectado.";
+      "🟢 YouTube Live conectada.\n\n" +
+      "ID: " +
+      videoId +
+      "\n\n" +
+      "⏳ Conectando ao SI Tradutor...";
+
+
+    /* ---------------------------------------
+       Conectar Agent
+    --------------------------------------- */
+
+    try {
+
+      await connectAgent();
+
+      status.textContent =
+        "🟢 YouTube Live conectada.\n\n" +
+        "🟢 SI Tradutor conectado ao Agent.";
+
+    } catch (agentError) {
+
+      status.textContent =
+        "🟡 Live aberta, mas o Agent não conectou.\n\n" +
+        agentError.message;
+
+    }
+
 
   } catch (error) {
 
     status.textContent =
-      "❌ " + error.message;
+      "❌ " +
+      error.message;
 
     startButton.disabled =
       false;
 
   }
+
 }
 
 
-/* ========================================================
-   AGENT ELEVENLABS
-======================================================== */
+/* ==========================================================
+   CONECTAR ELEVENLABS AGENT
+========================================================== */
 
 async function connectAgent() {
 
@@ -814,10 +1109,15 @@ async function connectAgent() {
       "/api/agent/signed-url"
     );
 
+
   const data =
     await response.json();
 
-  if (!data.ok) {
+
+  if (
+    !response.ok ||
+    !data.ok
+  ) {
 
     throw new Error(
       data.error ||
@@ -826,40 +1126,99 @@ async function connectAgent() {
 
   }
 
+
   signedUrl =
     data.signedUrl;
+
+
+  if (!signedUrl) {
+
+    throw new Error(
+      "O servidor não retornou a URL do Agent."
+    );
+
+  }
+
 
   agentSocket =
     new WebSocket(
       signedUrl
     );
 
-  await new Promise(
-    (resolve, reject) => {
+
+  return new Promise(
+    function(resolve, reject) {
+
+      let finished =
+        false;
+
 
       const timeout =
         setTimeout(
-          () => reject(
-            new Error(
-              "Tempo limite conectando ao Agent."
-            )
-          ),
+          function() {
+
+            if (finished) {
+              return;
+            }
+
+            finished = true;
+
+            try {
+              agentSocket.close();
+            } catch {}
+
+            reject(
+              new Error(
+                "Tempo limite conectando ao Agent."
+              )
+            );
+
+          },
           15000
         );
 
+
       agentSocket.onopen =
-        () => {
+        function() {
+
+          if (finished) {
+            return;
+          }
+
+          finished = true;
 
           clearTimeout(
             timeout
+          );
+
+          console.log(
+            "ElevenLabs Agent conectado."
           );
 
           resolve();
 
         };
 
+
+      agentSocket.onmessage =
+        function(event) {
+
+          console.log(
+            "ElevenLabs:",
+            event.data
+          );
+
+        };
+
+
       agentSocket.onerror =
-        () => {
+        function() {
+
+          if (finished) {
+            return;
+          }
+
+          finished = true;
 
           clearTimeout(
             timeout
@@ -867,18 +1226,18 @@ async function connectAgent() {
 
           reject(
             new Error(
-              "Erro na conexão com ElevenLabs."
+              "Erro na conexão com o ElevenLabs Agent."
             )
           );
 
         };
 
-      agentSocket.onmessage =
-        event => {
+
+      agentSocket.onclose =
+        function() {
 
           console.log(
-            "ElevenLabs:",
-            event.data
+            "Conexão com Agent encerrada."
           );
 
         };
@@ -889,9 +1248,9 @@ async function connectAgent() {
 }
 
 
-/* ========================================================
-   PARAR
-======================================================== */
+/* ==========================================================
+   PARAR LIVE
+========================================================== */
 
 function stopLive() {
 
@@ -920,29 +1279,40 @@ function stopLive() {
       "stopButton"
     );
 
+
   if (agentSocket) {
 
     try {
+
       agentSocket.close();
+
     } catch {}
 
     agentSocket =
       null;
+
   }
 
-  frame.src = "";
+
+  frame.src =
+    "";
+
 
   player.style.display =
     "none";
 
+
   stopButton.style.display =
     "none";
+
 
   startButton.style.display =
     "block";
 
+
   startButton.disabled =
     false;
+
 
   status.textContent =
     "⏹️ Live parada.";
@@ -950,13 +1320,13 @@ function stopLive() {
 }
 
 
-/* ========================================================
-   INICIAR
-======================================================== */
+/* ==========================================================
+   INICIAR SITE
+========================================================== */
 
 checkHealth();
 
 </script>
 
 </body>
-</html>
+  </html>
