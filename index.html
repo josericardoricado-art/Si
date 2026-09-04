@@ -1,2478 +1,1743 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
-
-  <meta name="viewport"
-        content="width=device-width, initial-scale=1.0">
-
-  <title>LinguaLive — Tradutor e Dublagem com IA</title>
-
-  <meta name="description"
-        content="LinguaLive traduz e dubla vídeos e áudios com inteligência artificial em vários idiomas.">
-
-  <meta name="keywords"
-        content="tradutor IA, tradução de vídeo, dublagem IA, tradutor em tempo real, inteligência artificial">
-
-  <meta name="author" content="LinguaLive">
-
-  <meta property="og:title"
-        content="LinguaLive — Tradutor com IA">
-
-  <meta property="og:description"
-        content="Traduza e duble seus vídeos com inteligência artificial.">
-
-  <meta property="og:type" content="website">
-
-  <style>
-
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    html {
-      scroll-behavior: smooth;
-    }
-
-    body {
-      font-family:
-        Inter,
-        system-ui,
-        -apple-system,
-        BlinkMacSystemFont,
-        "Segoe UI",
-        sans-serif;
-
-      background:
-        radial-gradient(
-          circle at 50% 0%,
-          rgba(126, 52, 255, .20),
-          transparent 35%
-        ),
-        #07050d;
-
-      color: #ffffff;
-      overflow-x: hidden;
-    }
-
-    a {
-      color: inherit;
-      text-decoration: none;
-    }
-
-    button,
-    input,
-    select {
-      font: inherit;
-    }
-
-    /* =========================
-       FUNDO
-    ========================= */
-
-    .background-glow {
-      position: fixed;
-      width: 500px;
-      height: 500px;
-      border-radius: 50%;
-      background: #741cff;
-      filter: blur(180px);
-      opacity: .12;
-      pointer-events: none;
-      z-index: -1;
-    }
-
-    .glow-1 {
-      top: -250px;
-      left: -150px;
-    }
-
-    .glow-2 {
-      right: -250px;
-      top: 500px;
-      background: #b517ff;
-    }
-
-    /* =========================
-       HEADER
-    ========================= */
-
-    header {
-      position: sticky;
-      top: 0;
-      z-index: 1000;
-
-      background: rgba(7, 5, 13, .78);
-      backdrop-filter: blur(20px);
-
-      border-bottom: 1px solid rgba(255,255,255,.07);
-    }
-
-    .nav {
-      max-width: 1200px;
-      margin: auto;
-
-      height: 74px;
-
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-
-      padding: 0 22px;
-    }
-
-    .logo {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-
-      font-size: 21px;
-      font-weight: 800;
-      letter-spacing: -.5px;
-    }
-
-    .logo-icon {
-      width: 38px;
-      height: 38px;
-
-      border-radius: 12px;
-
-      display: flex;
-      align-items: center;
-      justify-content: center;
-
-      background:
-        linear-gradient(
-          135deg,
-          #9d4dff,
-          #5c13e8
-        );
-
-      box-shadow:
-        0 0 30px rgba(139, 50, 255, .35);
-    }
-
-    .logo-icon span {
-      font-size: 20px;
-    }
-
-    .nav-links {
-      display: flex;
-      align-items: center;
-      gap: 30px;
-
-      color: #aaa4b7;
-      font-size: 14px;
-    }
-
-    .nav-links a {
-      transition: .2s;
-    }
-
-    .nav-links a:hover {
-      color: white;
-    }
-
-    .nav-actions {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .btn-login {
-      padding: 10px 17px;
-      border-radius: 10px;
-      color: #c8c2d0;
-      font-size: 14px;
-    }
-
-    .btn-login:hover {
-      color: white;
-    }
-
-    .btn-small {
-      padding: 11px 18px;
-
-      border: 0;
-      border-radius: 11px;
-
-      color: white;
-      font-weight: 700;
-      font-size: 14px;
-
-      cursor: pointer;
-
-      background:
-        linear-gradient(
-          135deg,
-          #9747ff,
-          #6818dc
-        );
-
-      box-shadow:
-        0 8px 25px rgba(111, 30, 220, .25);
-    }
-
-    .mobile-menu {
-      display: none;
-
-      border: 0;
-      background: transparent;
-      color: white;
-
-      font-size: 26px;
-      cursor: pointer;
-    }
-
-    /* =========================
-       HERO
-    ========================= */
-
-    .hero {
-      max-width: 1150px;
-      margin: auto;
-
-      min-height: 700px;
-
-      padding:
-        90px 22px
-        70px;
-
-      text-align: center;
-
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-
-      padding: 8px 14px;
-
-      border: 1px solid rgba(160,90,255,.30);
-      border-radius: 50px;
-
-      background: rgba(122, 40, 255, .08);
-
-      color: #cba8ff;
-
-      font-size: 13px;
-      margin-bottom: 25px;
-    }
-
-    .badge-dot {
-      width: 7px;
-      height: 7px;
-
-      background: #a45cff;
-      border-radius: 50%;
-
-      box-shadow: 0 0 12px #a45cff;
-    }
-
-    .hero h1 {
-      max-width: 850px;
-
-      font-size:
-        clamp(43px, 7vw, 78px);
-
-      line-height: .98;
-      letter-spacing: -4px;
-
-      margin-bottom: 25px;
-
-      background:
-        linear-gradient(
-          180deg,
-          #ffffff 15%,
-          #bda8d7 100%
-        );
-
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
-    }
-
-    .hero h1 .purple {
-      background:
-        linear-gradient(
-          90deg,
-          #b36cff,
-          #7a2bff
-        );
-
-      -webkit-background-clip: text;
-      background-clip: text;
-
-      color: transparent;
-    }
-
-    .hero-description {
-      max-width: 680px;
-
-      color: #aaa3b4;
-
-      font-size: 18px;
-      line-height: 1.7;
-
-      margin-bottom: 35px;
-    }
-
-    .hero-buttons {
-      display: flex;
-      gap: 13px;
-      justify-content: center;
-      flex-wrap: wrap;
-    }
-
-    .btn-primary {
-      border: 0;
-      cursor: pointer;
-
-      padding: 15px 24px;
-
-      border-radius: 13px;
-
-      color: white;
-      font-weight: 800;
-
-      background:
-        linear-gradient(
-          135deg,
-          #a452ff,
-          #6817e6
-        );
-
-      box-shadow:
-        0 12px 35px rgba(111, 30, 220, .30);
-
-      transition: .2s;
-    }
-
-    .btn-primary:hover {
-      transform: translateY(-2px);
-
-      box-shadow:
-        0 16px 40px rgba(111, 30, 220, .42);
-    }
-
-    .btn-secondary {
-      padding: 15px 24px;
-
-      border: 1px solid rgba(255,255,255,.12);
-      border-radius: 13px;
-
-      background: rgba(255,255,255,.035);
-
-      color: #e6e0ed;
-
-      font-weight: 700;
-
-      cursor: pointer;
-
-      transition: .2s;
-    }
-
-    .btn-secondary:hover {
-      background: rgba(255,255,255,.07);
-    }
-
-    /* =========================
-       TRANSLATOR CARD
-    ========================= */
-
-    .translator {
-      width: 100%;
-      max-width: 940px;
-
-      margin-top: 70px;
-
-      padding: 1px;
-
-      border-radius: 25px;
-
-      background:
-        linear-gradient(
-          135deg,
-          rgba(159,76,255,.45),
-          rgba(255,255,255,.07),
-          rgba(109,35,255,.35)
-        );
-
-      box-shadow:
-        0 30px 100px rgba(0,0,0,.45);
-    }
-
-    .translator-inner {
-      border-radius: 24px;
-
-      background:
-        linear-gradient(
-          145deg,
-          #100b19,
-          #0b0811
-        );
-
-      padding: 27px;
-
-      text-align: left;
-    }
-
-    .translator-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-
-      margin-bottom: 22px;
-    }
-
-    .translator-title {
-      font-size: 17px;
-      font-weight: 800;
-    }
-
-    .online {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-
-      color: #9bffb0;
-      font-size: 12px;
-    }
-
-    .online-dot {
-      width: 7px;
-      height: 7px;
-
-      border-radius: 50%;
-      background: #4cff70;
-
-      box-shadow: 0 0 10px #4cff70;
-    }
-
-    .upload-area {
-      min-height: 180px;
-
-      border:
-        1px dashed rgba(176, 119, 255, .40);
-
-      border-radius: 18px;
-
-      background:
-        rgba(111, 33, 220, .045);
-
-      display: flex;
-      align-items: center;
-      justify-content: center;
-
-      text-align: center;
-
-      cursor: pointer;
-
-      transition: .2s;
-    }
-
-    .upload-area:hover {
-      background:
-        rgba(111, 33, 220, .09);
-
-      border-color:
-        rgba(176,119,255,.75);
-    }
-
-    .upload-content {
-      padding: 25px;
-    }
-
-    .upload-icon {
-      width: 55px;
-      height: 55px;
-
-      margin: 0 auto 13px;
-
-      display: flex;
-      align-items: center;
-      justify-content: center;
-
-      border-radius: 15px;
-
-      background: rgba(142,56,255,.13);
-
-      font-size: 25px;
-    }
-
-    .upload-content h3 {
-      font-size: 16px;
-      margin-bottom: 6px;
-    }
-
-    .upload-content p {
-      color: #8d8797;
-      font-size: 13px;
-    }
-
-    #videoInput {
-      display: none;
-    }
-
-    .preview {
-      display: none;
-
-      margin-top: 20px;
-
-      border-radius: 16px;
-
-      overflow: hidden;
-
-      background: #050408;
-
-      border: 1px solid rgba(255,255,255,.08);
-    }
-
-    .preview video {
-      display: block;
-
-      width: 100%;
-      max-height: 400px;
-
-      background: black;
-    }
-
-    .controls {
-      display: grid;
-
-      grid-template-columns:
-        1fr 1fr auto;
-
-      gap: 12px;
-
-      margin-top: 18px;
-    }
-
-    .field {
-      display: flex;
-      flex-direction: column;
-      gap: 7px;
-    }
-
-    .field label {
-      color: #8f8999;
-      font-size: 12px;
-    }
-
-    .field select {
-      width: 100%;
-
-      padding: 13px;
-
-      border-radius: 11px;
-
-      color: white;
-
-      background: #17121e;
-
-      border:
-        1px solid rgba(255,255,255,.09);
-
-      outline: none;
-    }
-
-    .dub-button {
-      align-self: end;
-
-      padding: 13px 22px;
-
-      border: 0;
-      border-radius: 11px;
-
-      color: white;
-      font-weight: 800;
-
-      background:
-        linear-gradient(
-          135deg,
-          #9c48ff,
-          #6716df
-        );
-
-      cursor: pointer;
-    }
-
-    .status {
-      display: none;
-
-      margin-top: 15px;
-
-      padding: 13px;
-
-      border-radius: 10px;
-
-      background: rgba(143, 65, 255, .08);
-
-      color: #cdb6e8;
-
-      font-size: 13px;
-
-      text-align: center;
-    }
-
-    /* =========================
-       STATS
-    ========================= */
-
-    .stats {
-      width: 100%;
-      max-width: 950px;
-
-      margin-top: 65px;
-
-      display: grid;
-      grid-template-columns: repeat(3,1fr);
-
-      border-top:
-        1px solid rgba(255,255,255,.07);
-
-      border-bottom:
-        1px solid rgba(255,255,255,.07);
-    }
-
-    .stat {
-      padding: 28px 10px;
-      text-align: center;
-    }
-
-    .stat + .stat {
-      border-left:
-        1px solid rgba(255,255,255,.07);
-    }
-
-    .stat strong {
-      display: block;
-
-      font-size: 28px;
-      margin-bottom: 5px;
-    }
-
-    .stat span {
-      color: #8e8798;
-      font-size: 12px;
-    }
-
-    /* =========================
-       SEÇÕES
-    ========================= */
-
-    section {
-      max-width: 1150px;
-      margin: auto;
-      padding: 100px 22px;
-    }
-
-    .section-heading {
-      text-align: center;
-
-      margin-bottom: 55px;
-    }
-
-    .section-heading span {
-      color: #a85cff;
-
-      font-size: 13px;
-      font-weight: 800;
-
-      text-transform: uppercase;
-      letter-spacing: 2px;
-    }
-
-    .section-heading h2 {
-      margin-top: 12px;
-
-      font-size:
-        clamp(32px, 5vw, 52px);
-
-      letter-spacing: -2px;
-    }
-
-    .section-heading p {
-      max-width: 600px;
-
-      margin: 15px auto 0;
-
-      color: #938d9d;
-
-      line-height: 1.7;
-    }
-
-    /* =========================
-       FEATURES
-    ========================= */
-
-    .features {
-      display: grid;
-
-      grid-template-columns:
-        repeat(3, 1fr);
-
-      gap: 17px;
-    }
-
-    .feature {
-      padding: 28px;
-
-      border-radius: 18px;
-
-      border:
-        1px solid rgba(255,255,255,.07);
-
-      background:
-        linear-gradient(
-          145deg,
-          rgba(255,255,255,.045),
-          rgba(255,255,255,.015)
-        );
-
-      transition: .25s;
-    }
-
-    .feature:hover {
-      transform: translateY(-5px);
-
-      border-color:
-        rgba(156,72,255,.35);
-    }
-
-    .feature-icon {
-      width: 48px;
-      height: 48px;
-
-      display: flex;
-      align-items: center;
-      justify-content: center;
-
-      margin-bottom: 20px;
-
-      border-radius: 13px;
-
-      background:
-        rgba(145,57,255,.12);
-
-      font-size: 22px;
-    }
-
-    .feature h3 {
-      margin-bottom: 10px;
-      font-size: 17px;
-    }
-
-    .feature p {
-      color: #8e8897;
-
-      font-size: 14px;
-      line-height: 1.7;
-    }
-
-    /* =========================
-       COMO FUNCIONA
-    ========================= */
-
-    .steps {
-      display: grid;
-
-      grid-template-columns:
-        repeat(3, 1fr);
-
-      gap: 18px;
-    }
-
-    .step {
-      position: relative;
-
-      padding: 30px;
-
-      border-radius: 18px;
-
-      background: #0d0912;
-
-      border:
-        1px solid rgba(255,255,255,.07);
-    }
-
-    .number {
-      width: 42px;
-      height: 42px;
-
-      display: flex;
-      align-items: center;
-      justify-content: center;
-
-      border-radius: 12px;
-
-      background:
-        linear-gradient(
-          135deg,
-          #9d4cff,
-          #6717db
-        );
-
-      font-weight: 900;
-
-      margin-bottom: 20px;
-    }
-
-    .step h3 {
-      margin-bottom: 10px;
-    }
-
-    .step p {
-      color: #8e8797;
-
-      line-height: 1.7;
-      font-size: 14px;
-    }
-
-    /* =========================
-       IDIOMAS
-    ========================= */
-
-    .languages {
-      display: flex;
-
-      flex-wrap: wrap;
-
-      justify-content: center;
-
-      gap: 10px;
-    }
-
-    .language {
-      padding: 12px 17px;
-
-      border-radius: 50px;
-
-      background: rgba(255,255,255,.035);
-
-      border:
-        1px solid rgba(255,255,255,.08);
-
-      color: #bdb5c8;
-
-      font-size: 13px;
-    }
-
-    /* =========================
-       PREÇOS
-    ========================= */
-
-    .pricing {
-      display: grid;
-
-      grid-template-columns:
-        repeat(3, 1fr);
-
-      gap: 18px;
-
-      align-items: stretch;
-    }
-
-    .price-card {
-      padding: 30px;
-
-      border-radius: 20px;
-
-      background:
-        linear-gradient(
-          145deg,
-          #100b17,
-          #0b0810
-        );
-
-      border:
-        1px solid rgba(255,255,255,.08);
-
-      position: relative;
-    }
-
-    .price-card.featured {
-      border-color:
-        rgba(157,75,255,.55);
-
-      box-shadow:
-        0 20px 70px rgba(107,30,220,.18);
-    }
-
-    .popular {
-      position: absolute;
-
-      top: 18px;
-      right: 18px;
-
-      padding: 6px 10px;
-
-      border-radius: 30px;
-
-      background: #7926e9;
-
-      font-size: 10px;
-      font-weight: 800;
-    }
-
-    .price-card h3 {
-      font-size: 18px;
-      margin-bottom: 8px;
-    }
-
-    .price-description {
-      color: #88818f;
-      font-size: 13px;
-    }
-
-    .price {
-      margin: 25px 0;
-
-      font-size: 40px;
-      font-weight: 900;
-    }
-
-    .price small {
-      color: #827b89;
-
-      font-size: 13px;
-      font-weight: 400;
-    }
-
-    .price-list {
-      list-style: none;
-
-      display: flex;
-      flex-direction: column;
-
-      gap: 13px;
-
-      margin-bottom: 27px;
-    }
-
-    .price-list li {
-      color: #b4adba;
-      font-size: 13px;
-    }
-
-    .price-list li::before {
-      content: "✓";
-
-      color: #a85cff;
-
-      font-weight: 900;
-
-      margin-right: 9px;
-    }
-
-    .price-button {
-      width: 100%;
-
-      padding: 13px;
-
-      border-radius: 11px;
-
-      border: 1px solid rgba(255,255,255,.10);
-
-      background: rgba(255,255,255,.035);
-
-      color: white;
-
-      font-weight: 700;
-
-      cursor: pointer;
-    }
-
-    .price-card.featured .price-button {
-      border: 0;
-
-      background:
-        linear-gradient(
-          135deg,
-          #9b48ff,
-          #6919df
-        );
-    }
-
-    /* =========================
-       CTA
-    ========================= */
-
-    .cta {
-      max-width: 1000px;
-      margin: 40px auto 100px;
-
-      padding: 70px 25px;
-
-      text-align: center;
-
-      border-radius: 25px;
-
-      border:
-        1px solid rgba(153,70,255,.25);
-
-      background:
-        radial-gradient(
-          circle at center,
-          rgba(127,38,255,.16),
-          rgba(255,255,255,.025)
-        );
-    }
-
-    .cta h2 {
-      font-size:
-        clamp(32px, 5vw, 53px);
-
-      letter-spacing: -2px;
-
-      margin-bottom: 15px;
-    }
-
-    .cta p {
-      color: #99929f;
-
-      max-width: 580px;
-
-      margin: 0 auto 27px;
-
-      line-height: 1.7;
-    }
-
-    /* =========================
-       FOOTER
-    ========================= */
-
-    footer {
-      border-top:
-        1px solid rgba(255,255,255,.07);
-
-      padding: 45px 22px;
-    }
-
-    .footer-inner {
-      max-width: 1150px;
-      margin: auto;
-
-      display: flex;
-
-      justify-content: space-between;
-      align-items: center;
-
-      gap: 25px;
-    }
-
-    .footer-text {
-      color: #716a78;
-      font-size: 12px;
-    }
-
-    .footer-links {
-      display: flex;
-      gap: 22px;
-
-      color: #817a88;
-
-      font-size: 12px;
-    }
-
-    /* =========================
-       CHAT
-    ========================= */
-
-    .chat-button {
-      position: fixed;
-
-      right: 20px;
-      bottom: 20px;
-
-      width: 57px;
-      height: 57px;
-
-      border: 0;
-      border-radius: 50%;
-
-      background:
-        linear-gradient(
-          135deg,
-          #a24dff,
-          #6716dc
-        );
-
-      color: white;
-
-      font-size: 23px;
-
-      cursor: pointer;
-
-      box-shadow:
-        0 10px 35px rgba(106,30,215,.40);
-
-      z-index: 2000;
-    }
-
-    /* =========================
-       MOBILE
-    ========================= */
-
-    @media (max-width: 850px) {
-
-      .nav-links,
-      .nav-actions {
-        display: none;
-      }
-
-      .mobile-menu {
-        display: block;
-      }
-
-      .nav.mobile-open {
-        position: relative;
-      }
-
-      .nav.mobile-open .nav-links {
-        display: flex;
-
-        position: absolute;
-
-        left: 15px;
-        right: 15px;
-        top: 67px;
-
-        padding: 20px;
-
-        flex-direction: column;
-        align-items: flex-start;
-
-        border-radius: 15px;
-
-        background: #110c18;
-
-        border:
-          1px solid rgba(255,255,255,.08);
-      }
-
-      .features,
-      .steps,
-      .pricing {
-        grid-template-columns: 1fr;
-      }
-
-      .controls {
-        grid-template-columns: 1fr;
-      }
-
-      .dub-button {
-        width: 100%;
-      }
-
-      .hero {
-        padding-top: 65px;
-      }
-
-      .hero h1 {
-        letter-spacing: -2.5px;
-      }
-
-      .hero-description {
-        font-size: 16px;
-      }
-
-      .stats {
-        grid-template-columns: 1fr;
-      }
-
-      .stat + .stat {
-        border-left: 0;
-
-        border-top:
-          1px solid rgba(255,255,255,.07);
-      }
-
-      .translator-inner {
-        padding: 17px;
-      }
-
-      .footer-inner {
-        flex-direction: column;
-
-        text-align: center;
-      }
-
-      .footer-links {
-        flex-wrap: wrap;
-        justify-content: center;
-      }
-    }
-
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>LinguaLive — Tradutor e Dublagem IA</title>
+
+<meta name="description"
+content="LinguaLive — traduza e duble seus vídeos com inteligência artificial.">
+
+<style>
+*{
+  margin:0;
+  padding:0;
+  box-sizing:border-box;
+}
+
+html{
+  scroll-behavior:smooth;
+}
+
+body{
+  font-family:Arial,Helvetica,sans-serif;
+  background:#07050d;
+  color:#fff;
+  overflow-x:hidden;
+}
+
+a{
+  text-decoration:none;
+  color:inherit;
+}
+
+button,input,select{
+  font:inherit;
+}
+
+/* FUNDO */
+
+body:before{
+  content:"";
+  position:fixed;
+  width:500px;
+  height:500px;
+  left:-200px;
+  top:-200px;
+  background:#7d20ff;
+  filter:blur(180px);
+  opacity:.18;
+  pointer-events:none;
+}
+
+body:after{
+  content:"";
+  position:fixed;
+  width:450px;
+  height:450px;
+  right:-200px;
+  top:500px;
+  background:#a72cff;
+  filter:blur(180px);
+  opacity:.10;
+  pointer-events:none;
+}
+
+/* HEADER */
+
+header{
+  position:sticky;
+  top:0;
+  z-index:1000;
+  background:rgba(7,5,13,.85);
+  backdrop-filter:blur(18px);
+  border-bottom:1px solid rgba(255,255,255,.07);
+}
+
+.nav{
+  max-width:1200px;
+  height:74px;
+  margin:auto;
+  padding:0 20px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+}
+
+.logo{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-size:21px;
+  font-weight:bold;
+}
+
+.logo-icon{
+  width:39px;
+  height:39px;
+  border-radius:12px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:linear-gradient(135deg,#a653ff,#6718df);
+  box-shadow:0 0 30px rgba(139,50,255,.35);
+}
+
+.nav-links{
+  display:flex;
+  gap:30px;
+  color:#aaa4b7;
+  font-size:14px;
+}
+
+.nav-links a:hover{
+  color:#fff;
+}
+
+.nav-actions{
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+
+.login{
+  color:#aaa4b7;
+  padding:10px 15px;
+}
+
+.btn{
+  border:0;
+  border-radius:11px;
+  padding:13px 20px;
+  color:#fff;
+  font-weight:bold;
+  cursor:pointer;
+  background:linear-gradient(135deg,#a34fff,#6818df);
+  box-shadow:0 10px 30px rgba(105,25,223,.25);
+}
+
+.btn:hover{
+  transform:translateY(-1px);
+}
+
+.menu-btn{
+  display:none;
+  border:0;
+  background:none;
+  color:white;
+  font-size:28px;
+}
+
+/* HERO */
+
+.hero{
+  max-width:1150px;
+  margin:auto;
+  padding:95px 20px 70px;
+  text-align:center;
+}
+
+.badge{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding:8px 14px;
+  border:1px solid rgba(161,81,255,.35);
+  border-radius:50px;
+  color:#cdaaff;
+  background:rgba(126,45,255,.08);
+  font-size:13px;
+  margin-bottom:25px;
+}
+
+.dot{
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:#a45cff;
+  box-shadow:0 0 12px #a45cff;
+}
+
+.hero h1{
+  max-width:850px;
+  margin:auto;
+  font-size:clamp(43px,7vw,76px);
+  line-height:1;
+  letter-spacing:-4px;
+}
+
+.purple{
+  background:linear-gradient(90deg,#bd75ff,#792aff);
+  -webkit-background-clip:text;
+  color:transparent;
+}
+
+.hero p{
+  max-width:680px;
+  margin:25px auto 35px;
+  color:#a29aaa;
+  font-size:18px;
+  line-height:1.7;
+}
+
+.hero-buttons{
+  display:flex;
+  justify-content:center;
+  gap:12px;
+  flex-wrap:wrap;
+}
+
+.btn-secondary{
+  border:1px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.035);
+  color:#eee;
+  padding:13px 21px;
+  border-radius:11px;
+  cursor:pointer;
+  font-weight:bold;
+}
+
+/* TRADUTOR */
+
+.translator{
+  max-width:940px;
+  margin:70px auto 0;
+  padding:1px;
+  border-radius:25px;
+  background:linear-gradient(135deg,
+    rgba(164,76,255,.5),
+    rgba(255,255,255,.07),
+    rgba(105,35,255,.4));
+}
+
+.translator-inner{
+  padding:27px;
+  border-radius:24px;
+  background:#0e0915;
+  text-align:left;
+}
+
+.translator-top{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:20px;
+}
+
+.translator-title{
+  font-weight:bold;
+}
+
+.online{
+  color:#82ff9a;
+  font-size:12px;
+}
+
+.upload{
+  min-height:180px;
+  border:1px dashed rgba(173,111,255,.45);
+  border-radius:18px;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  text-align:center;
+  cursor:pointer;
+  background:rgba(116,36,255,.04);
+}
+
+.upload:hover{
+  background:rgba(116,36,255,.09);
+}
+
+.upload-icon{
+  width:55px;
+  height:55px;
+  border-radius:15px;
+  background:rgba(142,56,255,.13);
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  font-size:26px;
+  margin:auto auto 12px;
+}
+
+.upload h3{
+  margin-bottom:6px;
+}
+
+.upload p{
+  color:#88818f;
+  font-size:13px;
+}
+
+#videoInput{
+  display:none;
+}
+
+.preview{
+  display:none;
+  margin-top:18px;
+  border-radius:15px;
+  overflow:hidden;
+}
+
+.preview video{
+  width:100%;
+  display:block;
+  max-height:400px;
+  background:#000;
+}
+
+.controls{
+  display:grid;
+  grid-template-columns:1fr 1fr auto;
+  gap:12px;
+  margin-top:18px;
+}
+
+.field label{
+  display:block;
+  color:#88818f;
+  font-size:12px;
+  margin-bottom:7px;
+}
+
+select{
+  width:100%;
+  padding:13px;
+  border-radius:10px;
+  border:1px solid rgba(255,255,255,.09);
+  background:#17111e;
+  color:white;
+  outline:none;
+}
+
+.dub{
+  align-self:end;
+  padding:13px 20px;
+  border:0;
+  border-radius:10px;
+  background:linear-gradient(135deg,#9e4aff,#6818df);
+  color:white;
+  font-weight:bold;
+  cursor:pointer;
+}
+
+.status{
+  display:none;
+  margin-top:15px;
+  padding:12px;
+  border-radius:10px;
+  text-align:center;
+  background:rgba(130,48,255,.08);
+  color:#c9b1e5;
+  font-size:13px;
+}
+
+/* ESTATÍSTICAS */
+
+.stats{
+  max-width:950px;
+  margin:65px auto 0;
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  border-top:1px solid rgba(255,255,255,.07);
+  border-bottom:1px solid rgba(255,255,255,.07);
+}
+
+.stat{
+  padding:28px;
+  text-align:center;
+}
+
+.stat+ .stat{
+  border-left:1px solid rgba(255,255,255,.07);
+}
+
+.stat strong{
+  display:block;
+  font-size:28px;
+}
+
+.stat span{
+  color:#88818f;
+  font-size:12px;
+}
+
+/* SEÇÕES */
+
+section{
+  max-width:1150px;
+  margin:auto;
+  padding:95px 20px;
+}
+
+.section-title{
+  text-align:center;
+  margin-bottom:50px;
+}
+
+.section-title span{
+  color:#a653ff;
+  text-transform:uppercase;
+  letter-spacing:2px;
+  font-size:12px;
+  font-weight:bold;
+}
+
+.section-title h2{
+  margin-top:12px;
+  font-size:clamp(32px,5vw,50px);
+  letter-spacing:-2px;
+}
+
+.section-title p{
+  max-width:600px;
+  margin:14px auto 0;
+  color:#918998;
+  line-height:1.7;
+}
+
+/* RECURSOS */
+
+.cards{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:17px;
+}
+
+.card{
+  padding:28px;
+  border-radius:18px;
+  border:1px solid rgba(255,255,255,.07);
+  background:rgba(255,255,255,.025);
+}
+
+.card-icon{
+  width:48px;
+  height:48px;
+  border-radius:13px;
+  background:rgba(145,57,255,.12);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:22px;
+  margin-bottom:18px;
+}
+
+.card h3{
+  margin-bottom:10px;
+}
+
+.card p{
+  color:#8d8796;
+  line-height:1.7;
+  font-size:14px;
+}
+
+/* PREÇOS */
+
+.pricing{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:18px;
+}
+
+.price-card{
+  position:relative;
+  padding:30px;
+  border-radius:20px;
+  background:#0e0915;
+  border:1px solid rgba(255,255,255,.08);
+}
+
+.price-card.pro{
+  border-color:rgba(158,73,255,.55);
+}
+
+.popular{
+  position:absolute;
+  top:18px;
+  right:18px;
+  padding:6px 9px;
+  border-radius:30px;
+  background:#7826e8;
+  font-size:9px;
+  font-weight:bold;
+}
+
+.price-card h3{
+  margin-bottom:7px;
+}
+
+.price-description{
+  color:#85808c;
+  font-size:13px;
+}
+
+.price{
+  margin:25px 0;
+  font-size:40px;
+  font-weight:900;
+}
+
+.price small{
+  color:#77717e;
+  font-size:12px;
+  font-weight:normal;
+}
+
+.price-list{
+  list-style:none;
+  margin-bottom:25px;
+}
+
+.price-list li{
+  color:#aaa3b0;
+  font-size:13px;
+  margin:12px 0;
+}
+
+.price-list li:before{
+  content:"✓";
+  color:#a653ff;
+  font-weight:bold;
+  margin-right:8px;
+}
+
+.price-btn{
+  width:100%;
+  padding:13px;
+  border-radius:10px;
+  border:1px solid rgba(255,255,255,.10);
+  background:rgba(255,255,255,.035);
+  color:white;
+  font-weight:bold;
+  cursor:pointer;
+}
+
+.pro .price-btn{
+  border:0;
+  background:linear-gradient(135deg,#9e4aff,#6818df);
+}
+
+/* CHAT */
+
+.chat-button{
+  position:fixed;
+  right:20px;
+  bottom:20px;
+  width:60px;
+  height:60px;
+  border:0;
+  border-radius:50%;
+  background:linear-gradient(135deg,#a24dff,#6817dc);
+  color:white;
+  font-size:24px;
+  cursor:pointer;
+  box-shadow:0 10px 35px rgba(106,30,215,.4);
+  z-index:3000;
+}
+
+/* CHAT BOX */
+
+.chat-box{
+  display:none;
+  position:fixed;
+  right:20px;
+  bottom:90px;
+  width:350px;
+  max-width:calc(100vw - 30px);
+  height:500px;
+  background:#100b17;
+  border:1px solid rgba(164,78,255,.35);
+  border-radius:20px;
+  overflow:hidden;
+  box-shadow:0 25px 80px rgba(0,0,0,.6);
+  z-index:2999;
+}
+
+.chat-header{
+  height:65px;
+  padding:15px;
+  background:linear-gradient(135deg,#8f3bea,#6317d3);
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+
+.chat-header strong{
+  display:block;
+}
+
+.chat-header small{
+  color:#eadcff;
+}
+
+.close-chat{
+  border:0;
+  background:none;
+  color:white;
+  font-size:22px;
+  cursor:pointer;
+}
+
+.chat-messages{
+  height:360px;
+  padding:15px;
+  overflow-y:auto;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+.message{
+  max-width:82%;
+  padding:10px 13px;
+  border-radius:13px;
+  font-size:13px;
+  line-height:1.5;
+}
+
+.message.client{
+  align-self:flex-end;
+  background:#7225df;
+}
+
+.message.admin{
+  align-self:flex-start;
+  background:#21182b;
+  color:#ddd4e4;
+}
+
+.chat-form{
+  display:flex;
+  gap:7px;
+  padding:10px;
+  border-top:1px solid rgba(255,255,255,.08);
+}
+
+.chat-form input{
+  flex:1;
+  min-width:0;
+  padding:12px;
+  border-radius:10px;
+  border:1px solid rgba(255,255,255,.09);
+  background:#18111f;
+  color:white;
+  outline:none;
+}
+
+.chat-form button{
+  width:45px;
+  border:0;
+  border-radius:10px;
+  background:#8b38ef;
+  color:white;
+  cursor:pointer;
+}
+
+/* CTA */
+
+.cta{
+  max-width:1000px;
+  margin:20px auto 100px;
+  padding:70px 20px;
+  text-align:center;
+  border-radius:25px;
+  border:1px solid rgba(153,70,255,.25);
+  background:radial-gradient(circle,
+    rgba(127,38,255,.16),
+    rgba(255,255,255,.025));
+}
+
+.cta h2{
+  font-size:clamp(32px,5vw,52px);
+  margin-bottom:15px;
+}
+
+.cta p{
+  color:#99929f;
+  margin-bottom:25px;
+}
+
+/* FOOTER */
+
+footer{
+  padding:45px 20px;
+  border-top:1px solid rgba(255,255,255,.07);
+}
+
+.footer{
+  max-width:1150px;
+  margin:auto;
+  display:flex;
+  justify-content:space-between;
+  gap:20px;
+}
+
+.footer small{
+  color:#716a78;
+}
+
+/* MOBILE */
+
+@media(max-width:850px){
+
+  .nav-links,
+  .nav-actions{
+    display:none;
+  }
+
+  .menu-btn{
+    display:block;
+  }
+
+  .nav.mobile-open .nav-links{
+    display:flex;
+    position:absolute;
+    top:74px;
+    left:15px;
+    right:15px;
+    padding:20px;
+    flex-direction:column;
+    background:#110c18;
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:15px;
+  }
+
+  .cards,
+  .pricing{
+    grid-template-columns:1fr;
+  }
+
+  .controls{
+    grid-template-columns:1fr;
+  }
+
+  .dub{
+    width:100%;
+  }
+
+  .stats{
+    grid-template-columns:1fr;
+  }
+
+  .stat+.stat{
+    border-left:0;
+    border-top:1px solid rgba(255,255,255,.07);
+  }
+
+  .footer{
+    flex-direction:column;
+    text-align:center;
+  }
+
+  .hero h1{
+    letter-spacing:-2px;
+  }
+}
+</style>
 </head>
 
 <body>
 
-  <div class="background-glow glow-1"></div>
-  <div class="background-glow glow-2"></div>
-
-  <!-- =========================
-       MENU
-  ========================= -->
-
-  <header>
-
-    <nav class="nav" id="navbar">
-
-      <a href="#" class="logo">
-
-        <div class="logo-icon">
-          <span>◈</span>
-        </div>
-
-        <span>LinguaLive</span>
-
-      </a>
-
-      <div class="nav-links">
-
-        <a href="#tradutor">Tradutor</a>
-
-        <a href="#recursos">Recursos</a>
-
-        <a href="#como-funciona">Como funciona</a>
-
-        <a href="#precos">Preços</a>
-
-      </div>
-
-      <div class="nav-actions">
-
-        <a href="#" class="btn-login">
-          Entrar
-        </a>
-
-        <button
-          class="btn-small"
-          onclick="document.getElementById('tradutor').scrollIntoView()">
-
-          Começar agora
-
-        </button>
-
-      </div>
-
-      <button
-        class="mobile-menu"
-        onclick="toggleMenu()">
-
-        ☰
-
-      </button>
-
-    </nav>
-
-  </header>
-
-
-  <!-- =========================
-       HERO
-  ========================= -->
-
-  <main>
-
-    <section class="hero">
-
-      <div class="badge">
-
-        <span class="badge-dot"></span>
-
-        Tradução com inteligência artificial
-
-      </div>
-
-      <h1>
-
-        Quebre as barreiras
-        <br>
-
-        <span class="purple">
-          da linguagem.
-        </span>
-
-      </h1>
-
-      <p class="hero-description">
-
-        Traduza e duble seus vídeos com inteligência artificial.
-        Transforme conteúdos de qualquer idioma em uma experiência
-        natural para o seu público.
-
-      </p>
-
-      <div class="hero-buttons">
-
-        <button
-          class="btn-primary"
-          onclick="document.getElementById('tradutor').scrollIntoView()">
-
-          Começar a traduzir →
-
-        </button>
-
-        <button
-          class="btn-secondary"
-          onclick="document.getElementById('como-funciona').scrollIntoView()">
-
-          Como funciona
-
-        </button>
-
-      </div>
-
-
-      <!-- =========================
-           TRADUTOR
-      ========================= -->
-
-      <div
-        class="translator"
-        id="tradutor">
-
-        <div class="translator-inner">
-
-          <div class="translator-header">
-
-            <div class="translator-title">
-
-              🎙️ Tradutor & Dublagem IA
-
-            </div>
-
-            <div class="online">
-
-              <span class="online-dot"></span>
-
-              Sistema online
-
-            </div>
-
-          </div>
-
-
-          <label
-            class="upload-area"
-            for="videoInput">
-
-            <div class="upload-content">
-
-              <div class="upload-icon">
-                ↑
-              </div>
-
-              <h3>
-                Envie seu vídeo
-              </h3>
-
-              <p>
-                Clique aqui ou arraste seu vídeo para começar
-              </p>
-
-              <p style="margin-top:7px">
-                MP4, MOV, AVI ou WEBM
-              </p>
-
-            </div>
-
-          </label>
-
-
-          <input
-            type="file"
-            id="videoInput"
-            accept="video/*">
-
-
-          <div
-            class="preview"
-            id="preview">
-
-            <video
-              id="videoPreview"
-              controls>
-            </video>
-
-          </div>
-
-
-          <div class="controls">
-
-            <div class="field">
-
-              <label>
-                Idioma original
-              </label>
-
-              <select id="sourceLang">
-
-                <option value="auto">
-                  Detectar automaticamente
-                </option>
-
-                <option value="pt">
-                  🇧🇷 Português
-                </option>
-
-                <option value="en">
-                  🇺🇸 Inglês
-                </option>
-
-                <option value="es">
-                  🇪🇸 Espanhol
-                </option>
-
-                <option value="fr">
-                  🇫🇷 Francês
-                </option>
-
-                <option value="de">
-                  🇩🇪 Alemão
-                </option>
-
-                <option value="it">
-                  🇮🇹 Italiano
-                </option>
-
-                <option value="ja">
-                  🇯🇵 Japonês
-                </option>
-
-              </select>
-
-            </div>
-
-
-            <div class="field">
-
-              <label>
-                Traduzir para
-              </label>
-
-              <select id="targetLang">
-
-                <option value="pt">
-                  🇧🇷 Português
-                </option>
-
-                <option value="en">
-                  🇺🇸 Inglês
-                </option>
-
-                <option value="es">
-                  🇪🇸 Espanhol
-                </option>
-
-                <option value="fr">
-                  🇫🇷 Francês
-                </option>
-
-                <option value="de">
-                  🇩🇪 Alemão
-                </option>
-
-                <option value="it">
-                  🇮🇹 Italiano
-                </option>
-
-                <option value="ja">
-                  🇯🇵 Japonês
-                </option>
-
-              </select>
-
-            </div>
-
-
-            <button
-              class="dub-button"
-              id="dubButton">
-
-              ✨ Traduzir e dublar
-
-            </button>
-
-          </div>
-
-
-          <div
-            class="status"
-            id="status">
-
-            Aguardando vídeo...
-
-          </div>
-
-        </div>
-
-      </div>
-
-
-      <!-- ESTATÍSTICAS -->
-
-      <div class="stats">
-
-        <div class="stat">
-
-          <strong>50+</strong>
-
-          <span>
-            idiomas disponíveis
-          </span>
-
-        </div>
-
-        <div class="stat">
-
-          <strong>IA</strong>
-
-          <span>
-            tecnologia inteligente
-          </span>
-
-        </div>
-
-        <div class="stat">
-
-          <strong>24/7</strong>
-
-          <span>
-            disponível online
-          </span>
-
-        </div>
-
-      </div>
-
-    </section>
-
-
-    <!-- =========================
-         RECURSOS
-    ========================= -->
-
-    <section id="recursos">
-
-      <div class="section-heading">
-
-        <span>
-          Recursos
-        </span>
-
-        <h2>
-          Tradução feita para você
-        </h2>
-
-        <p>
-          Ferramentas inteligentes para transformar
-          conteúdos em diferentes idiomas.
-        </p>
-
-      </div>
-
-
-      <div class="features">
-
-        <div class="feature">
-
-          <div class="feature-icon">
-            🎙️
-          </div>
-
-          <h3>
-            Dublagem com IA
-          </h3>
-
-          <p>
-            Transforme a voz do seu vídeo para outro
-            idioma de forma rápida e automatizada.
-          </p>
-
-        </div>
-
-
-        <div class="feature">
-
-          <div class="feature-icon">
-            ⚡
-          </div>
-
-          <h3>
-            Tradução rápida
-          </h3>
-
-          <p>
-            Nossa tecnologia processa o conteúdo
-            utilizando inteligência artificial.
-          </p>
-
-        </div>
-
-
-        <div class="feature">
-
-          <div class="feature-icon">
-            🌎
-          </div>
-
-          <h3>
-            Vários idiomas
-          </h3>
-
-          <p>
-            Alcance pessoas de diferentes países
-            traduzindo seu conteúdo.
-          </p>
-
-        </div>
-
-
-        <div class="feature">
-
-          <div class="feature-icon">
-            🎬
-          </div>
-
-          <h3>
-            Vídeos
-          </h3>
-
-          <p>
-            Envie vídeos diretamente pela plataforma
-            e acompanhe o processamento.
-          </p>
-
-        </div>
-
-
-        <div class="feature">
-
-          <div class="feature-icon">
-            🔊
-          </div>
-
-          <h3>
-            Áudio
-          </h3>
-
-          <p>
-            Processamento de áudio para ajudar na
-            tradução e geração da dublagem.
-          </p>
-
-        </div>
-
-
-        <div class="feature">
-
-          <div class="feature-icon">
-            🔒
-          </div>
-
-          <h3>
-            Processamento seguro
-          </h3>
-
-          <p>
-            Seu conteúdo é enviado somente para
-            processamento da tarefa solicitada.
-          </p>
-
-        </div>
-
-      </div>
-
-    </section>
-
-
-    <!-- =========================
-         COMO FUNCIONA
-    ========================= -->
-
-    <section id="como-funciona">
-
-      <div class="section-heading">
-
-        <span>
-          Simples e rápido
-        </span>
-
-        <h2>
-          Como funciona?
-        </h2>
-
-        <p>
-          Em poucos passos você pode preparar seu
-          conteúdo para outro idioma.
-        </p>
-
-      </div>
-
-
-      <div class="steps">
-
-        <div class="step">
-
-          <div class="number">
-            1
-          </div>
-
-          <h3>
-            Envie o vídeo
-          </h3>
-
-          <p>
-            Selecione o vídeo que deseja traduzir
-            e envie para a plataforma.
-          </p>
-
-        </div>
-
-
-        <div class="step">
-
-          <div class="number">
-            2
-          </div>
-
-          <h3>
-            Escolha o idioma
-          </h3>
-
-          <p>
-            Selecione o idioma para o qual deseja
-            traduzir o conteúdo.
-          </p>
-
-        </div>
-
-
-        <div class="step">
-
-          <div class="number">
-            3
-          </div>
-
-          <h3>
-            Receba o resultado
-          </h3>
-
-          <p>
-            A inteligência artificial processa o
-            conteúdo e prepara o resultado.
-          </p>
-
-        </div>
-
-      </div>
-
-    </section>
-
-
-    <!-- =========================
-         IDIOMAS
-    ========================= -->
-
-    <section>
-
-      <div class="section-heading">
-
-        <span>
-          Idiomas
-        </span>
-
-        <h2>
-          Fale com o mundo
-        </h2>
-
-        <p>
-          Comece com os principais idiomas e amplie
-          seu alcance.
-        </p>
-
-      </div>
-
-
-      <div class="languages">
-
-        <div class="language">🇧🇷 Português</div>
-        <div class="language">🇺🇸 Inglês</div>
-        <div class="language">🇪🇸 Espanhol</div>
-        <div class="language">🇫🇷 Francês</div>
-        <div class="language">🇩🇪 Alemão</div>
-        <div class="language">🇮🇹 Italiano</div>
-        <div class="language">🇯🇵 Japonês</div>
-        <div class="language">🇰🇷 Coreano</div>
-        <div class="language">🇨🇳 Chinês</div>
-        <div class="language">🇷🇺 Russo</div>
-        <div class="language">🇦🇪 Árabe</div>
-        <div class="language">🇮🇳 Hindi</div>
-
-      </div>
-
-    </section>
-
-
-    <!-- =========================
-         PREÇOS
-    ========================= -->
-
-    <section id="precos">
-
-      <div class="section-heading">
-
-        <span>
-          Planos
-        </span>
-
-        <h2>
-          Escolha seu plano
-        </h2>
-
-        <p>
-          Comece gratuitamente e escolha o plano
-          ideal conforme sua necessidade.
-        </p>
-
-      </div>
-
-
-      <div class="pricing">
-
-
-        <div class="price-card">
-
-          <h3>
-            Grátis
-          </h3>
-
-          <p class="price-description">
-            Para experimentar
-          </p>
-
-          <div class="price">
-            R$ 0
-            <small>/mês</small>
-          </div>
-
-          <ul class="price-list">
-
-            <li>
-              Teste da plataforma
-            </li>
-
-            <li>
-              Tradução básica
-            </li>
-
-            <li>
-              Alguns idiomas
-            </li>
-
-          </ul>
-
-          <button
-            class="price-button"
-            onclick="document.getElementById('tradutor').scrollIntoView()">
-
-            Começar grátis
-
-          </button>
-
-        </div>
-
-
-        <div class="price-card featured">
-
-          <div class="popular">
-            MAIS POPULAR
-          </div>
-
-          <h3>
-            Pro
-          </h3>
-
-          <p class="price-description">
-            Para criadores
-          </p>
-
-          <div class="price">
-            R$ 100
-            <small>/mês</small>
-          </div>
-
-          <ul class="price-list">
-
-            <li>
-              Traduções com IA
-            </li>
-
-            <li>
-              Dublagem de vídeos
-            </li>
-
-            <li>
-              Mais idiomas
-            </li>
-
-            <li>
-              Processamento prioritário
-            </li>
-
-          </ul>
-
-          <button
-            class="price-button"
-            onclick="assinarPlano()">
-
-            Assinar Pro
-
-          </button>
-
-        </div>
-
-
-        <div class="price-card">
-
-          <h3>
-            Empresarial
-          </h3>
-
-          <p class="price-description">
-            Para equipes
-          </p>
-
-          <div class="price">
-            R$ 200
-            <small>/mês</small>
-          </div>
-
-          <ul class="price-list">
-
-            <li>
-              Uso ampliado
-            </li>
-
-            <li>
-              Tradução e dublagem
-            </li>
-
-            <li>
-              Suporte prioritário
-            </li>
-
-          </ul>
-
-          <button
-            class="price-button"
-            onclick="contato()">
-
-            Falar conosco
-
-          </button>
-
-        </div>
-
-      </div>
-
-    </section>
-
-
-    <!-- =========================
-         CTA
-    ========================= -->
-
-    <div class="cta">
-
-      <h2>
-        Pronto para falar
-        com o mundo?
-      </h2>
-
-      <p>
-        Comece agora a transformar seus vídeos
-        usando inteligência artificial.
-      </p>
-
-      <button
-        class="btn-primary"
-        onclick="document.getElementById('tradutor').scrollIntoView()">
-
-        Começar agora →
-
-      </button>
-
-    </div>
-
-  </main>
-
-
-  <!-- =========================
-       FOOTER
-  ========================= -->
-
-  <footer>
-
-    <div class="footer-inner">
-
-      <div>
-
-        <div class="logo">
-
-          <div class="logo-icon">
-            <span>◈</span>
-          </div>
-
-          LinguaLive
-
-        </div>
-
-        <p class="footer-text"
-           style="margin-top:10px">
-
-          Tradução inteligente para todos.
-
-        </p>
-
-      </div>
-
-
-      <div class="footer-links">
-
-        <a href="#recursos">
-          Recursos
-        </a>
-
-        <a href="#precos">
-          Preços
-        </a>
-
-        <a href="#">
-          Privacidade
-        </a>
-
-        <a href="#">
-          Termos
-        </a>
-
-      </div>
-
-    </div>
-
-  </footer>
-
-
-  <!-- CHAT -->
-
-  <button
-    class="chat-button"
-    onclick="abrirChat()"
-    aria-label="Abrir suporte">
-
-    💬
-
+<header>
+<nav class="nav" id="nav">
+
+  <a href="#" class="logo">
+    <div class="logo-icon">◈</div>
+    LinguaLive
+  </a>
+
+  <div class="nav-links">
+    <a href="#tradutor">Tradutor</a>
+    <a href="#recursos">Recursos</a>
+    <a href="#precos">Preços</a>
+    <a href="#contato">Contato</a>
+  </div>
+
+  <div class="nav-actions">
+    <a href="#" class="login">Entrar</a>
+
+    <button class="btn"
+      onclick="irParaTradutor()">
+      Começar agora
+    </button>
+  </div>
+
+  <button class="menu-btn"
+    onclick="abrirMenu()">
+    ☰
   </button>
 
-
-  <script>
-
-    /* ===================================
-       CONFIGURAÇÃO DO BACKEND
-    =================================== */
-
-    const BACKEND_URL =
-      "https://si-u2ul.onrender.com";
+</nav>
+</header>
 
 
-    /* ===================================
-       MENU MOBILE
-    =================================== */
+<main>
 
-    function toggleMenu() {
+<section class="hero">
 
-      document
-        .getElementById("navbar")
-        .classList
-        .toggle("mobile-open");
+  <div class="badge">
+    <span class="dot"></span>
+    Tradução com inteligência artificial
+  </div>
 
+  <h1>
+    Quebre as barreiras
+    <br>
+    <span class="purple">
+      da linguagem.
+    </span>
+  </h1>
+
+  <p>
+    Traduza e duble seus vídeos com inteligência artificial.
+    Transforme conteúdos de qualquer idioma em uma experiência
+    natural para o seu público.
+  </p>
+
+  <div class="hero-buttons">
+
+    <button class="btn"
+      onclick="irParaTradutor()">
+      Começar a traduzir →
+    </button>
+
+    <button class="btn-secondary"
+      onclick="document.getElementById('recursos').scrollIntoView()">
+      Conhecer recursos
+    </button>
+
+  </div>
+
+
+  <!-- TRADUTOR -->
+
+  <div class="translator" id="tradutor">
+
+    <div class="translator-inner">
+
+      <div class="translator-top">
+
+        <div class="translator-title">
+          🎙️ Tradutor & Dublagem IA
+        </div>
+
+        <div class="online">
+          ● Sistema online
+        </div>
+
+      </div>
+
+
+      <label class="upload" for="videoInput">
+
+        <div>
+
+          <div class="upload-icon">
+            ↑
+          </div>
+
+          <h3>
+            Envie seu vídeo
+          </h3>
+
+          <p>
+            Clique aqui para selecionar seu vídeo
+          </p>
+
+        </div>
+
+      </label>
+
+      <input
+        type="file"
+        id="videoInput"
+        accept="video/*">
+
+
+      <div class="preview" id="preview">
+
+        <video
+          id="videoPreview"
+          controls>
+        </video>
+
+      </div>
+
+
+      <div class="controls">
+
+        <div class="field">
+
+          <label>
+            Idioma original
+          </label>
+
+          <select id="sourceLang">
+
+            <option value="auto">
+              Detectar automaticamente
+            </option>
+
+            <option value="pt">
+              🇧🇷 Português
+            </option>
+
+            <option value="en">
+              🇺🇸 Inglês
+            </option>
+
+            <option value="es">
+              🇪🇸 Espanhol
+            </option>
+
+          </select>
+
+        </div>
+
+
+        <div class="field">
+
+          <label>
+            Traduzir para
+          </label>
+
+          <select id="targetLang">
+
+            <option value="pt">
+              🇧🇷 Português
+            </option>
+
+            <option value="en">
+              🇺🇸 Inglês
+            </option>
+
+            <option value="es">
+              🇪🇸 Espanhol
+            </option>
+
+          </select>
+
+        </div>
+
+
+        <button
+          class="dub"
+          id="dubButton">
+
+          ✨ Traduzir e dublar
+
+        </button>
+
+      </div>
+
+
+      <div
+        class="status"
+        id="status">
+      </div>
+
+    </div>
+
+  </div>
+
+
+  <div class="stats">
+
+    <div class="stat">
+      <strong>50+</strong>
+      <span>idiomas disponíveis</span>
+    </div>
+
+    <div class="stat">
+      <strong>IA</strong>
+      <span>tecnologia inteligente</span>
+    </div>
+
+    <div class="stat">
+      <strong>24/7</strong>
+      <span>disponível online</span>
+    </div>
+
+  </div>
+
+</section>
+
+
+<!-- RECURSOS -->
+
+<section id="recursos">
+
+  <div class="section-title">
+
+    <span>Recursos</span>
+
+    <h2>
+      Tudo em um só lugar
+    </h2>
+
+    <p>
+      Ferramentas para traduzir e preparar
+      seus conteúdos para o mundo.
+    </p>
+
+  </div>
+
+
+  <div class="cards">
+
+    <div class="card">
+      <div class="card-icon">🎙️</div>
+      <h3>Dublagem com IA</h3>
+      <p>
+        Transforme o áudio do seu vídeo para
+        outro idioma.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="card-icon">⚡</div>
+      <h3>Processamento rápido</h3>
+      <p>
+        Envie seu conteúdo e acompanhe
+        o processamento.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="card-icon">🌎</div>
+      <h3>Vários idiomas</h3>
+      <p>
+        Alcance pessoas em diferentes
+        países.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="card-icon">🎬</div>
+      <h3>Vídeos</h3>
+      <p>
+        Faça upload dos seus vídeos
+        diretamente pela plataforma.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="card-icon">🔊</div>
+      <h3>Áudio</h3>
+      <p>
+        Trabalhe com conteúdos de áudio
+        e tradução.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="card-icon">💬</div>
+      <h3>Atendimento</h3>
+      <p>
+        Fale diretamente com a equipe
+        através do chat.
+      </p>
+    </div>
+
+  </div>
+
+</section>
+
+
+<!-- PREÇOS -->
+
+<section id="precos">
+
+  <div class="section-title">
+
+    <span>Planos</span>
+
+    <h2>
+      Escolha seu plano
+    </h2>
+
+    <p>
+      Escolha o plano que melhor combina
+      com sua necessidade.
+    </p>
+
+  </div>
+
+
+  <div class="pricing">
+
+    <div class="price-card">
+
+      <h3>Grátis</h3>
+
+      <p class="price-description">
+        Para experimentar
+      </p>
+
+      <div class="price">
+        R$ 0
+        <small>/mês</small>
+      </div>
+
+      <ul class="price-list">
+        <li>Teste da plataforma</li>
+        <li>Tradução básica</li>
+        <li>Recursos básicos</li>
+      </ul>
+
+      <button class="price-btn"
+        onclick="irParaTradutor()">
+        Começar grátis
+      </button>
+
+    </div>
+
+
+    <div class="price-card pro">
+
+      <div class="popular">
+        MAIS POPULAR
+      </div>
+
+      <h3>Pro</h3>
+
+      <p class="price-description">
+        Para criadores
+      </p>
+
+      <div class="price">
+        R$ 100
+        <small>/mês</small>
+      </div>
+
+      <ul class="price-list">
+        <li>Tradução com IA</li>
+        <li>Dublagem de vídeos</li>
+        <li>Mais idiomas</li>
+        <li>Processamento prioritário</li>
+      </ul>
+
+      <button class="price-btn"
+        onclick="assinarPlano()">
+        Assinar Pro
+      </button>
+
+    </div>
+
+
+    <div class="price-card">
+
+      <h3>Empresarial</h3>
+
+      <p class="price-description">
+        Para equipes
+      </p>
+
+      <div class="price">
+        R$ 200
+        <small>/mês</small>
+      </div>
+
+      <ul class="price-list">
+        <li>Uso ampliado</li>
+        <li>Tradução e dublagem</li>
+        <li>Suporte prioritário</li>
+      </ul>
+
+      <button class="price-btn"
+        onclick="abrirChat()">
+        Falar conosco
+      </button>
+
+    </div>
+
+  </div>
+
+</section>
+
+
+<!-- CTA -->
+
+<div class="cta" id="contato">
+
+  <h2>
+    Precisa de ajuda?
+  </h2>
+
+  <p>
+    Fale diretamente conosco pelo chat.
+    Uma pessoa da nossa equipe responderá sua mensagem.
+  </p>
+
+  <button class="btn"
+    onclick="abrirChat()">
+    💬 Falar com atendimento
+  </button>
+
+</div>
+
+</main>
+
+
+<footer>
+
+  <div class="footer">
+
+    <div class="logo">
+      <div class="logo-icon">◈</div>
+      LinguaLive
+    </div>
+
+    <small>
+      © 2026 LinguaLive. Todos os direitos reservados.
+    </small>
+
+  </div>
+
+</footer>
+
+
+<!-- CHAT -->
+
+<button
+  class="chat-button"
+  onclick="abrirChat()">
+  💬
+</button>
+
+
+<div class="chat-box" id="chatBox">
+
+  <div class="chat-header">
+
+    <div>
+      <strong>
+        Atendimento LinguaLive
+      </strong>
+
+      <small>
+        Fale com nossa equipe
+      </small>
+    </div>
+
+    <button
+      class="close-chat"
+      onclick="fecharChat()">
+      ×
+    </button>
+
+  </div>
+
+
+  <div
+    class="chat-messages"
+    id="chatMessages">
+
+    <div class="message admin">
+      Olá! 👋 Como podemos ajudar?
+    </div>
+
+  </div>
+
+
+  <form
+    class="chat-form"
+    id="chatForm">
+
+    <input
+      id="messageInput"
+      type="text"
+      placeholder="Digite sua mensagem..."
+      autocomplete="off"
+      required>
+
+    <button type="submit">
+      ➤
+    </button>
+
+  </form>
+
+</div>
+
+
+<script>
+
+/* =====================================
+   BACKEND DO RENDER
+===================================== */
+
+const BACKEND_URL =
+  "https://si-u2ul.onrender.com";
+
+
+/* =====================================
+   MENU
+===================================== */
+
+function abrirMenu(){
+
+  document
+    .getElementById("nav")
+    .classList
+    .toggle("mobile-open");
+
+}
+
+
+/* =====================================
+   TRADUTOR
+===================================== */
+
+const videoInput =
+  document.getElementById("videoInput");
+
+const preview =
+  document.getElementById("preview");
+
+const videoPreview =
+  document.getElementById("videoPreview");
+
+const status =
+  document.getElementById("status");
+
+const dubButton =
+  document.getElementById("dubButton");
+
+
+videoInput.addEventListener(
+  "change",
+  function(){
+
+    const file = this.files[0];
+
+    if(!file) return;
+
+    videoPreview.src =
+      URL.createObjectURL(file);
+
+    preview.style.display =
+      "block";
+
+    status.style.display =
+      "block";
+
+    status.innerText =
+      "Vídeo selecionado: " +
+      file.name;
+
+  }
+);
+
+
+/* =====================================
+   ENVIO DO VÍDEO
+===================================== */
+
+dubButton.addEventListener(
+  "click",
+  async function(){
+
+    const file =
+      videoInput.files[0];
+
+    if(!file){
+
+      alert(
+        "Selecione um vídeo primeiro."
+      );
+
+      return;
     }
 
+    const formData =
+      new FormData();
 
-    /* ===================================
-       UPLOAD DO VÍDEO
-    =================================== */
-
-    const videoInput =
-      document.getElementById("videoInput");
-
-    const preview =
-      document.getElementById("preview");
-
-    const videoPreview =
-      document.getElementById("videoPreview");
-
-    const status =
-      document.getElementById("status");
-
-    const dubButton =
-      document.getElementById("dubButton");
-
-
-    videoInput.addEventListener(
-      "change",
-      function() {
-
-        const file = this.files[0];
-
-        if (!file) {
-          return;
-        }
-
-        const url =
-          URL.createObjectURL(file);
-
-        videoPreview.src = url;
-
-        preview.style.display = "block";
-
-        status.style.display = "block";
-
-        status.innerText =
-          "Vídeo selecionado: " + file.name;
-
-      }
+    formData.append(
+      "video",
+      file
     );
 
-
-    /* ===================================
-       TRADUZIR / DUBLAR
-    =================================== */
-
-    dubButton.addEventListener(
-      "click",
-      async function() {
-
-        const file =
-          videoInput.files[0];
-
-        if (!file) {
-
-          alert(
-            "Primeiro selecione um vídeo."
-          );
-
-          return;
-        }
-
-
-        const targetLang =
-          document.getElementById(
-            "targetLang"
-          ).value;
-
-
-        const formData =
-          new FormData();
-
-        formData.append(
-          "video",
-          file
-        );
-
-        formData.append(
-          "targetLang",
-          targetLang
-        );
-
-
-        status.style.display =
-          "block";
-
-        status.innerText =
-          "⏳ Enviando vídeo para o servidor...";
-
-        dubButton.disabled = true;
-
-        dubButton.innerText =
-          "Processando...";
-
-
-        try {
-
-          const response =
-            await fetch(
-              BACKEND_URL +
-              "/api/test-upload",
-              {
-                method: "POST",
-                body: formData
-              }
-            );
-
-
-          const data =
-            await response.json();
-
-
-          if (!response.ok) {
-
-            throw new Error(
-              data.error ||
-              "Erro ao enviar vídeo."
-            );
-
-          }
-
-
-          status.innerText =
-            "✅ Vídeo enviado. Processamento iniciado.";
-
-
-          if (data.jobId) {
-
-            acompanharJob(
-              data.jobId
-            );
-
-          }
-
-
-        } catch (error) {
-
-          console.error(error);
-
-          status.innerText =
-            "❌ Erro: " +
-            error.message;
-
-        }
-
-
-        dubButton.disabled =
-          false;
-
-        dubButton.innerText =
-          "✨ Traduzir e dublar";
-
-      }
+    formData.append(
+      "targetLang",
+      document.getElementById(
+        "targetLang"
+      ).value
     );
 
+    status.style.display =
+      "block";
 
-    /* ===================================
-       ACOMPANHAR PROCESSAMENTO
-    =================================== */
+    status.innerText =
+      "⏳ Enviando vídeo...";
 
-    async function acompanharJob(jobId) {
+    try{
+
+      const response =
+        await fetch(
+          BACKEND_URL +
+          "/api/test-upload",
+          {
+            method:"POST",
+            body:formData
+          }
+        );
+
+      const data =
+        await response.json();
+
+      if(!response.ok){
+
+        throw new Error(
+          data.error ||
+          "Erro no envio."
+        );
+
+      }
 
       status.innerText =
-        "⏳ Processando seu vídeo...";
+        "✅ Vídeo enviado com sucesso.";
+
+    }catch(error){
+
+      status.innerText =
+        "❌ " + error.message;
+
+    }
+
+  }
+);
 
 
-      const intervalo =
-        setInterval(
-          async function() {
+/* =====================================
+   CHAT
+===================================== */
 
-            try {
+const chatBox =
+  document.getElementById("chatBox");
 
-              const response =
-                await fetch(
-                  BACKEND_URL +
-                  "/api/status/" +
-                  jobId
-                );
+const chatMessages =
+  document.getElementById("chatMessages");
 
+const chatForm =
+  document.getElementById("chatForm");
 
-              if (!response.ok) {
-                return;
-              }
+const messageInput =
+  document.getElementById("messageInput");
 
 
-              const data =
-                await response.json();
+let clientId =
+  localStorage.getItem(
+    "lingualive_client_id"
+  );
 
 
-              if (
-                data.status === "completed" ||
-                data.status === "done"
-              ) {
+if(!clientId){
 
-                clearInterval(
-                  intervalo
-                );
+  clientId =
+    crypto.randomUUID();
 
+  localStorage.setItem(
+    "lingualive_client_id",
+    clientId
+  );
 
-                status.innerText =
-                  "✅ Tradução concluída!";
-
-
-                if (data.url) {
-
-                  const resultado =
-                    document.createElement(
-                      "a"
-                    );
-
-                  resultado.href =
-                    data.url;
-
-                  resultado.target =
-                    "_blank";
-
-                  resultado.innerText =
-                    "▶ Abrir vídeo traduzido";
-
-                  resultado.style.display =
-                    "block";
-
-                  resultado.style.marginTop =
-                    "12px";
-
-                  resultado.style.color =
-                    "#b36cff";
-
-                  resultado.style.textAlign =
-                    "center";
-
-                  status.appendChild(
-                    resultado
-                  );
-
-                }
-
-              }
+}
 
 
-              if (
-                data.status === "error" ||
-                data.status === "failed"
-              ) {
+/* ABRIR */
 
-                clearInterval(
-                  intervalo
-                );
+function abrirChat(){
 
-                status.innerText =
-                  "❌ Ocorreu um erro no processamento.";
+  chatBox.style.display =
+    "block";
 
-              }
+  carregarMensagens();
+
+  setTimeout(
+    () => messageInput.focus(),
+    100
+  );
+
+}
 
 
-            } catch (error) {
+/* FECHAR */
 
-              console.log(
-                "Aguardando servidor..."
-              );
+function fecharChat(){
 
-            }
+  chatBox.style.display =
+    "none";
 
-          },
-          4000
+}
+
+
+/* ADICIONAR MENSAGEM */
+
+function adicionarMensagem(
+  texto,
+  tipo
+){
+
+  const div =
+    document.createElement("div");
+
+  div.className =
+    "message " + tipo;
+
+  div.textContent =
+    texto;
+
+  chatMessages.appendChild(div);
+
+  chatMessages.scrollTop =
+    chatMessages.scrollHeight;
+
+}
+
+
+/* ENVIAR */
+
+chatForm.addEventListener(
+  "submit",
+  async function(event){
+
+    event.preventDefault();
+
+    const text =
+      messageInput.value.trim();
+
+    if(!text) return;
+
+    adicionarMensagem(
+      text,
+      "client"
+    );
+
+    messageInput.value = "";
+
+    try{
+
+      const response =
+        await fetch(
+          BACKEND_URL +
+          "/api/chat/send",
+          {
+            method:"POST",
+
+            headers:{
+              "Content-Type":
+                "application/json"
+            },
+
+            body:JSON.stringify({
+
+              clientId:clientId,
+
+              message:text
+
+            })
+          }
         );
 
-    }
+
+      const data =
+        await response.json();
 
 
-    /* ===================================
-       PLANO PRO
-    =================================== */
+      if(!response.ok){
 
-    function assinarPlano() {
-
-      alert(
-        "O checkout do plano Pro será aberto aqui."
-      );
-
-      /*
-        QUANDO VOCÊ TIVER O LINK DO
-        MERCADO PAGO, TROQUE ESTE ALERT
-        POR:
-
-        window.location.href =
-          "SEU_LINK_DO_MERCADO_PAGO";
-      */
-
-    }
-
-
-    /* ===================================
-       CONTATO
-    =================================== */
-
-    function contato() {
-
-      window.location.href =
-        "mailto:contato@lingualive.com";
-
-    }
-
-
-    /* ===================================
-       CHAT
-    =================================== */
-
-    function abrirChat() {
-
-      alert(
-        "Olá! 👋 Como podemos ajudar?"
-      );
-
-    }
-
-
-    /* ===================================
-       TESTAR BACKEND
-    =================================== */
-
-    async function verificarServidor() {
-
-      try {
-
-        const response =
-          await fetch(
-            BACKEND_URL +
-            "/api/health"
-          );
-
-
-        if (response.ok) {
-
-          console.log(
-            "LinguaLive: servidor online."
-          );
-
-        } else {
-
-          console.log(
-            "Servidor respondeu com erro."
-          );
-
-        }
-
-      } catch (error) {
-
-        console.log(
-          "Backend ainda não está acessível."
+        throw new Error(
+          data.error ||
+          "Erro ao enviar mensagem."
         );
 
       }
 
+    }catch(error){
+
+      adicionarMensagem(
+        "Não foi possível enviar a mensagem. Tente novamente.",
+        "admin"
+      );
+
+    }
+
+  }
+);
+
+
+/* =====================================
+   CARREGAR MENSAGENS
+===================================== */
+
+async function carregarMensagens(){
+
+  try{
+
+    const response =
+      await fetch(
+        BACKEND_URL +
+        "/api/chat/messages/" +
+        clientId
+      );
+
+    if(!response.ok) return;
+
+    const data =
+      await response.json();
+
+
+    chatMessages.innerHTML = "";
+
+
+    if(data.messages.length === 0){
+
+      adicionarMensagem(
+        "Olá! 👋 Como podemos ajudar?",
+        "admin"
+      );
+
+      return;
+
     }
 
 
-    verificarServidor();
+    data.messages.forEach(
+      function(message){
 
-  </script>
+        adicionarMensagem(
+
+          message.message,
+
+          message.sender === "admin"
+            ? "admin"
+            : "client"
+
+        );
+
+      }
+    );
+
+
+  }catch(error){
+
+    console.log(
+      "Não foi possível carregar o chat."
+    );
+
+  }
+
+}
+
+
+/* =====================================
+   ATUALIZAR CHAT AUTOMATICAMENTE
+===================================== */
+
+setInterval(
+  function(){
+
+    if(
+      chatBox.style.display === "block"
+    ){
+
+      carregarMensagens();
+
+    }
+
+  },
+  3000
+);
+
+
+/* =====================================
+   IR PARA TRADUTOR
+===================================== */
+
+function irParaTradutor(){
+
+  document
+    .getElementById("tradutor")
+    .scrollIntoView({
+      behavior:"smooth"
+    });
+
+}
+
+
+/* =====================================
+   PLANO
+===================================== */
+
+function assinarPlano(){
+
+  /*
+    COLOQUE AQUI O LINK DO MERCADO PAGO
+    QUANDO TIVER.
+
+    Exemplo:
+
+    window.location.href =
+      "SEU_LINK_MERCADO_PAGO";
+  */
+
+  alert(
+    "O pagamento do plano Pro será configurado aqui."
+  );
+
+}
+
+
+/* =====================================
+   TESTAR SERVIDOR
+===================================== */
+
+fetch(
+  BACKEND_URL +
+  "/api/health"
+)
+.then(
+  response =>
+    console.log(
+      "LinguaLive backend:",
+      response.ok
+        ? "ONLINE"
+        : "ERRO"
+    )
+)
+.catch(
+  error =>
+    console.log(
+      "Backend offline ou iniciando..."
+    )
+);
+
+</script>
 
 </body>
 </html>
