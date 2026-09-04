@@ -1,6 +1,7 @@
 import os
 import uuid
 import threading
+import time
 import requests
 
 from flask import Flask, request, jsonify
@@ -14,18 +15,20 @@ CORS(app)
 # =========================================================
 
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+ELEVENLABS_AGENT_ID = os.getenv(
+    "ELEVENLABS_AGENT_ID",
+    "agent_1601m1q929bhf2zvts65479fyzdw"
+)
 
 ELEVENLABS_BASE_URL = "https://api.elevenlabs.io/v1"
 
-# Guarda os trabalhos em memória
 jobs = {}
 
-# Limite simples para evitar arquivos gigantes
-MAX_FILE_SIZE = 500 * 1024 * 1024  # 500 MB
+MAX_FILE_SIZE = 500 * 1024 * 1024
 
 
 # =========================================================
-# FUNÇÕES AUXILIARES
+# ELEVENLABS
 # =========================================================
 
 def eleven_headers():
@@ -34,11 +37,59 @@ def eleven_headers():
     }
 
 
+def get_agent_signed_url():
+    """
+    Gera uma URL temporária para o navegador
+    conectar ao Agent sem expor a API Key.
+    """
+
+    if not ELEVENLABS_API_KEY:
+        raise Exception(
+            "ELEVENLABS_API_KEY não configurada."
+        )
+
+    if not ELEVENLABS_AGENT_ID:
+        raise Exception(
+            "ELEVENLABS_AGENT_ID não configurado."
+        )
+
+    url = (
+        f"{ELEVENLABS_BASE_URL}"
+        f"/convai/conversation/get-signed-url"
+    )
+
+    response = requests.get(
+        url,
+        headers=eleven_headers(),
+        params={
+            "agent_id": ELEVENLABS_AGENT_ID
+        },
+        timeout=30
+    )
+
+    if not response.ok:
+        raise Exception(
+            f"ElevenLabs Agent erro "
+            f"{response.status_code}: {response.text}"
+        )
+
+    data = response.json()
+
+    signed_url = data.get("signed_url")
+
+    if not signed_url:
+        raise Exception(
+            "ElevenLabs não retornou signed_url."
+        )
+
+    return signed_url
+
+
+# =========================================================
+# DUBLAGEM DE VÍDEO
+# =========================================================
+
 def create_dubbing(file_path, target_language):
-    """
-    Envia o vídeo para o Dubbing v2 da ElevenLabs.
-    A ElevenLabs faz a transcrição, tradução e dublagem.
-    """
 
     url = f"{ELEVENLABS_BASE_URL}/dubbing/project"
 
@@ -68,16 +119,14 @@ def create_dubbing(file_path, target_language):
 
     if not response.ok:
         raise Exception(
-            f"ElevenLabs erro {response.status_code}: {response.text}"
+            f"ElevenLabs erro "
+            f"{response.status_code}: {response.text}"
         )
 
     return response.json()
 
 
 def get_language_target(project_id, language_id):
-    """
-    Consulta o status da dublagem.
-    """
 
     url = (
         f"{ELEVENLABS_BASE_URL}/dubbing/project/"
@@ -104,7 +153,9 @@ def process_job(job_id, file_path, target_language):
     try:
 
         jobs[job_id]["status"] = "processing"
-        jobs[job_id]["message"] = "Enviando vídeo para ElevenLabs..."
+        jobs[job_id]["message"] = (
+            "Enviando vídeo para ElevenLabs..."
+        )
 
         result = create_dubbing(
             file_path,
@@ -121,12 +172,9 @@ def process_job(job_id, file_path, target_language):
         jobs[job_id]["project_id"] = project_id
         jobs[job_id]["status"] = "waiting"
         jobs[job_id]["message"] = (
-            "Vídeo recebido. Aguardando processamento da ElevenLabs..."
+            "Vídeo recebido. "
+            "Aguardando processamento..."
         )
-
-        # =================================================
-        # Esperar o projeto ficar pronto
-        # =================================================
 
         language_id = None
 
@@ -146,7 +194,8 @@ def process_job(job_id, file_path, target_language):
             if not response.ok:
                 raise Exception(
                     f"Erro consultando projeto: "
-                    f"{response.status_code}: {response.text}"
+                    f"{response.status_code}: "
+                    f"{response.text}"
                 )
 
             project = response.json()
@@ -157,27 +206,24 @@ def process_job(job_id, file_path, target_language):
                 f"Processando vídeo: {project_status}"
             )
 
-            # Procurar language_id
-            language_ids = project.get("language_ids", [])
+            language_ids = project.get(
+                "language_ids",
+                []
+            )
 
             if language_ids:
                 language_id = language_ids[0]
 
             if project_status == "failed":
                 raise Exception(
-                    "A ElevenLabs informou que o projeto falhou."
+                    "A ElevenLabs informou que "
+                    "o projeto falhou."
                 )
 
             if project_status == "ready":
                 break
 
-            import time
             time.sleep(5)
-
-        # =================================================
-        # Caso o language_id ainda não tenha aparecido,
-        # consultar a lista de idiomas
-        # =================================================
 
         if not language_id:
 
@@ -203,16 +249,15 @@ def process_job(job_id, file_path, target_language):
 
                 for language in languages:
 
-                    if language.get("target_language") == target_language:
+                    if language.get(
+                        "target_language"
+                    ) == target_language:
 
                         language_id = language.get(
                             "language_id"
                         )
-                        break
 
-        # =================================================
-        # Se não existir, criar o idioma
-        # =================================================
+                        break
 
         if not language_id:
 
@@ -236,7 +281,8 @@ def process_job(job_id, file_path, target_language):
             if not response.ok:
                 raise Exception(
                     f"Erro criando idioma: "
-                    f"{response.status_code}: {response.text}"
+                    f"{response.status_code}: "
+                    f"{response.text}"
                 )
 
             language_data = response.json()
@@ -247,7 +293,8 @@ def process_job(job_id, file_path, target_language):
 
         if not language_id:
             raise Exception(
-                "Não foi possível encontrar o language_id."
+                "Não foi possível encontrar "
+                "o language_id."
             )
 
         jobs[job_id]["language_id"] = language_id
@@ -255,12 +302,6 @@ def process_job(job_id, file_path, target_language):
         jobs[job_id]["message"] = (
             "Gerando a dublagem..."
         )
-
-        # =================================================
-        # Esperar a dublagem terminar
-        # =================================================
-
-        import time
 
         for _ in range(360):
 
@@ -288,22 +329,22 @@ def process_job(job_id, file_path, target_language):
                 if not audio_url:
                     raise Exception(
                         "A ElevenLabs terminou, "
-                        "mas não retornou o arquivo de saída."
+                        "mas não retornou o áudio."
                     )
 
                 jobs[job_id]["status"] = "completed"
                 jobs[job_id]["message"] = (
                     "Dublagem concluída!"
                 )
-                jobs[job_id]["output_url"] = audio_url
+                jobs[job_id]["output_url"] = (
+                    audio_url
+                )
 
                 break
 
             if status == "failed":
 
-                error = language.get(
-                    "error"
-                )
+                error = language.get("error")
 
                 raise Exception(
                     f"Dublagem falhou: {error}"
@@ -314,7 +355,7 @@ def process_job(job_id, file_path, target_language):
         else:
 
             raise Exception(
-                "Tempo limite excedido esperando a dublagem."
+                "Tempo limite excedido."
             )
 
     except Exception as error:
@@ -342,6 +383,7 @@ def home():
         "ok": True,
         "service": "SI Tradutor & Dublagem IA",
         "provider": "ElevenLabs",
+        "agent_id": ELEVENLABS_AGENT_ID,
         "message": "Servidor funcionando."
     })
 
@@ -350,17 +392,134 @@ def home():
 def health():
 
     if not ELEVENLABS_API_KEY:
-
         return jsonify({
             "ok": False,
-            "message": "ELEVENLABS_API_KEY não configurada."
+            "message": (
+                "ELEVENLABS_API_KEY "
+                "não configurada."
+            )
         }), 500
 
     return jsonify({
         "ok": True,
-        "message": "Servidor conectado à ElevenLabs."
+        "message": "Servidor conectado à ElevenLabs.",
+        "agent_id": ELEVENLABS_AGENT_ID
     })
 
+
+# =========================================================
+# AGENT - URL SEGURA
+# =========================================================
+
+@app.get("/api/agent/signed-url")
+def agent_signed_url():
+
+    try:
+
+        signed_url = get_agent_signed_url()
+
+        return jsonify({
+            "ok": True,
+            "signedUrl": signed_url
+        })
+
+    except Exception as error:
+
+        return jsonify({
+            "ok": False,
+            "error": str(error)
+        }), 500
+
+
+# =========================================================
+# YOUTUBE LIVE
+# =========================================================
+
+@app.post("/api/youtube-live")
+def youtube_live():
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    youtube_url = str(
+        data.get("url", "")
+    ).strip()
+
+    target_language = str(
+        data.get("targetLang", "pt")
+    ).strip()
+
+    if not youtube_url:
+
+        return jsonify({
+            "ok": False,
+            "error": "Cole o link da YouTube Live."
+        }), 400
+
+    if (
+        "youtube.com" not in youtube_url
+        and "youtu.be" not in youtube_url
+    ):
+
+        return jsonify({
+            "ok": False,
+            "error": (
+                "Informe um link válido "
+                "do YouTube."
+            )
+        }), 400
+
+    allowed_languages = {
+        "pt",
+        "en",
+        "es",
+        "fr",
+        "de",
+        "it",
+        "ja",
+        "ko",
+        "zh",
+        "ar"
+    }
+
+    if target_language not in allowed_languages:
+
+        return jsonify({
+            "ok": False,
+            "error": "Idioma não suportado."
+        }), 400
+
+    # Neste primeiro estágio guardamos a URL.
+    # A captura real do áudio será ligada
+    # na próxima etapa.
+
+    live_id = str(uuid.uuid4())
+
+    jobs[live_id] = {
+        "type": "youtube_live",
+        "status": "ready",
+        "message": (
+            "Link recebido. "
+            "Aguardando conexão de áudio."
+        ),
+        "youtube_url": youtube_url,
+        "target_language": target_language
+    }
+
+    return jsonify({
+        "ok": True,
+        "liveId": live_id,
+        "status": "ready",
+        "message": (
+            "Link da YouTube Live recebido."
+        )
+    })
+
+
+# =========================================================
+# UPLOAD DE VÍDEO
+# =========================================================
 
 @app.post("/api/test-upload")
 def test_upload():
@@ -369,7 +528,10 @@ def test_upload():
 
         return jsonify({
             "ok": False,
-            "error": "ELEVENLABS_API_KEY não está configurada no Render."
+            "error": (
+                "ELEVENLABS_API_KEY "
+                "não está configurada."
+            )
         }), 500
 
     if "video" not in request.files:
@@ -410,7 +572,7 @@ def test_upload():
 
         return jsonify({
             "ok": False,
-            "error": "Idioma de destino não suportado."
+            "error": "Idioma não suportado."
         }), 400
 
     job_id = str(uuid.uuid4())
@@ -441,14 +603,18 @@ def test_upload():
 
             return jsonify({
                 "ok": False,
-                "error": "O vídeo é maior que 500 MB."
+                "error": (
+                    "O vídeo é maior que 500 MB."
+                )
             }), 400
 
     except Exception as error:
 
         return jsonify({
             "ok": False,
-            "error": f"Erro salvando vídeo: {error}"
+            "error": (
+                f"Erro salvando vídeo: {error}"
+            )
         }), 500
 
     jobs[job_id] = {
@@ -474,9 +640,15 @@ def test_upload():
         "ok": True,
         "jobId": job_id,
         "status": "queued",
-        "message": "Vídeo enviado para processamento."
+        "message": (
+            "Vídeo enviado para processamento."
+        )
     })
 
+
+# =========================================================
+# STATUS
+# =========================================================
 
 @app.get("/api/status/<job_id>")
 def job_status(job_id):
@@ -498,7 +670,7 @@ def job_status(job_id):
 
 
 # =========================================================
-# EXECUÇÃO LOCAL
+# EXECUÇÃO
 # =========================================================
 
 if __name__ == "__main__":
@@ -513,4 +685,4 @@ if __name__ == "__main__":
     app.run(
         host="0.0.0.0",
         port=port
-        )
+            )
