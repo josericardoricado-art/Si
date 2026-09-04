@@ -1,9 +1,13 @@
 import os
 import uuid
-import requests
+import threading
+import time
+from pathlib import Path
 
-from flask import Flask, request, jsonify
+import requests
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
+from werkzeug.utils import secure_filename
 
 
 # =========================================================
@@ -13,751 +17,498 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
+# Render fornece a porta automaticamente
 PORT = int(os.environ.get("PORT", 10000))
 
-ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
+# Chave da ElevenLabs
+ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY")
 
-ELEVENLABS_URL = "https://api.elevenlabs.io/v1"
+# Endereço da API ElevenLabs
+ELEVENLABS_API = "https://api.elevenlabs.io/v1"
 
-UPLOAD_FOLDER = "uploads"
+# Pasta para arquivos temporários/resultados
+BASE_DIR = Path(__file__).resolve().parent
+UPLOAD_DIR = BASE_DIR / "uploads"
+OUTPUT_DIR = BASE_DIR / "outputs"
 
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+UPLOAD_DIR.mkdir(exist_ok=True)
+OUTPUT_DIR.mkdir(exist_ok=True)
 
+# Tamanho máximo do vídeo: 500 MB
+app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024
 
-# =========================================================
-# IDIOMAS
-# =========================================================
-
-LANGUAGES = {
-    "pt": "Português",
-    "en": "Inglês",
-    "es": "Espanhol",
-    "fr": "Francês",
-    "de": "Alemão",
-    "it": "Italiano",
-    "ja": "Japonês",
-    "ko": "Coreano",
-    "zh": "Chinês",
-    "hi": "Hindi",
-    "ar": "Árabe"
+ALLOWED_EXTENSIONS = {
+    "mp4",
+    "mov",
+    "mkv",
+    "avi",
+    "webm",
+    "mp3",
+    "wav",
+    "m4a",
+    "aac",
+    "flac",
 }
 
-
-# =========================================================
-# VERIFICAÇÃO DA API
-# =========================================================
-
-def verificar_api():
-
-    if not ELEVENLABS_API_KEY:
-
-        return False, "ELEVENLABS_API_KEY não configurada."
-
-    return True, None
+# Trabalhos em andamento
+jobs = {}
 
 
 # =========================================================
-# ROTA PRINCIPAL
+# FUNÇÕES AUXILIARES
 # =========================================================
 
-@app.route("/", methods=["GET"])
+def allowed_file(filename):
+    if not filename:
+        return False
+
+    extension = filename.rsplit(".", 1)[-1].lower()
+
+    return extension in ALLOWED_EXTENSIONS
+
+
+def extension_from_filename(filename):
+    if "." in filename:
+        return "." + filename.rsplit(".", 1)[-1].lower()
+
+    return ".mp4"
+
+
+def elevenlabs_headers():
+    return {
+        "xi-api-key": ELEVENLABS_API_KEY
+    }
+
+
+# =========================================================
+# PÁGINA PRINCIPAL
+# =========================================================
+
+@app.route("/")
 def home():
-
     return jsonify({
         "ok": True,
-        "service": "SI - Tradutor & Dublagem IA",
-        "message": "Servidor online",
-        "elevenlabs": bool(ELEVENLABS_API_KEY)
+        "service": "SI - Tradutor e Dublagem IA",
+        "message": "Servidor funcionando.",
+        "provider": "ElevenLabs"
     })
 
 
 # =========================================================
-# HEALTH
+# HEALTH CHECK
 # =========================================================
 
 @app.route("/api/health", methods=["GET"])
 def health():
-
     return jsonify({
         "ok": True,
-        "status": "online",
-        "service": "SI",
+        "service": "SI Tradutor IA",
         "elevenlabs_configured": bool(ELEVENLABS_API_KEY)
     })
 
 
 # =========================================================
-# IDIOMAS
+# INFORMAÇÕES
 # =========================================================
 
-@app.route("/api/languages", methods=["GET"])
-def languages():
-
+@app.route("/api", methods=["GET"])
+def api_info():
     return jsonify({
         "ok": True,
-        "languages": [
-            {
-                "code": code,
-                "name": name
-            }
-            for code, name in LANGUAGES.items()
+        "message": "API SI Tradutor IA funcionando.",
+        "endpoints": [
+            "/api/health",
+            "/api/test-upload",
+            "/api/status/<job_id>",
+            "/api/download/<filename>"
         ]
     })
 
 
 # =========================================================
-# CRIAR DUBLAGEM
+# UPLOAD E DUBLAGEM
 # =========================================================
 
 @app.route("/api/test-upload", methods=["POST"])
 def test_upload():
 
-    try:
-
-        # -----------------------------------------------
-        # Verificar API
-        # -----------------------------------------------
-
-        ok, erro = verificar_api()
-
-        if not ok:
-
-            return jsonify({
-                "ok": False,
-                "error": erro
-            }), 500
-
-
-        # -----------------------------------------------
-        # Verificar vídeo
-        # -----------------------------------------------
-
-        if "video" not in request.files:
-
-            return jsonify({
-                "ok": False,
-                "error": "Nenhum vídeo foi enviado."
-            }), 400
-
-
-        video = request.files["video"]
-
-
-        if video.filename == "":
-
-            return jsonify({
-                "ok": False,
-                "error": "Nenhum arquivo foi selecionado."
-            }), 400
-
-
-        # -----------------------------------------------
-        # Idioma de destino
-        # -----------------------------------------------
-
-        target_language = request.form.get(
-            "targetLang",
-            request.form.get(
-                "language",
-                "pt"
-            )
-        ).strip().lower()
-
-
-        if target_language not in LANGUAGES:
-
-            return jsonify({
-                "ok": False,
-                "error": "Idioma de destino não suportado.",
-                "allowed_languages": list(LANGUAGES.keys())
-            }), 400
-
-
-        # -----------------------------------------------
-        # Salvar arquivo temporariamente
-        # -----------------------------------------------
-
-        extension = os.path.splitext(
-            video.filename
-        )[1].lower()
-
-        if not extension:
-
-            extension = ".mp4"
-
-
-        filename = (
-            str(uuid.uuid4())
-            + extension
-        )
-
-
-        filepath = os.path.join(
-            UPLOAD_FOLDER,
-            filename
-        )
-
-
-        video.save(filepath)
-
-
-        # -----------------------------------------------
-        # Criar projeto na ElevenLabs
-        # -----------------------------------------------
-
-        url = (
-            ELEVENLABS_URL
-            + "/dubbing/project"
-        )
-
-
-        headers = {
-            "xi-api-key": ELEVENLABS_API_KEY
-        }
-
-
-        try:
-
-            with open(
-                filepath,
-                "rb"
-            ) as arquivo:
-
-                files = {
-                    "file": (
-                        video.filename,
-                        arquivo,
-                        video.mimetype or "video/mp4"
-                    )
-                }
-
-                data = {
-                    "model_id": "dubbing_v2",
-                    "target_language": target_language,
-                    "reference": "SI Tradutor IA"
-                }
-
-
-                resposta = requests.post(
-                    url,
-                    headers=headers,
-                    files=files,
-                    data=data,
-                    timeout=300
-                )
-
-
-        finally:
-
-            # Apagar arquivo temporário
-            try:
-                os.remove(filepath)
-            except Exception:
-                pass
-
-
-        # -----------------------------------------------
-        # Erro da ElevenLabs
-        # -----------------------------------------------
-
-        if resposta.status_code >= 400:
-
-            try:
-                detalhe = resposta.json()
-            except Exception:
-                detalhe = resposta.text
-
-
-            return jsonify({
-                "ok": False,
-                "error": "Erro na ElevenLabs.",
-                "details": detalhe
-            }), resposta.status_code
-
-
-        # -----------------------------------------------
-        # Resposta
-        # -----------------------------------------------
-
-        projeto = resposta.json()
-
-
-        project_id = projeto.get(
-            "project_id"
-        )
-
-
-        language_ids = projeto.get(
-            "language_ids",
-            []
-        )
-
-
-        return jsonify({
-
-            "ok": True,
-
-            "jobId": project_id,
-
-            "projectId": project_id,
-
-            "languageIds": language_ids,
-
-            "status": projeto.get(
-                "status",
-                "queued"
-            ),
-
-            "targetLang": target_language,
-
-            "targetLanguage": LANGUAGES.get(
-                target_language,
-                target_language
-            ),
-
-            "message": (
-                "Vídeo enviado para a ElevenLabs. "
-                "A dublagem foi iniciada."
-            )
-
-        })
-
-
-    except requests.exceptions.Timeout:
-
+    if not ELEVENLABS_API_KEY:
         return jsonify({
             "ok": False,
-            "error": (
-                "A ElevenLabs demorou muito "
-                "para responder."
-            )
-        }), 504
-
-
-    except Exception as erro:
-
-        return jsonify({
-            "ok": False,
-            "error": str(erro)
+            "error": "ELEVENLABS_API_KEY não foi configurada no Render."
         }), 500
 
-
-# =========================================================
-# STATUS DA DUBLAGEM
-# =========================================================
-
-@app.route("/api/status/<project_id>", methods=["GET"])
-def status(project_id):
-
-    try:
-
-        ok, erro = verificar_api()
-
-        if not ok:
-
-            return jsonify({
-                "ok": False,
-                "error": erro
-            }), 500
-
-
-        # -----------------------------------------------
-        # Buscar projeto
-        # -----------------------------------------------
-
-        project_url = (
-            ELEVENLABS_URL
-            + "/dubbing/project/"
-            + project_id
-        )
-
-
-        headers = {
-            "xi-api-key": ELEVENLABS_API_KEY
-        }
-
-
-        project_response = requests.get(
-            project_url,
-            headers=headers,
-            timeout=60
-        )
-
-
-        if project_response.status_code >= 400:
-
-            try:
-                detalhe = project_response.json()
-            except Exception:
-                detalhe = project_response.text
-
-
-            return jsonify({
-                "ok": False,
-                "error": "Erro ao consultar projeto.",
-                "details": detalhe
-            }), project_response.status_code
-
-
-        projeto = project_response.json()
-
-
-        project_status = projeto.get(
-            "status",
-            "unknown"
-        )
-
-
-        # -----------------------------------------------
-        # Procurar idiomas do projeto
-        # -----------------------------------------------
-
-        language_url = (
-            ELEVENLABS_URL
-            + "/dubbing/project/"
-            + project_id
-            + "/language"
-        )
-
-
-        language_response = requests.get(
-            language_url,
-            headers=headers,
-            params={
-                "page_size": 100
-            },
-            timeout=60
-        )
-
-
-        idiomas = []
-
-
-        if language_response.status_code < 400:
-
-            language_data = language_response.json()
-
-            idiomas = language_data.get(
-                "languages",
-                []
-            )
-
-
-        # -----------------------------------------------
-        # Encontrar resultado concluído
-        # -----------------------------------------------
-
-        completed_language = None
-
-
-        for idioma in idiomas:
-
-            if idioma.get("status") == "completed":
-
-                completed_language = idioma
-
-                break
-
-
-        # -----------------------------------------------
-        # Dublagem concluída
-        # -----------------------------------------------
-
-        if completed_language:
-
-            outputs = completed_language.get(
-                "outputs"
-            ) or {}
-
-
-            return jsonify({
-
-                "ok": True,
-
-                "jobId": project_id,
-
-                "projectId": project_id,
-
-                "status": "completed",
-
-                "message": (
-                    "Dublagem concluída!"
-                ),
-
-                "targetLang": completed_language.get(
-                    "target_language"
-                ),
-
-                "languageId": completed_language.get(
-                    "language_id"
-                ),
-
-                "output": outputs,
-
-                "outputs": outputs
-
-            })
-
-
-        # -----------------------------------------------
-        # Algum idioma falhou
-        # -----------------------------------------------
-
-        for idioma in idiomas:
-
-            if idioma.get("status") == "failed":
-
-                return jsonify({
-
-                    "ok": False,
-
-                    "jobId": project_id,
-
-                    "projectId": project_id,
-
-                    "status": "failed",
-
-                    "message": (
-                        "A ElevenLabs informou "
-                        "que a dublagem falhou."
-                    ),
-
-                    "error": idioma.get(
-                        "error"
-                    )
-
-                })
-
-
-        # -----------------------------------------------
-        # Projeto falhou
-        # -----------------------------------------------
-
-        if project_status == "failed":
-
-            return jsonify({
-
-                "ok": False,
-
-                "jobId": project_id,
-
-                "projectId": project_id,
-
-                "status": "failed",
-
-                "message": (
-                    "O projeto de dublagem falhou."
-                ),
-
-                "error": projeto.get(
-                    "error"
-                )
-
-            })
-
-
-        # -----------------------------------------------
-        # Ainda processando
-        # -----------------------------------------------
-
-        return jsonify({
-
-            "ok": True,
-
-            "jobId": project_id,
-
-            "projectId": project_id,
-
-            "status": project_status,
-
-            "message": (
-                "A ElevenLabs ainda está "
-                "processando o vídeo."
-            ),
-
-            "languages": idiomas
-
-        })
-
-
-    except requests.exceptions.Timeout:
-
-        return jsonify({
-
-            "ok": False,
-
-            "error": (
-                "Tempo limite ao consultar "
-                "a ElevenLabs."
-            )
-
-        }), 504
-
-
-    except Exception as erro:
-
-        return jsonify({
-
-            "ok": False,
-
-            "error": str(erro)
-
-        }), 500
-
-
-# =========================================================
-# STATUS DE UM IDIOMA ESPECÍFICO
-# =========================================================
-
-@app.route(
-    "/api/status/<project_id>/<language_id>",
-    methods=["GET"]
-)
-def status_language(
-    project_id,
-    language_id
-):
-
-    try:
-
-        ok, erro = verificar_api()
-
-        if not ok:
-
-            return jsonify({
-                "ok": False,
-                "error": erro
-            }), 500
-
-
-        url = (
-            ELEVENLABS_URL
-            + "/dubbing/project/"
-            + project_id
-            + "/language/"
-            + language_id
-        )
-
-
-        headers = {
-            "xi-api-key": ELEVENLABS_API_KEY
-        }
-
-
-        resposta = requests.get(
-            url,
-            headers=headers,
-            timeout=60
-        )
-
-
-        try:
-            dados = resposta.json()
-        except Exception:
-            dados = {
-                "error": resposta.text
-            }
-
-
-        if resposta.status_code >= 400:
-
-            return jsonify({
-                "ok": False,
-                "details": dados
-            }), resposta.status_code
-
-
-        return jsonify({
-
-            "ok": True,
-
-            "jobId": project_id,
-
-            "projectId": project_id,
-
-            "languageId": language_id,
-
-            "status": dados.get(
-                "status"
-            ),
-
-            "targetLang": dados.get(
-                "target_language"
-            ),
-
-            "outputs": dados.get(
-                "outputs"
-            ),
-
-            "error": dados.get(
-                "error"
-            )
-
-        })
-
-
-    except Exception as erro:
-
+    if "video" not in request.files:
         return jsonify({
             "ok": False,
-            "error": str(erro)
-        }), 500
+            "error": "Nenhum arquivo foi enviado. O campo deve ser 'video'."
+        }), 400
 
+    uploaded_file = request.files["video"]
 
-# =========================================================
-# TRATAMENTO DE 404
-# =========================================================
+    if not uploaded_file.filename:
+        return jsonify({
+            "ok": False,
+            "error": "O arquivo não possui nome."
+        }), 400
 
-@app.errorhandler(404)
-def not_found(error):
+    if not allowed_file(uploaded_file.filename):
+        return jsonify({
+            "ok": False,
+            "error": "Formato não suportado."
+        }), 400
+
+    target_lang = request.form.get("targetLang", "pt").strip().lower()
+
+    # Idiomas aceitos pela interface.
+    # A ElevenLabs suporta muitos outros idiomas também.
+    supported_languages = {
+        "pt",
+        "en",
+        "es",
+        "fr",
+        "de",
+        "it",
+        "ja",
+        "ko",
+        "zh",
+        "hi",
+        "ar",
+        "ru",
+        "tr",
+        "nl",
+        "pl",
+        "sv",
+        "da",
+        "no",
+        "fi",
+        "el",
+        "cs",
+        "ro",
+        "uk",
+        "id",
+        "vi"
+    }
+
+    if target_lang not in supported_languages:
+        return jsonify({
+            "ok": False,
+            "error": "Idioma de destino não suportado pela interface."
+        }), 400
+
+    job_id = str(uuid.uuid4())
+
+    original_name = secure_filename(uploaded_file.filename)
+    extension = extension_from_filename(original_name)
+
+    input_filename = f"{job_id}{extension}"
+    input_path = UPLOAD_DIR / input_filename
+
+    uploaded_file.save(input_path)
+
+    jobs[job_id] = {
+        "id": job_id,
+        "status": "uploaded",
+        "progress": 5,
+        "message": "Arquivo recebido.",
+        "target_language": target_lang,
+        "input_file": str(input_path),
+        "output_file": None,
+        "error": None,
+        "created_at": time.time()
+    }
+
+    # Inicia a dublagem em segundo plano
+    worker = threading.Thread(
+        target=dub_video,
+        args=(job_id, target_lang),
+        daemon=True
+    )
+
+    worker.start()
 
     return jsonify({
-
-        "ok": False,
-
-        "error": "Endpoint não encontrado."
-
-    }), 404
+        "ok": True,
+        "jobId": job_id,
+        "status": "processing",
+        "message": "Vídeo enviado para dublagem."
+    })
 
 
 # =========================================================
-# INICIALIZAÇÃO
+# PROCESSAMENTO ELEVENLABS
+# =========================================================
+
+def dub_video(job_id, target_lang):
+
+    job = jobs.get(job_id)
+
+    if not job:
+        return
+
+    input_path = Path(job["input_file"])
+
+    try:
+
+        job["status"] = "processing"
+        job["progress"] = 10
+        job["message"] = "Enviando vídeo para ElevenLabs..."
+
+        with open(input_path, "rb") as media_file:
+
+            files = {
+                "file": (
+                    input_path.name,
+                    media_file,
+                    "application/octet-stream"
+                )
+            }
+
+            data = {
+                "target_lang": target_lang,
+                "source_lang": "auto",
+                "name": f"SI Tradutor {job_id}"
+            }
+
+            response = requests.post(
+                f"{ELEVENLABS_API}/dubbing",
+                headers=elevenlabs_headers(),
+                files=files,
+                data=data,
+                timeout=120
+            )
+
+        if response.status_code not in (200, 201):
+
+            try:
+                error_data = response.json()
+            except Exception:
+                error_data = response.text
+
+            raise Exception(
+                f"ElevenLabs retornou HTTP {response.status_code}: "
+                f"{error_data}"
+            )
+
+        result = response.json()
+
+        dubbing_id = result.get("dubbing_id")
+
+        if not dubbing_id:
+            raise Exception(
+                "ElevenLabs não retornou o dubbing_id."
+            )
+
+        job["dubbing_id"] = dubbing_id
+        job["status"] = "processing"
+        job["progress"] = 25
+        job["message"] = "ElevenLabs está processando o vídeo."
+
+        # =================================================
+        # ESPERA A DUBLAGEM TERMINAR
+        # =================================================
+
+        max_attempts = 180
+
+        for attempt in range(max_attempts):
+
+            time.sleep(5)
+
+            status_response = requests.get(
+                f"{ELEVENLABS_API}/dubbing/{dubbing_id}",
+                headers=elevenlabs_headers(),
+                timeout=60
+            )
+
+            if status_response.status_code != 200:
+
+                raise Exception(
+                    f"Erro ao consultar dublagem: "
+                    f"HTTP {status_response.status_code}"
+                )
+
+            status_data = status_response.json()
+
+            status = str(
+                status_data.get("status", "")
+            ).lower()
+
+            job["elevenlabs_status"] = status
+
+            # Atualiza progresso aproximado
+            progress = min(
+                85,
+                25 + int((attempt / max_attempts) * 60)
+            )
+
+            job["progress"] = progress
+            job["message"] = (
+                f"Processando dublagem... {status or 'aguardando'}"
+            )
+
+            if status in {
+                "dubbed",
+                "completed",
+                "complete",
+                "finished"
+            }:
+                break
+
+            if status in {
+                "failed",
+                "error",
+                "cancelled",
+                "canceled"
+            }:
+                raise Exception(
+                    f"A ElevenLabs informou falha: {status}"
+                )
+
+        else:
+
+            raise Exception(
+                "A dublagem demorou mais que o tempo máximo de espera."
+            )
+
+        # =================================================
+        # BAIXAR VÍDEO DUBLADO
+        # =================================================
+
+        job["progress"] = 90
+        job["message"] = "Baixando vídeo dublado..."
+
+        output_filename = f"{job_id}_dubbed.mp4"
+        output_path = OUTPUT_DIR / output_filename
+
+        audio_response = requests.get(
+            f"{ELEVENLABS_API}/dubbing/{dubbing_id}/audio/{target_lang}",
+            headers=elevenlabs_headers(),
+            timeout=180
+        )
+
+        if audio_response.status_code != 200:
+
+            raise Exception(
+                f"Erro ao baixar resultado da ElevenLabs: "
+                f"HTTP {audio_response.status_code}"
+            )
+
+        with open(output_path, "wb") as output_file:
+            output_file.write(audio_response.content)
+
+        job["output_file"] = output_filename
+        job["status"] = "completed"
+        job["progress"] = 100
+        job["message"] = "Dublagem concluída."
+        job["download_url"] = (
+            f"/api/download/{output_filename}"
+        )
+
+    except Exception as error:
+
+        job["status"] = "error"
+        job["progress"] = 0
+        job["message"] = "Erro durante a dublagem."
+        job["error"] = str(error)
+
+    finally:
+
+        # Remove arquivo enviado depois do processamento
+        try:
+            if input_path.exists():
+                input_path.unlink()
+        except Exception:
+            pass
+
+
+# =========================================================
+# CONSULTAR STATUS
+# =========================================================
+
+@app.route("/api/status/<job_id>", methods=["GET"])
+def get_status(job_id):
+
+    job = jobs.get(job_id)
+
+    if not job:
+        return jsonify({
+            "ok": False,
+            "error": "Trabalho não encontrado."
+        }), 404
+
+    response = {
+        "ok": True,
+        "jobId": job_id,
+        "status": job.get("status"),
+        "progress": job.get("progress", 0),
+        "message": job.get("message"),
+        "error": job.get("error")
+    }
+
+    if job.get("status") == "completed":
+        response["download_url"] = job.get(
+            "download_url"
+        )
+
+    return jsonify(response)
+
+
+# =========================================================
+# DOWNLOAD DO RESULTADO
+# =========================================================
+
+@app.route("/api/download/<filename>", methods=["GET"])
+def download_file(filename):
+
+    safe_name = secure_filename(filename)
+
+    file_path = OUTPUT_DIR / safe_name
+
+    if not file_path.exists():
+        return jsonify({
+            "ok": False,
+            "error": "Arquivo não encontrado."
+        }), 404
+
+    return send_from_directory(
+        OUTPUT_DIR,
+        safe_name,
+        as_attachment=False,
+        mimetype="video/mp4"
+    )
+
+
+# =========================================================
+# ERRO DE ARQUIVO GRANDE
+# =========================================================
+
+@app.errorhandler(413)
+def file_too_large(error):
+
+    return jsonify({
+        "ok": False,
+        "error": "O arquivo é muito grande. Limite: 500 MB."
+    }), 413
+
+
+# =========================================================
+# INICIAR SERVIDOR
 # =========================================================
 
 if __name__ == "__main__":
 
+    print("=" * 50)
+    print("SI - Tradutor e Dublagem IA")
+    print("ElevenLabs: somente")
+    print(f"Porta: {PORT}")
     print(
-        "========================================"
+        "API configurada:",
+        bool(ELEVENLABS_API_KEY)
     )
-
-    print(
-        "SI - Tradutor & Dublagem IA"
-    )
-
-    print(
-        "ElevenLabs Dubbing API"
-    )
-
-    print(
-        f"Porta: {PORT}"
-    )
-
-    print(
-        f"ElevenLabs configurada: "
-        f"{bool(ELEVENLABS_API_KEY)}"
-    )
-
-    print(
-        "========================================"
-    )
-
+    print("=" * 50)
 
     app.run(
-
         host="0.0.0.0",
-
         port=PORT,
-
         debug=False
-
-            )
+    )
