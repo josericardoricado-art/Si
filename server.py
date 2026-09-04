@@ -1,359 +1,398 @@
 import os
 import uuid
-import subprocess
+import tempfile
 import threading
-import time
-from pathlib import Path
+import subprocess
+from datetime import datetime
 
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify
 from flask_cors import CORS
-from werkzeug.utils import secure_filename
 
 
-# =========================================================
+# ============================================================
 # CONFIGURAÇÃO
-# =========================================================
+# ============================================================
 
 app = Flask(__name__)
 
 CORS(
     app,
-    resources={r"/api/*": {"origins": "*"}},
-    supports_credentials=False
+    resources={
+        r"/api/*": {
+            "origins": "*"
+        }
+    }
 )
 
-BASE_DIR = Path(__file__).resolve().parent
 
-UPLOAD_DIR = BASE_DIR / "uploads"
-OUTPUT_DIR = BASE_DIR / "outputs"
-
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# Limite de upload: 100 MB
-app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
-
-# Jobs em memória
-jobs = {}
-
-# Extensões permitidas
-ALLOWED_EXTENSIONS = {
-    ".mp4",
-    ".mov",
-    ".mkv",
-    ".webm",
-    ".avi",
-    ".m4v"
-}
-
-
-# =========================================================
-# FUNÇÕES AUXILIARES
-# =========================================================
-
-def log(message):
-    print(f"[SERVER] {message}", flush=True)
-
-
-def allowed_file(filename):
-    if not filename:
-        return False
-
-    extension = Path(filename).suffix.lower()
-
-    return extension in ALLOWED_EXTENSIONS
-
-
-def update_job(job_id, **values):
-    if job_id not in jobs:
-        return
-
-    jobs[job_id].update(values)
-
-    log(
-        f"JOB {job_id}: "
-        f"{values}"
+PORT = int(
+    os.environ.get(
+        "PORT",
+        "10000"
     )
+)
 
 
-# =========================================================
-# PROCESSAMENTO DO VÍDEO
-# =========================================================
-
-def process_video(job_id, input_file, output_file, target_lang):
-
-    try:
-
-        update_job(
-            job_id,
-            status="processing",
-            stage="Iniciando processamento",
-            progress=1
-        )
-
-        log("========================================")
-        log("NOVO PROCESSAMENTO")
-        log("========================================")
-        log(f"Job: {job_id}")
-        log(f"Entrada: {input_file}")
-        log(f"Saída: {output_file}")
-        log(f"Idioma: {target_lang}")
-
-        # -------------------------------------------------
-        # Verificação dos arquivos
-        # -------------------------------------------------
-
-        if not input_file.exists():
-
-            raise Exception(
-                "Arquivo de entrada não encontrado."
-            )
-
-        # -------------------------------------------------
-        # Verificar pipeline.py
-        # -------------------------------------------------
-
-        pipeline_file = BASE_DIR / "pipeline.py"
-
-        if not pipeline_file.exists():
-
-            raise Exception(
-                "pipeline.py não encontrado na raiz do projeto."
-            )
-
-        # -------------------------------------------------
-        # Atualizar status
-        # -------------------------------------------------
-
-        update_job(
-            job_id,
-            stage="Enviando vídeo para processamento",
-            progress=3
-        )
-
-        # -------------------------------------------------
-        # Comando do pipeline
-        # -------------------------------------------------
-
-        command = [
-            "python3",
-            str(pipeline_file),
-
-            "--input",
-            str(input_file),
-
-            "--output",
-            str(output_file),
-
-            "--target-lang",
-            target_lang
-        ]
-
-        log("Executando pipeline:")
-        log(" ".join(command))
-
-        update_job(
-            job_id,
-            stage="Processando vídeo",
-            progress=5
-        )
-
-        # -------------------------------------------------
-        # Executar pipeline
-        # -------------------------------------------------
-
-        process = subprocess.Popen(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1
-        )
-
-        last_progress = 5
-
-        # -------------------------------------------------
-        # Ler logs do pipeline
-        # -------------------------------------------------
-
-        for line in process.stdout:
-
-            line = line.strip()
-
-            if not line:
-                continue
-
-            log(f"PIPELINE: {line}")
-
-            # ---------------------------------------------
-            # STAGE
-            # ---------------------------------------------
-
-            if line.startswith("STAGE:"):
-
-                stage = line.replace(
-                    "STAGE:",
-                    "",
-                    1
-                ).strip()
-
-                update_job(
-                    job_id,
-                    stage=stage
-                )
-
-            # ---------------------------------------------
-            # PROGRESS
-            # ---------------------------------------------
-
-            if line.startswith("PROGRESS:"):
-
-                try:
-
-                    value = int(
-                        line.replace(
-                            "PROGRESS:",
-                            "",
-                            1
-                        ).strip()
-                    )
-
-                    value = max(
-                        0,
-                        min(100, value)
-                    )
-
-                    last_progress = value
-
-                    update_job(
-                        job_id,
-                        progress=value
-                    )
-
-                except Exception:
-
-                    pass
-
-        # -------------------------------------------------
-        # Esperar processo
-        # -------------------------------------------------
-
-        return_code = process.wait()
-
-        log(
-            f"Pipeline finalizado com código: "
-            f"{return_code}"
-        )
-
-        # -------------------------------------------------
-        # Erro no pipeline
-        # -------------------------------------------------
-
-        if return_code != 0:
-
-            raise Exception(
-                f"O pipeline terminou com código {return_code}."
-            )
-
-        # -------------------------------------------------
-        # Verificar vídeo final
-        # -------------------------------------------------
-
-        if not output_file.exists():
-
-            raise Exception(
-                "O pipeline terminou, mas o vídeo final "
-                "não foi criado."
-            )
-
-        if output_file.stat().st_size <= 0:
-
-            raise Exception(
-                "O vídeo final foi criado vazio."
-            )
-
-        # -------------------------------------------------
-        # SUCESSO
-        # -------------------------------------------------
-
-        update_job(
-            job_id,
-            status="completed",
-            stage="Vídeo dublado pronto",
-            progress=100,
-            output_url=f"/api/video/{job_id}",
-            finished_at=time.time()
-        )
-
-        log(
-            f"JOB {job_id} concluído com sucesso."
-        )
-
-    except Exception as e:
-
-        error_message = str(e)
-
-        log(
-            f"ERRO JOB {job_id}: "
-            f"{error_message}"
-        )
-
-        update_job(
-            job_id,
-            status="error",
-            stage="Erro no processamento",
-            progress=0,
-            error=error_message,
-            finished_at=time.time()
-        )
+# Guarda os trabalhos enquanto o servidor estiver rodando.
+# Observação: no plano gratuito do Render, isso pode ser perdido
+# quando a instância reinicia.
+JOBS = {}
 
 
-# =========================================================
+# ============================================================
+# PÁGINA PRINCIPAL
+# ============================================================
+
+@app.route("/")
+def home():
+
+    return jsonify({
+        "ok": True,
+        "service": "si-tradutor-backend",
+        "message": "Backend do SI funcionando",
+        "version": "4.0"
+    })
+
+
+# ============================================================
 # HEALTH CHECK
-# =========================================================
+# ============================================================
 
 @app.route("/api/health", methods=["GET"])
 def health():
 
     return jsonify({
         "ok": True,
-        "service": "SI - Tradutor Universal",
+        "service": "si-tradutor-backend",
         "status": "online",
-        "whisper": "tiny",
-        "translation": "Argos Translate",
-        "dubbing": "ElevenLabs"
+        "version": "4.0"
     })
 
 
-# =========================================================
-# PÁGINA PRINCIPAL
-# =========================================================
+# ============================================================
+# CHAT
+# ============================================================
 
-@app.route("/", methods=["GET"])
-def home():
-
-    return jsonify({
-        "ok": True,
-        "message": "SI - Tradutor Universal",
-        "status": "online",
-        "api": True
-    })
-
-
-# =========================================================
-# UPLOAD E INÍCIO DO PROCESSAMENTO
-# =========================================================
-
-@app.route("/api/test-upload", methods=["POST"])
-def test_upload():
+@app.route("/api/chat", methods=["POST"])
+def chat():
 
     try:
 
-        log("Recebendo upload...")
+        data = request.get_json(
+            silent=True
+        ) or {}
 
-        # ---------------------------------------------
-        # Verificar arquivo
-        # ---------------------------------------------
+
+        message = str(
+            data.get(
+                "message",
+                ""
+            )
+        ).strip()
+
+
+        if not message:
+
+            return jsonify({
+                "ok": False,
+                "error": "Mensagem vazia."
+            }), 400
+
+
+        # ----------------------------------------------------
+        # Respostas básicas.
+        #
+        # Se OPENAI_API_KEY estiver configurada no Render,
+        # o servidor poderá usar a API da OpenAI.
+        # ----------------------------------------------------
+
+        api_key = os.environ.get(
+            "OPENAI_API_KEY"
+        )
+
+
+        if api_key:
+
+            try:
+
+                resposta = chamar_openai(
+                    message,
+                    api_key
+                )
+
+                return jsonify({
+                    "ok": True,
+                    "reply": resposta
+                })
+
+            except Exception as erro:
+
+                print(
+                    "Erro OpenAI:",
+                    erro
+                )
+
+
+        # ----------------------------------------------------
+        # Resposta local caso não exista API key.
+        # ----------------------------------------------------
+
+        resposta = resposta_local(
+            message
+        )
+
+
+        return jsonify({
+            "ok": True,
+            "reply": resposta
+        })
+
+
+    except Exception as erro:
+
+        print(
+            "Erro /api/chat:",
+            erro
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": "Erro interno no servidor."
+        }), 500
+
+
+# ============================================================
+# RESPOSTA LOCAL
+# ============================================================
+
+def resposta_local(message):
+
+    texto = message.lower().strip()
+
+
+    if texto in [
+        "oi",
+        "olá",
+        "ola",
+        "hello",
+        "hi"
+    ]:
+
+        return (
+            "Olá! 👋 "
+            "Eu sou o SI. "
+            "Como posso ajudar você?"
+        )
+
+
+    if "tudo bem" in texto:
+
+        return (
+            "Tudo bem por aqui! 😊 "
+            "Pode mandar sua mensagem."
+        )
+
+
+    if "quem é você" in texto or \
+       "quem e voce" in texto:
+
+        return (
+            "Eu sou o SI, seu assistente "
+            "do Tradutor Universal."
+        )
+
+
+    if "obrigado" in texto or \
+       "obrigada" in texto:
+
+        return (
+            "Por nada! 😊 "
+            "Estou aqui para ajudar."
+        )
+
+
+    if "vídeo" in texto or \
+       "video" in texto:
+
+        return (
+            "Você pode enviar um vídeo "
+            "pela área de upload. "
+            "O arquivo será enviado para o backend."
+        )
+
+
+    return (
+        "Recebi sua mensagem: "
+        f"\"{message}\"\n\n"
+        "O servidor está funcionando. "
+        "Para respostas inteligentes completas, "
+        "você pode configurar OPENAI_API_KEY "
+        "nas variáveis de ambiente do Render."
+    )
+
+
+# ============================================================
+# OPENAI
+# ============================================================
+
+def chamar_openai(message, api_key):
+
+    """
+    Faz uma chamada HTTP usando somente a biblioteca padrão
+    do Python. Assim não precisamos instalar o pacote openai.
+    """
+
+    import json
+    import urllib.request
+    import urllib.error
+
+
+    url = "https://api.openai.com/v1/responses"
+
+
+    payload = {
+        "model": os.environ.get(
+            "OPENAI_MODEL",
+            "gpt-5-mini"
+        ),
+
+        "input": [
+            {
+                "role": "system",
+                "content": (
+                    "Você é o SI, um assistente "
+                    "útil e amigável. "
+                    "Responda em português do Brasil "
+                    "quando o usuário escrever em português."
+                )
+            },
+            {
+                "role": "user",
+                "content": message
+            }
+        ]
+    }
+
+
+    body = json.dumps(
+        payload
+    ).encode("utf-8")
+
+
+    requisicao =
+        urllib.request.Request(
+            url,
+            data=body,
+            method="POST"
+        )
+
+
+    requisicao.add_header(
+        "Content-Type",
+        "application/json"
+    )
+
+    requisicao.add_header(
+        "Authorization",
+        "Bearer " + api_key
+    )
+
+
+    with urllib.request.urlopen(
+        requisicao,
+        timeout=60
+    ) as resposta:
+
+        dados = json.loads(
+            resposta.read().decode(
+                "utf-8"
+            )
+        )
+
+
+    # A API Responses retorna o texto em output.
+    texto = extrair_texto_openai(
+        dados
+    )
+
+
+    if not texto:
+
+        raise RuntimeError(
+            "A OpenAI não retornou texto."
+        )
+
+
+    return texto
+
+
+# ============================================================
+# EXTRAIR RESPOSTA DA OPENAI
+# ============================================================
+
+def extrair_texto_openai(data):
+
+    partes = []
+
+
+    output = data.get(
+        "output",
+        []
+    )
+
+
+    for item in output:
+
+        if not isinstance(
+            item,
+            dict
+        ):
+            continue
+
+
+        content = item.get(
+            "content",
+            []
+        )
+
+
+        for bloco in content:
+
+            if not isinstance(
+                bloco,
+                dict
+            ):
+                continue
+
+
+            texto = bloco.get(
+                "text"
+            )
+
+
+            if texto:
+
+                partes.append(
+                    texto
+                )
+
+
+    return "\n".join(
+        partes
+    ).strip()
+
+
+# ============================================================
+# UPLOAD DE VÍDEO
+# ============================================================
+
+@app.route(
+    "/api/test-upload",
+    methods=["POST"]
+)
+def test_upload():
+
+    try:
 
         if "video" not in request.files:
 
@@ -362,483 +401,329 @@ def test_upload():
                 "error": "Nenhum vídeo foi enviado."
             }), 400
 
-        video = request.files["video"]
 
-        if not video or not video.filename:
+        arquivo = request.files[
+            "video"
+        ]
 
-            return jsonify({
-                "ok": False,
-                "error": "Arquivo de vídeo inválido."
-            }), 400
 
-        # ---------------------------------------------
-        # Verificar extensão
-        # ---------------------------------------------
-
-        if not allowed_file(video.filename):
+        if not arquivo.filename:
 
             return jsonify({
                 "ok": False,
-                "error": (
-                    "Formato de vídeo não permitido. "
-                    "Use MP4, MOV, MKV, WEBM, AVI ou M4V."
-                )
+                "error": "Arquivo sem nome."
             }), 400
 
-        # ---------------------------------------------
-        # Idioma
-        # ---------------------------------------------
 
         target_lang = request.form.get(
             "targetLang",
-            "en"
-        ).lower().strip()
+            "pt"
+        )
 
-        # ---------------------------------------------
-        # Idiomas permitidos
-        # ---------------------------------------------
 
-        allowed_languages = {
+        idiomas_permitidos = [
             "pt",
             "en",
             "es"
+        ]
+
+
+        if target_lang not in idiomas_permitidos:
+
+            target_lang = "pt"
+
+
+        job_id = str(
+            uuid.uuid4()
+        )
+
+
+        extensao = os.path.splitext(
+            arquivo.filename
+        )[1].lower()
+
+
+        if not extensao:
+
+            extensao = ".mp4"
+
+
+        pasta = tempfile.gettempdir()
+
+
+        caminho = os.path.join(
+            pasta,
+            f"si_{job_id}{extensao}"
+        )
+
+
+        arquivo.save(
+            caminho
+        )
+
+
+        JOBS[job_id] = {
+            "id": job_id,
+            "status": "received",
+            "targetLang": target_lang,
+            "filename": arquivo.filename,
+            "createdAt": datetime.utcnow().isoformat(),
+            "file": caminho
         }
 
-        if target_lang not in allowed_languages:
 
-            return jsonify({
-                "ok": False,
-                "error": (
-                    "Idioma não permitido. "
-                    "Use pt, en ou es."
-                )
-            }), 400
-
-        # ---------------------------------------------
-        # Criar ID
-        # ---------------------------------------------
-
-        job_id = str(uuid.uuid4())
-
-        # ---------------------------------------------
-        # Nome seguro
-        # ---------------------------------------------
-
-        original_name = secure_filename(
-            video.filename
-        )
-
-        extension = Path(
-            original_name
-        ).suffix.lower()
-
-        if not extension:
-            extension = ".mp4"
-
-        # ---------------------------------------------
-        # Arquivo de entrada
-        # ---------------------------------------------
-
-        input_file = (
-            UPLOAD_DIR /
-            f"{job_id}{extension}"
-        )
-
-        output_file = (
-            OUTPUT_DIR /
-            f"{job_id}.mp4"
-        )
-
-        # ---------------------------------------------
-        # Salvar upload
-        # ---------------------------------------------
-
-        log(
-            f"Salvando vídeo em: {input_file}"
-        )
-
-        video.save(str(input_file))
-
-        file_size = input_file.stat().st_size
-
-        log(
-            f"Vídeo recebido: "
-            f"{file_size} bytes"
-        )
-
-        # ---------------------------------------------
-        # Criar job
-        # ---------------------------------------------
-
-        jobs[job_id] = {
-
-            "job_id": job_id,
-
-            "status": "queued",
-
-            "stage": "Vídeo recebido",
-
-            "progress": 1,
-
-            "target_lang": target_lang,
-
-            "filename": original_name,
-
-            "error": None,
-
-            "output_url": None,
-
-            "created_at": time.time(),
-
-            "finished_at": None
-        }
-
-        # ---------------------------------------------
-        # Iniciar processamento
-        # ---------------------------------------------
-
-        worker = threading.Thread(
-            target=process_video,
+        # Processamento em segundo plano.
+        thread = threading.Thread(
+            target=processar_video,
             args=(
                 job_id,
-                input_file,
-                output_file,
+                caminho,
                 target_lang
             ),
             daemon=True
         )
 
-        worker.start()
+        thread.start()
 
-        log(
-            f"Processamento iniciado: "
-            f"{job_id}"
-        )
-
-        # ---------------------------------------------
-        # Resposta para o frontend
-        # ---------------------------------------------
 
         return jsonify({
-
             "ok": True,
-
+            "message": "Vídeo recebido.",
             "jobId": job_id,
+            "status": "received",
+            "targetLang": target_lang
+        })
 
-            "status": "queued",
 
-            "stage": "Vídeo recebido",
+    except Exception as erro:
 
-            "progress": 1
-
-        }), 202
-
-    except Exception as e:
-
-        log(
-            f"Erro no upload: {str(e)}"
+        print(
+            "Erro upload:",
+            erro
         )
 
         return jsonify({
-
             "ok": False,
-
-            "error": str(e)
-
+            "error": "Erro ao receber o vídeo."
         }), 500
 
 
-# =========================================================
-# STATUS DO JOB
-# =========================================================
+# ============================================================
+# STATUS
+# ============================================================
 
-@app.route("/api/status/<job_id>", methods=["GET"])
-def job_status(job_id):
+@app.route(
+    "/api/status/<job_id>",
+    methods=["GET"]
+)
+def status(job_id):
 
-    job = jobs.get(job_id)
+    job = JOBS.get(
+        job_id
+    )
+
 
     if not job:
 
         return jsonify({
-
             "ok": False,
-
             "error": "Job não encontrado."
-
         }), 404
 
-    response = {
 
+    return jsonify({
         "ok": True,
-
         "jobId": job_id,
-
         "status": job.get(
             "status",
             "unknown"
         ),
-
-        "stage": job.get(
-            "stage",
-            ""
-        ),
-
-        "progress": job.get(
-            "progress",
-            0
-        ),
-
         "targetLang": job.get(
-            "target_lang"
+            "targetLang"
         ),
-
         "filename": job.get(
             "filename"
+        ),
+        "message": job.get(
+            "message"
         )
-    }
-
-    # ---------------------------------------------
-    # Se terminou
-    # ---------------------------------------------
-
-    if job.get("status") == "completed":
-
-        response["outputUrl"] = (
-            job.get("output_url")
-        )
-
-        response["videoUrl"] = (
-            f"/api/video/{job_id}"
-        )
-
-    # ---------------------------------------------
-    # Se deu erro
-    # ---------------------------------------------
-
-    if job.get("status") == "error":
-
-        response["error"] = (
-            job.get("error")
-        )
-
-    return jsonify(response)
+    })
 
 
-# =========================================================
-# SERVIR VÍDEO FINAL
-# =========================================================
+# ============================================================
+# PROCESSAMENTO DO VÍDEO
+# ============================================================
 
-@app.route("/api/video/<job_id>", methods=["GET"])
-def get_video(job_id):
+def processar_video(
+    job_id,
+    caminho,
+    target_lang
+):
 
-    job = jobs.get(job_id)
+    try:
 
-    if not job:
-
-        return jsonify({
-
-            "ok": False,
-
-            "error": "Job não encontrado."
-
-        }), 404
-
-    if job.get("status") != "completed":
-
-        return jsonify({
-
-            "ok": False,
-
-            "error": "O vídeo ainda não está pronto."
-
-        }), 409
-
-    output_file = (
-        OUTPUT_DIR /
-        f"{job_id}.mp4"
-    )
-
-    if not output_file.exists():
-
-        return jsonify({
-
-            "ok": False,
-
-            "error": "Vídeo final não encontrado."
-
-        }), 404
-
-    return send_file(
-
-        str(output_file),
-
-        mimetype="video/mp4",
-
-        as_attachment=False,
-
-        download_name="video-dublado.mp4"
-    )
+        JOBS[job_id]["status"] = \
+            "processing"
 
 
-# =========================================================
-# TRATAMENTO DE ARQUIVO GRANDE
-# =========================================================
+        JOBS[job_id]["message"] = \
+            "Vídeo recebido e processamento iniciado."
 
-@app.errorhandler(413)
-def request_too_large(error):
 
-    return jsonify({
+        # ----------------------------------------------------
+        # Aqui fazemos apenas uma verificação básica do vídeo.
+        # Isso evita que o servidor quebre caso Whisper/Argos
+        # não estejam instalados.
+        # ----------------------------------------------------
 
-        "ok": False,
-
-        "error": (
-            "O vídeo é muito grande. "
-            "O limite é 100 MB."
+        resultado = verificar_video(
+            caminho
         )
 
-    }), 413
+
+        if resultado:
+
+            JOBS[job_id]["status"] = \
+                "completed"
+
+            JOBS[job_id]["message"] = \
+                (
+                    "Vídeo recebido corretamente. "
+                    "A etapa de tradução/dublagem "
+                    "pode ser adicionada ao pipeline."
+                )
+
+        else:
+
+            JOBS[job_id]["status"] = \
+                "failed"
+
+            JOBS[job_id]["message"] = \
+                "Não foi possível verificar o vídeo."
 
 
-# =========================================================
-# ERROS GERAIS
-# =========================================================
+    except Exception as erro:
 
-@app.errorhandler(Exception)
-def handle_exception(error):
+        print(
+            "Erro processamento:",
+            erro
+        )
 
-    log(
-        f"Erro interno: {str(error)}"
-    )
+        JOBS[job_id]["status"] = \
+            "failed"
 
-    return jsonify({
-
-        "ok": False,
-
-        "error": str(error)
-
-    }), 500
+        JOBS[job_id]["message"] = \
+            str(erro)
 
 
-# =========================================================
-# LIMPEZA DE JOBS ANTIGOS
-# =========================================================
+    finally:
 
-def cleanup_old_jobs():
-
-    while True:
-
+        # Remove o arquivo temporário depois do processamento.
         try:
 
-            now = time.time()
-
-            expired = []
-
-            for job_id, job in list(
-                jobs.items()
+            if os.path.exists(
+                caminho
             ):
 
-                created = job.get(
-                    "created_at",
-                    now
+                os.remove(
+                    caminho
                 )
 
-                # Remove jobs com mais de 2 horas
-                if now - created > 7200:
+        except Exception:
+            pass
 
-                    expired.append(job_id)
 
-            for job_id in expired:
+# ============================================================
+# VERIFICAR VÍDEO COM FFMPEG
+# ============================================================
 
-                job = jobs.pop(
-                    job_id,
-                    None
-                )
+def verificar_video(caminho):
 
-                if not job:
-                    continue
+    if not os.path.exists(
+        caminho
+    ):
 
-                # Apagar entrada
-                for extension in ALLOWED_EXTENSIONS:
+        return False
 
-                    file_path = (
-                        UPLOAD_DIR /
-                        f"{job_id}{extension}"
-                    )
 
-                    try:
+    try:
 
-                        if file_path.exists():
-                            file_path.unlink()
+        comando = [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-i",
+            caminho,
+            "-f",
+            "null",
+            "-"
+        ]
 
-                    except Exception:
-                        pass
 
-                # Apagar saída
-                output_file = (
-                    OUTPUT_DIR /
-                    f"{job_id}.mp4"
-                )
+        resultado = subprocess.run(
+            comando,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=120
+        )
 
-                try:
 
-                    if output_file.exists():
-                        output_file.unlink()
+        if resultado.returncode == 0:
 
-                except Exception:
-                    pass
+            return True
 
-                log(
-                    f"Job antigo removido: "
-                    f"{job_id}"
-                )
 
-        except Exception as e:
-
-            log(
-                f"Erro na limpeza: {e}"
+        print(
+            "FFmpeg:",
+            resultado.stderr.decode(
+                "utf-8",
+                errors="ignore"
             )
-
-        time.sleep(600)
-
-
-# =========================================================
-# INICIAR LIMPEZA
-# =========================================================
-
-cleanup_thread = threading.Thread(
-    target=cleanup_old_jobs,
-    daemon=True
-)
-
-cleanup_thread.start()
+        )
 
 
-# =========================================================
-# START LOCAL
-# =========================================================
+        return False
+
+
+    except Exception as erro:
+
+        print(
+            "FFmpeg erro:",
+            erro
+        )
+
+        return False
+
+
+# ============================================================
+# EXECUTAR
+# ============================================================
 
 if __name__ == "__main__":
 
-    port = int(
-        os.environ.get(
-            "PORT",
-            "10000"
-        )
+    print(
+        "===================================="
     )
 
-    log("========================================")
-    log("SI - TRADUTOR UNIVERSAL")
-    log("========================================")
-    log(f"Servidor rodando na porta {port}")
-    log("Modo vídeo: ATIVO")
-    log("Polling de status: ATIVO")
-    log("Whisper: tiny")
-    log("Tradução: Argos Translate")
-    log("Dublagem: ElevenLabs")
-    log("========================================")
+    print(
+        " SI — Tradutor Universal"
+    )
+
+    print(
+        " Backend iniciado"
+    )
+
+    print(
+        f" Porta: {PORT}"
+    )
+
+    print(
+        "===================================="
+    )
+
 
     app.run(
         host="0.0.0.0",
-        port=port,
-        threaded=True
-  )
+        port=PORT,
+        debug=False
+        )
