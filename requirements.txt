@@ -1,4 +1,5 @@
 flask==3.0.3
+flask-cors==4.0.1
 argostranslate==1.9.6
 ffmpeg-python==0.2.0
 numpy==1.26.4
