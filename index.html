@@ -1,264 +1,489 @@
 <!DOCTYPE html>
+
 <html lang="pt-BR">
+
 <head>
+
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<title>SI Tradutor Live — Tradução em Tempo Real</title>
+<meta
+name="viewport"
+content="width=device-width, initial-scale=1.0"
 
-<meta name="description"
-content="SI Tradutor Live: assista a transmissões do YouTube e acompanhe a tradução em português.">
+>
 
-<meta name="theme-color" content="#111827">
+<title>SI Tradutor Live</title>
+
+<meta
+name="description"
+content="SI Tradutor Live — tradução de transmissões do YouTube para português com voz IA."
+
+>
 
 <style>
-*{
-  box-sizing:border-box;
-  margin:0;
-  padding:0;
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
-body{
-  font-family:Arial,Helvetica,sans-serif;
-  background:linear-gradient(135deg,#0f172a,#111827,#1e293b);
-  color:#fff;
-  min-height:100vh;
+body {
+
+  font-family:
+    Arial,
+    Helvetica,
+    sans-serif;
+
+  background:
+    linear-gradient(
+      135deg,
+      #0f172a,
+      #111827,
+      #1e293b
+    );
+
+  color: white;
+
+  min-height: 100vh;
 }
 
-.container{
-  width:100%;
-  max-width:1100px;
-  margin:auto;
-  padding:20px;
+.container {
+
+  max-width: 1100px;
+
+  margin:
+    auto;
+
+  padding:
+    20px;
 }
 
-header{
-  text-align:center;
-  padding:25px 10px 20px;
+header {
+
+  text-align:
+    center;
+
+  padding:
+    25px 10px;
 }
 
-.logo{
-  font-size:34px;
-  font-weight:800;
-  margin-bottom:8px;
+.logo {
+
+  font-size:
+    34px;
+
+  font-weight:
+    800;
 }
 
-.subtitle{
-  color:#cbd5e1;
-  font-size:16px;
+.subtitle {
+
+  margin-top:
+    8px;
+
+  color:
+    #cbd5e1;
 }
 
-.card{
-  background:rgba(255,255,255,.08);
-  border:1px solid rgba(255,255,255,.12);
-  border-radius:18px;
-  padding:20px;
-  margin-bottom:20px;
-  backdrop-filter:blur(10px);
+.card {
+
+  background:
+    rgba(
+      255,
+      255,
+      255,
+      0.08
+    );
+
+  border:
+    1px solid
+    rgba(
+      255,
+      255,
+      255,
+      0.12
+    );
+
+  border-radius:
+    18px;
+
+  padding:
+    20px;
+
+  margin-bottom:
+    20px;
 }
 
-.status{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  margin-bottom:18px;
-  color:#cbd5e1;
-  font-size:14px;
+.status {
+
+  display:
+    flex;
+
+  align-items:
+    center;
+
+  gap:
+    8px;
+
+  margin-bottom:
+    18px;
+
+  color:
+    #cbd5e1;
 }
 
-.status-dot{
-  width:11px;
-  height:11px;
-  border-radius:50%;
-  background:#f59e0b;
+.dot {
+
+  width:
+    11px;
+
+  height:
+    11px;
+
+  border-radius:
+    50%;
+
+  background:
+    #f59e0b;
 }
 
-.status-dot.online{
-  background:#22c55e;
+.dot.online {
+
+  background:
+    #22c55e;
 }
 
-.status-dot.error{
-  background:#ef4444;
+.dot.error {
+
+  background:
+    #ef4444;
 }
 
-label{
-  display:block;
-  margin-bottom:8px;
-  font-weight:700;
+label {
+
+  display:
+    block;
+
+  font-weight:
+    700;
+
+  margin-bottom:
+    8px;
 }
 
-input,select{
-  width:100%;
-  border:none;
-  outline:none;
-  border-radius:12px;
-  padding:14px;
-  font-size:16px;
-  background:#fff;
-  color:#111827;
-  margin-bottom:14px;
+input,
+select {
+
+  width:
+    100%;
+
+  padding:
+    14px;
+
+  border:
+    none;
+
+  border-radius:
+    12px;
+
+  font-size:
+    16px;
+
+  margin-bottom:
+    14px;
 }
 
-.buttons{
-  display:flex;
-  gap:10px;
-  flex-wrap:wrap;
+.buttons {
+
+  display:
+    flex;
+
+  gap:
+    10px;
+
+  flex-wrap:
+    wrap;
 }
 
-button{
-  border:none;
-  border-radius:12px;
-  padding:14px 20px;
-  font-size:16px;
-  font-weight:700;
-  cursor:pointer;
+button {
+
+  border:
+    none;
+
+  border-radius:
+    12px;
+
+  padding:
+    14px 20px;
+
+  font-size:
+    16px;
+
+  font-weight:
+    700;
+
+  cursor:
+    pointer;
+
+  flex:
+    1;
 }
 
-button:disabled{
-  opacity:.5;
-  cursor:not-allowed;
+button:disabled {
+
+  opacity:
+    .5;
+
+  cursor:
+    not-allowed;
 }
 
-.start-btn{
-  background:#22c55e;
-  color:white;
-  flex:1;
+.start {
+
+  background:
+    #22c55e;
+
+  color:
+    white;
 }
 
-.stop-btn{
-  background:#ef4444;
-  color:white;
-  flex:1;
+.stop {
+
+  background:
+    #ef4444;
+
+  color:
+    white;
 }
 
-.audio-btn{
-  background:#2563eb;
-  color:white;
-  flex:1;
+.audio {
+
+  background:
+    #2563eb;
+
+  color:
+    white;
 }
 
-.video-wrapper{
-  position:relative;
-  width:100%;
-  padding-top:56.25%;
-  overflow:hidden;
-  border-radius:16px;
-  background:#000;
+.video {
+
+  position:
+    relative;
+
+  width:
+    100%;
+
+  padding-top:
+    56.25%;
+
+  background:
+    black;
+
+  border-radius:
+    16px;
+
+  overflow:
+    hidden;
 }
 
-.video-wrapper iframe{
-  position:absolute;
-  top:0;
-  left:0;
-  width:100%;
-  height:100%;
-  border:none;
+.video iframe {
+
+  position:
+    absolute;
+
+  inset:
+    0;
+
+  width:
+    100%;
+
+  height:
+    100%;
+
+  border:
+    none;
 }
 
-.empty-video{
-  position:absolute;
-  inset:0;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  text-align:center;
-  color:#94a3b8;
-  padding:20px;
+.empty {
+
+  position:
+    absolute;
+
+  inset:
+    0;
+
+  display:
+    flex;
+
+  align-items:
+    center;
+
+  justify-content:
+    center;
+
+  color:
+    #94a3b8;
+
+  text-align:
+    center;
 }
 
-.translation-box{
-  min-height:150px;
-  border-radius:14px;
-  padding:18px;
-  background:rgba(0,0,0,.25);
-  border:1px solid rgba(255,255,255,.08);
+.translation {
+
+  min-height:
+    150px;
+
+  background:
+    rgba(
+      0,
+      0,
+      0,
+      .25
+    );
+
+  border-radius:
+    14px;
+
+  padding:
+    20px;
 }
 
-.translation-title{
-  font-size:14px;
-  color:#94a3b8;
-  margin-bottom:10px;
+.translation-title {
+
+  color:
+    #94a3b8;
+
+  font-size:
+    14px;
+
+  margin-bottom:
+    12px;
 }
 
-#translation{
-  font-size:23px;
-  line-height:1.5;
-  font-weight:600;
+#translation {
+
+  font-size:
+    24px;
+
+  line-height:
+    1.5;
+
+  font-weight:
+    600;
 }
 
-.message{
-  margin-top:15px;
-  padding:13px;
-  border-radius:10px;
-  background:rgba(255,255,255,.06);
-  color:#cbd5e1;
-  font-size:14px;
-  white-space:pre-wrap;
+.message {
+
+  margin-top:
+    15px;
+
+  padding:
+    13px;
+
+  background:
+    rgba(
+      255,
+      255,
+      255,
+      .06
+    );
+
+  border-radius:
+    10px;
+
+  color:
+    #cbd5e1;
+
+  white-space:
+    pre-wrap;
 }
 
-.live-indicator{
-  display:inline-flex;
-  align-items:center;
-  gap:7px;
-  padding:7px 11px;
-  border-radius:999px;
-  background:rgba(239,68,68,.15);
-  color:#fca5a5;
-  font-size:13px;
-  margin-bottom:15px;
+.live {
+
+  display:
+    inline-flex;
+
+  align-items:
+    center;
+
+  gap:
+    7px;
+
+  background:
+    rgba(
+      239,
+      68,
+      68,
+      .15
+    );
+
+  color:
+    #fca5a5;
+
+  padding:
+    7px 11px;
+
+  border-radius:
+    999px;
+
+  margin-bottom:
+    15px;
 }
 
-.live-dot{
-  width:8px;
-  height:8px;
-  background:#ef4444;
-  border-radius:50%;
+.live-dot {
+
+  width:
+    8px;
+
+  height:
+    8px;
+
+  border-radius:
+    50%;
+
+  background:
+    #ef4444;
 }
 
-.capture-info{
-  margin-top:12px;
-  padding:12px;
-  border-radius:10px;
-  background:rgba(37,99,235,.12);
-  color:#bfdbfe;
-  font-size:13px;
-  line-height:1.5;
+footer {
+
+  text-align:
+    center;
+
+  color:
+    #64748b;
+
+  padding:
+    20px;
 }
 
-footer{
-  text-align:center;
-  color:#64748b;
-  font-size:13px;
-  padding:20px;
-}
+@media(max-width:600px) {
 
-@media(max-width:600px){
-
-  .container{
-    padding:12px;
+  .container {
+    padding: 12px;
   }
 
-  .logo{
-    font-size:28px;
+  .logo {
+    font-size: 28px;
   }
 
-  .card{
-    padding:15px;
+  .card {
+    padding: 15px;
   }
 
-  #translation{
-    font-size:19px;
+  #translation {
+    font-size: 19px;
   }
 
-  .buttons{
-    flex-direction:column;
+  .buttons {
+    flex-direction: column;
   }
 
-  button{
-    width:100%;
-  }
 }
+
 </style>
+
 </head>
 
 <body>
@@ -266,28 +491,36 @@ footer{
 <div class="container">
 
 <header>
-<div class="logo">🎙️ SI Tradutor Live</div>
+
+<div class="logo">
+🎙️ SI Tradutor Live
+</div>
 
 <div class="subtitle">
-Tradução de transmissões ao vivo para português
+YouTube Live → Português → Voz ElevenLabs
 </div>
+
 </header>
 
+<!-- CONTROLE -->
 
 <div class="card">
 
 <div class="status">
 
-<span id="statusDot" class="status-dot"></span>
+<span
+id="statusDot"
+class="dot"
 
-<span id="connectionStatus">
-Verificando conexão com o servidor...
+> </span>
+
+<span id="connection">
+Verificando servidor...
 </span>
 
 </div>
 
-
-<label for="youtubeUrl">
+<label>
 Cole o link da YouTube Live
 </label>
 
@@ -295,82 +528,81 @@ Cole o link da YouTube Live
 id="youtubeUrl"
 type="url"
 placeholder="https://www.youtube.com/live/..."
-autocomplete="off"
+
 >
 
-
-<label for="targetLang">
+<label>
 Idioma da tradução
 </label>
 
 <select id="targetLang">
 
-<option value="pt">🇧🇷 Português</option>
-<option value="en">🇺🇸 Inglês</option>
-<option value="es">🇪🇸 Espanhol</option>
-<option value="fr">🇫🇷 Francês</option>
-<option value="de">🇩🇪 Alemão</option>
-<option value="it">🇮🇹 Italiano</option>
-<option value="ja">🇯🇵 Japonês</option>
-<option value="ko">🇰🇷 Coreano</option>
-<option value="zh">🇨🇳 Chinês</option>
-<option value="ar">🇸🇦 Árabe</option>
+<option value="pt">
+🇧🇷 Português
+</option>
 
 </select>
-
 
 <div class="buttons">
 
 <button
 id="startButton"
-class="start-btn"
-onclick="startLive()">
-🔴 Iniciar tradução
-</button>
+class="start"
+onclick="startLive()"
+
+>
+
+🔴 Iniciar tradução </button>
 
 <button
 id="stopButton"
-class="stop-btn"
+class="stop"
 onclick="stopLive()"
-disabled>
-🛑 Parar
-</button>
+disabled
+
+>
+
+🛑 Parar </button>
 
 <button
 id="audioButton"
-class="audio-btn"
-onclick="captureAudio()"
-disabled>
-🎙️ Capturar áudio da Live
-</button>
+class="audio"
+onclick="enableAudio()"
+disabled
+
+>
+
+🔊 Ativar áudio </button>
 
 </div>
 
-
-<div class="capture-info">
-Para a tradução em tempo real, depois de iniciar a Live,
-toque em <b>🎙️ Capturar áudio da Live</b> e permita o
-compartilhamento de áudio da aba quando o navegador oferecer essa opção.
-</div>
-
-
-<div id="message" class="message">
+<div
+  id="message"
+  class="message"
+>
 Cole o link da YouTube Live para começar.
 </div>
 
 </div>
 
+<!-- VÍDEO -->
 
 <div class="card">
 
-<div class="live-indicator">
+<div class="live">
+
 <span class="live-dot"></span>
+
 YouTube Live
+
 </div>
 
-<div id="videoWrapper" class="video-wrapper">
+<div
+  id="video"
+  class="video"
+>
 
-<div class="empty-video">
+<div class="empty">
 O vídeo da live aparecerá aqui.
 </div>
 
@@ -378,13 +610,14 @@ O vídeo da live aparecerá aqui.
 
 </div>
 
+<!-- TRADUÇÃO -->
 
 <div class="card">
 
-<div class="translation-box">
+<div class="translation">
 
 <div class="translation-title">
-📝 Tradução
+📝 Tradução para português
 </div>
 
 <div id="translation">
@@ -395,1181 +628,810 @@ A tradução aparecerá aqui...
 
 </div>
 
-
 <footer>
 SI Tradutor Live • Powered by ElevenLabs
 </footer>
 
 </div>
 
-
 <script>
 
+
+// ========================================================
+// CONFIGURAÇÃO
+// ========================================================
+
 const BACKEND_URL =
-"https://si-u2ul.onrender.com";
+  "https://si-u2ul.onrender.com";
+
 
 let liveId = null;
-let socket = null;
 
-let captureStream = null;
-let audioContext = null;
-let processor = null;
+let statusTimer = null;
 
-let audioQueue = [];
-let playingAudio = false;
+let audioTimer = null;
 
-let running = false;
+let audioEnabled = false;
+
+let audioPlayer = null;
 
 
-/* =====================================================
-ELEMENTOS
-===================================================== */
+// ========================================================
+// ELEMENTOS
+// ========================================================
 
 const youtubeUrl =
-document.getElementById("youtubeUrl");
+  document.getElementById(
+    "youtubeUrl"
+  );
 
 const targetLang =
-document.getElementById("targetLang");
+  document.getElementById(
+    "targetLang"
+  );
 
 const startButton =
-document.getElementById("startButton");
+  document.getElementById(
+    "startButton"
+  );
 
 const stopButton =
-document.getElementById("stopButton");
+  document.getElementById(
+    "stopButton"
+  );
 
 const audioButton =
-document.getElementById("audioButton");
+  document.getElementById(
+    "audioButton"
+  );
 
 const message =
-document.getElementById("message");
+  document.getElementById(
+    "message"
+  );
 
 const translation =
-document.getElementById("translation");
+  document.getElementById(
+    "translation"
+  );
 
-const videoWrapper =
-document.getElementById("videoWrapper");
+const video =
+  document.getElementById(
+    "video"
+  );
 
-const connectionStatus =
-document.getElementById("connectionStatus");
+const connection =
+  document.getElementById(
+    "connection"
+  );
 
 const statusDot =
-document.getElementById("statusDot");
+  document.getElementById(
+    "statusDot"
+  );
 
 
-/* =====================================================
-MENSAGEM
-===================================================== */
+// ========================================================
+// MENSAGEM
+// ========================================================
 
-function showMessage(text){
+function showMessage(text) {
 
-message.textContent =
-text || "";
+  message.textContent =
+    text || "";
 
 }
 
 
-/* =====================================================
-YOUTUBE ID
-===================================================== */
+// ========================================================
+// YOUTUBE ID
+// ========================================================
 
-function getYouTubeId(url){
+function getYouTubeId(url) {
 
-if(!url){
-return null;
-}
-
-const patterns=[
-
-/youtube\.com\/live\/([^?&#/]+)/i,
-
-/youtube\.com\/watch\?v=([^&#]+)/i,
-
-/youtu\.be\/([^?&#/]+)/i,
-
-/youtube\.com\/embed\/([^?&#/]+)/i
-
-];
-
-for(const pattern of patterns){
-
-const match =
-url.match(pattern);
-
-if(match){
-return match[1];
-}
-
-}
-
-return null;
-
-}
-
-
-/* =====================================================
-MOSTRAR VÍDEO
-===================================================== */
-
-function showYouTubeVideo(videoId){
-
-if(!videoId){
-
-videoWrapper.innerHTML =
-`
-<div class="empty-video">
-Não foi possível identificar o vídeo.
-</div>
-`;
-
-return;
-}
-
-const iframeUrl =
-"https://www.youtube.com/embed/"
-+
-encodeURIComponent(videoId)
-+
-"?autoplay=1&rel=0";
-
-videoWrapper.innerHTML =
-`
-<iframe
-id="youtubeFrame"
-src="${iframeUrl}"
-title="YouTube Live"
-allow="autoplay; encrypted-media; picture-in-picture; web-share"
-allowfullscreen>
-</iframe>
-`;
-
-}
-
-
-/* =====================================================
-SERVIDOR
-===================================================== */
-
-async function checkServer(){
-
-try{
-
-const response =
-await fetch(
-BACKEND_URL +
-"/api/health"
-);
-
-const data =
-await response.json();
-
-if(response.ok && data.ok){
-
-connectionStatus.textContent =
-"Servidor conectado à ElevenLabs";
-
-statusDot.classList.add("online");
-statusDot.classList.remove("error");
-
-}else{
-
-throw new Error(
-data.message ||
-"Servidor não conectado."
-);
-
-}
-
-}catch(error){
-
-connectionStatus.textContent =
-"Servidor não conectado";
-
-statusDot.classList.remove("online");
-statusDot.classList.add("error");
+  if (!url) {
+    return null;
+  }
 
-}
-
-}
-
-
-/* =====================================================
-INICIAR LIVE
-===================================================== */
-
-async function startLive(){
-
-const url =
-youtubeUrl.value.trim();
-
-if(!url){
-
-showMessage(
-"Cole primeiro o link da YouTube Live."
-);
-
-return;
-
-}
-
-const videoId =
-getYouTubeId(url);
-
-if(!videoId){
-
-showMessage(
-"Não consegui identificar o vídeo do YouTube."
-);
-
-return;
-
-}
-
-startButton.disabled=true;
-stopButton.disabled=false;
-audioButton.disabled=false;
-
-running=true;
-
-translation.textContent =
-"Live conectada. Pronto para capturar o áudio.";
+  const patterns = [
 
-showYouTubeVideo(videoId);
+    /youtube\.com\/live\/([^?&#/]+)/i,
 
-showMessage(
-"🟢 Live conectada. Agora toque em 'Capturar áudio da Live'."
-);
+    /youtube\.com\/watch\?v=([^&#]+)/i,
 
+    /youtu\.be\/([^?&#/]+)/i,
 
-try{
+    /youtube\.com\/embed\/([^?&#/]+)/i
 
-const response =
-await fetch(
-BACKEND_URL +
-"/api/youtube-live",
-{
-method:"POST",
+  ];
 
-headers:{
-"Content-Type":
-"application/json"
-},
+  for (
+    const pattern
+    of patterns
+  ) {
 
-body:JSON.stringify({
+    const match =
+      url.match(pattern);
 
-url:url,
+    if (match) {
 
-targetLang:
-targetLang.value
+      return match[1];
 
-})
+    }
 
-}
-);
-
-const data =
-await response.json();
-
-if(!response.ok || !data.ok){
-
-throw new Error(
-data.error ||
-data.message ||
-"Erro iniciando a Live."
-);
-
-}
-
-liveId =
-data.liveId;
-
-}catch(error){
-
-showMessage(
-"❌ " +
-error.message
-);
-
-resetInterface();
+  }
 
-}
+  return null;
 
 }
-
-
-/* =====================================================
-CAPTURA DE ÁUDIO
-===================================================== */
-
-async function captureAudio(){
-
-if(!running){
 
-showMessage(
-"Inicie a Live primeiro."
-);
 
-return;
+// ========================================================
+// MOSTRAR YOUTUBE
+// ========================================================
 
-}
+function showYouTube(videoId) {
 
-if(!navigator.mediaDevices ||
-!navigator.mediaDevices.getDisplayMedia){
+  video.innerHTML = `
 
-showMessage(
-"❌ Este navegador não oferece captura de áudio da tela/aba."
-);
+    <iframe
+      src="https://www.youtube.com/embed/${encodeURIComponent(videoId)}?autoplay=1&rel=0"
+      title="YouTube Live"
+      allow="autoplay; encrypted-media; picture-in-picture"
+      allowfullscreen
+    ></iframe>
 
-return;
+  `;
 
 }
-
-try{
-
-showMessage(
-"Escolha a aba/janela da YouTube Live e ative o compartilhamento de áudio."
-);
-
-
-/*
-O navegador exibirá a janela de compartilhamento.
-*/
-
-captureStream =
-await navigator.mediaDevices.getDisplayMedia({
 
-video:true,
 
-audio:true
+// ========================================================
+// SERVIDOR
+// ========================================================
 
-});
+async function checkServer() {
 
+  try {
 
-const audioTracks =
-captureStream.getAudioTracks();
+    const response =
+      await fetch(
+        BACKEND_URL +
+        "/api/health"
+      );
 
-if(!audioTracks.length){
+    const data =
+      await response.json();
 
-showMessage(
-"⚠️ A captura foi iniciada, mas nenhum áudio foi compartilhado. Escolha uma aba com áudio e marque o compartilhamento de áudio."
-);
+    if (
+      response.ok &&
+      data.ok
+    ) {
 
-captureStream
-.getTracks()
-.forEach(track=>track.stop());
+      connection.textContent =
+        "🟢 Servidor conectado à ElevenLabs";
 
-return;
+      statusDot.classList.add(
+        "online"
+      );
 
-}
-
-
-showMessage(
-"🟢 Áudio da Live capturado. Conectando à ElevenLabs..."
-);
-
-audioButton.disabled=true;
-
-await connectElevenLabs();
-
-}catch(error){
-
-console.error(error);
-
-showMessage(
-"❌ Não foi possível capturar o áudio: "
-+
-error.message
-);
-
-}
+      statusDot.classList.remove(
+        "error"
+      );
 
-}
-
+    } else {
 
-/* =====================================================
-ELEVENLABS
-===================================================== */
+      throw new Error(
+        data.message ||
+        "Servidor não conectado."
+      );
 
-async function connectElevenLabs(){
+    }
 
-try{
+  } catch (error) {
 
-const response =
-await fetch(
-BACKEND_URL +
-"/api/elevenlabs/signed-url"
-);
+    connection.textContent =
+      "🔴 Servidor não conectado";
 
-const data =
-await response.json();
+    statusDot.classList.remove(
+      "online"
+    );
 
-if(!response.ok || !data.ok){
+    statusDot.classList.add(
+      "error"
+    );
 
-throw new Error(
-data.error ||
-"Não foi possível obter a conexão da ElevenLabs."
-);
+  }
 
 }
 
 
-socket =
-new WebSocket(
-data.signed_url
-);
+// ========================================================
+// INICIAR
+// ========================================================
 
+async function startLive() {
 
-socket.onopen =
-function(){
+  const url =
+    youtubeUrl.value.trim();
 
-showMessage(
-"🟢 Tradução ativa e conectada à ElevenLabs."
-);
+  if (!url) {
 
-startAudioProcessing();
+    showMessage(
+      "Cole o link da YouTube Live."
+    );
 
-};
+    return;
 
+  }
 
-socket.onmessage =
-function(event){
+  const videoId =
+    getYouTubeId(url);
 
-handleElevenMessage(
-event.data
-);
+  if (!videoId) {
 
-};
+    showMessage(
+      "Link do YouTube inválido."
+    );
 
+    return;
 
-socket.onerror =
-function(error){
+  }
 
-console.error(
-"WebSocket ElevenLabs:",
-error
-);
 
-showMessage(
-"❌ Erro na conexão com ElevenLabs."
-);
+  startButton.disabled =
+    true;
 
-};
+  stopButton.disabled =
+    false;
 
+  audioButton.disabled =
+    false;
 
-socket.onclose =
-function(){
 
-if(running){
-
-showMessage(
-"⚠️ Conexão da tradução encerrada."
-);
-
-}
+  showYouTube(videoId);
 
-};
 
-}catch(error){
+  translation.textContent =
+    "Conectando à live...";
 
-console.error(error);
 
-showMessage(
-"❌ " +
-error.message
-);
+  showMessage(
+    "🔴 Enviando a live para o servidor..."
+  );
 
-}
 
-}
+  try {
 
+    const response =
+      await fetch(
+        BACKEND_URL +
+        "/api/youtube-live",
+        {
 
-/* =====================================================
-INICIAR PROCESSAMENTO
-===================================================== */
+          method:
+            "POST",
 
-function startAudioProcessing(){
+          headers: {
+            "Content-Type":
+              "application/json"
+          },
 
-if(!captureStream){
-return;
-}
+          body:
+            JSON.stringify({
 
-const audioTracks =
-captureStream.getAudioTracks();
+              url:
+                url,
 
-if(!audioTracks.length){
-return;
-}
+              targetLang:
+                targetLang.value
 
+            })
 
-const audioOnlyStream =
-new MediaStream(
-audioTracks
-);
+        }
+      );
 
 
-audioContext =
-new (
-window.AudioContext ||
-window.webkitAudioContext
-)();
+    const data =
+      await response.json();
 
 
-const source =
-audioContext.createMediaStreamSource(
-audioOnlyStream
-);
+    if (
+      !response.ok ||
+      !data.ok
+    ) {
 
+      throw new Error(
+        data.error ||
+        data.message ||
+        "Erro iniciando live."
+      );
 
-/*
-ScriptProcessor é usado aqui para
-manter o arquivo simples e compatível
-com navegadores modernos.
-*/
+    }
 
-processor =
-audioContext.createScriptProcessor(
-4096,
-1,
-1
-);
 
+    liveId =
+      data.liveId;
 
-processor.onaudioprocess =
-function(event){
 
-if(!socket ||
-socket.readyState !== WebSocket.OPEN){
+    showMessage(
+      "🔴 Live iniciada. "
+      + "O servidor está capturando o áudio."
+    );
 
-return;
 
-}
+    startStatusPolling();
 
+    startAudioPolling();
 
-const input =
-event.inputBuffer.getChannelData(0);
 
+  } catch (error) {
 
-/*
-O Agent está configurado para PCM 16 kHz.
-*/
+    showMessage(
+      "❌ " +
+      error.message
+    );
 
-const pcm16 =
-downsampleTo16k(
-input,
-audioContext.sampleRate
-);
+    resetInterface();
 
+  }
 
-if(!pcm16.length){
-return;
 }
-
 
-const base64 =
-arrayBufferToBase64(
-pcm16.buffer
-);
 
+// ========================================================
+// STATUS
+// ========================================================
 
-const packet =
-{
+function startStatusPolling() {
 
-user_audio_chunk:
-base64
+  if (statusTimer) {
 
-};
+    clearInterval(
+      statusTimer
+    );
 
+  }
 
-socket.send(
-JSON.stringify(packet)
-);
+  statusTimer =
+    setInterval(
+      checkLiveStatus,
+      2500
+    );
 
-};
+  checkLiveStatus();
 
-
-source.connect(
-processor
-);
-
-processor.connect(
-audioContext.destination
-);
-
-}
-
-
-/* =====================================================
-DOWNSAMPLE
-===================================================== */
-
-function downsampleTo16k(
-buffer,
-sampleRate
-){
-
-if(sampleRate === 16000){
-
-const output =
-new Int16Array(
-buffer.length
-);
-
-for(
-let i=0;
-i<buffer.length;
-i++
-){
-
-let sample =
-Math.max(
--1,
-Math.min(
-1,
-buffer[i]
-)
-);
-
-output[i] =
-sample < 0
-? sample * 0x8000
-: sample * 0x7fff;
-
-}
-
-return output;
-
 }
 
 
-const ratio =
-sampleRate / 16000;
+async function checkLiveStatus() {
 
-const newLength =
-Math.round(
-buffer.length / ratio
-);
-
-const result =
-new Int16Array(
-newLength
-);
-
-let offsetResult=0;
-let offsetBuffer=0;
-
-
-while(
-offsetResult <
-result.length
-){
-
-const nextOffsetBuffer =
-Math.round(
-(offsetResult + 1) *
-ratio
-);
-
-let accum=0;
-let count=0;
-
-
-for(
-let i=offsetBuffer;
-i<nextOffsetBuffer &&
-i<buffer.length;
-i++
-){
-
-accum += buffer[i];
-count++;
-
-}
+  if (!liveId) {
+    return;
+  }
 
+  try {
 
-const sample =
-count
-? accum/count
-: 0;
+    const response =
+      await fetch(
+        BACKEND_URL +
+        "/api/youtube-live/" +
+        encodeURIComponent(
+          liveId
+        )
+      );
 
+    const data =
+      await response.json();
 
-const clamped =
-Math.max(
--1,
-Math.min(
-1,
-sample
-)
-);
 
+    if (!data.ok) {
+      return;
+    }
 
-result[offsetResult++] =
-clamped < 0
-? clamped * 0x8000
-: clamped * 0x7fff;
 
+    if (
+      data.lastTranslation
+    ) {
 
-offsetBuffer =
-nextOffsetBuffer;
+      translation.textContent =
+        data.lastTranslation;
 
-}
+    }
 
-return result;
 
-}
+    if (
+      data.status ===
+      "capturing"
+    ) {
 
+      showMessage(
+        "🎙️ Capturando áudio da YouTube Live..."
+      );
 
-/* =====================================================
-ARRAY BUFFER → BASE64
-===================================================== */
+    }
 
-function arrayBufferToBase64(
-buffer
-){
 
-const bytes =
-new Uint8Array(buffer);
+    if (
+      data.audioCapture ===
+      "running"
+    ) {
 
-let binary="";
+      showMessage(
+        "🟢 Tradução ativa e conectada ao servidor."
+      );
 
-const chunkSize=0x8000;
+    }
 
-for(
-let i=0;
-i<bytes.length;
-i+=chunkSize
-){
 
-const chunk =
-bytes.subarray(
-i,
-Math.min(
-i+chunkSize,
-bytes.length
-)
-);
+    if (
+      data.status ===
+      "translating"
+    ) {
 
-binary +=
-String.fromCharCode(
-...chunk
-);
+      showMessage(
+        "🌎 Traduzindo e gerando voz..."
+      );
 
-}
+    }
 
-return btoa(binary);
 
-}
+    if (
+      data.error
+    ) {
 
+      showMessage(
+        "⚠️ " +
+        data.error
+      );
 
-/* =====================================================
-RECEBER ELEVENLABS
-===================================================== */
+    }
 
-function handleElevenMessage(
-raw
-){
 
-try{
+    if (
+      data.status ===
+      "error"
+    ) {
 
-const data =
-JSON.parse(raw);
+      showMessage(
+        "❌ " +
+        (
+          data.error ||
+          data.message ||
+          "Erro no processamento."
+        )
+      );
 
+    }
 
-if(
-data.type ===
-"conversation_initiation_metadata"
-){
+  } catch (error) {
 
-showMessage(
-"🟢 ElevenLabs conectado. Recebendo áudio..."
-);
+    console.log(
+      "Status:",
+      error
+    );
 
-return;
+  }
 
 }
 
 
-if(
-data.type ===
-"user_transcript"
-){
+// ========================================================
+// ÁUDIO
+// ========================================================
 
-const text =
-data.user_transcription_event
-?.user_transcript;
+function startAudioPolling() {
 
-if(text){
+  if (audioTimer) {
 
-translation.textContent =
-text;
+    clearInterval(
+      audioTimer
+    );
 
-}
+  }
 
-return;
+  audioTimer =
+    setInterval(
+      checkAudio,
+      1500
+    );
 
 }
 
 
-if(
-data.type ===
-"agent_response"
-){
+async function checkAudio() {
 
-const text =
-data.agent_response_event
-?.agent_response;
+  if (!liveId) {
+    return;
+  }
 
-if(text){
+  if (!audioEnabled) {
+    return;
+  }
 
-translation.textContent =
-text;
 
-}
-
-return;
+  try {
 
-}
+    const response =
+      await fetch(
+        BACKEND_URL +
+        "/api/youtube-live/" +
+        encodeURIComponent(
+          liveId
+        ) +
+        "/audio"
+      );
 
 
-if(
-data.type ===
-"audio"
-){
+    if (
+      response.status === 404
+    ) {
 
-const audio =
-data.audio_event
-?.audio_base_64;
+      return;
 
-if(audio){
+    }
 
-queueAudio(
-audio
-);
-
-}
 
-return;
+    const contentType =
+      response.headers.get(
+        "content-type"
+      ) || "";
 
-}
 
+    if (
+      !contentType.includes(
+        "audio"
+      )
+    ) {
 
-if(
-data.type ===
-"ping"
-){
+      return;
 
-if(
-socket &&
-socket.readyState ===
-WebSocket.OPEN
-){
+    }
 
-socket.send(
-JSON.stringify({
-type:"pong"
-})
-);
 
-}
+    const blob =
+      await response.blob();
 
-return;
 
-}
+    const audioUrl =
+      URL.createObjectURL(
+        blob
+      );
 
 
-if(
-data.type ===
-"error"
-){
-
-console.error(
-"ElevenLabs:",
-data
-);
-
-showMessage(
-"❌ ElevenLabs: "
-+
-(
-data.message ||
-"erro"
-)
-);
+    if (audioPlayer) {
 
-}
+      audioPlayer.pause();
 
-}catch(error){
+    }
 
-console.error(
-"Erro lendo mensagem ElevenLabs:",
-error
-);
 
-}
+    audioPlayer =
+      new Audio(
+        audioUrl
+      );
 
-}
 
+    audioPlayer.volume =
+      1;
 
-/* =====================================================
-FILA DE ÁUDIO
-===================================================== */
 
-function queueAudio(
-base64
-){
+    audioPlayer.play()
+      .catch(
+        error => {
 
-audioQueue.push(
-base64
-);
+          console.log(
+            "Erro tocando áudio:",
+            error
+          );
 
-if(!playingAudio){
+        }
+      );
 
-playNextAudio();
 
-}
+    audioPlayer.onended =
+      function() {
 
-}
+        URL.revokeObjectURL(
+          audioUrl
+        );
 
+      };
 
-/* =====================================================
-REPRODUZIR ÁUDIO
-===================================================== */
 
-async function playNextAudio(){
+  } catch (error) {
 
-if(!audioQueue.length){
+    console.log(
+      "Áudio:",
+      error
+    );
 
-playingAudio=false;
-return;
+  }
 
 }
-
-playingAudio=true;
-
-const base64 =
-audioQueue.shift();
-
-try{
 
-const binary =
-atob(base64);
 
-const bytes =
-new Uint8Array(
-binary.length
-);
+// ========================================================
+// ATIVAR ÁUDIO
+// ========================================================
 
+async function enableAudio() {
 
-for(
-let i=0;
-i<binary.length;
-i++
-){
+  try {
 
-bytes[i] =
-binary.charCodeAt(i);
+    audioEnabled =
+      true;
 
-}
-
 
-/*
-PCM 16 kHz mono.
-*/
+    audioButton.textContent =
+      "🔊 Áudio ativado";
 
-const samples =
-new Int16Array(
-bytes.buffer
-);
+    audioButton.disabled =
+      true;
 
 
-if(!audioContext){
+    showMessage(
+      "🔊 Áudio da tradução ativado."
+    );
 
-audioContext =
-new (
-window.AudioContext ||
-window.webkitAudioContext
-)();
 
-}
+    // Cria um pequeno elemento de áudio
+    // para liberar reprodução após
+    // interação do usuário.
 
+    const testAudio =
+      new Audio();
 
-if(
-audioContext.state ===
-"suspended"
-){
+    testAudio.volume =
+      0;
 
-await audioContext.resume();
-
-}
 
+    try {
 
-const buffer =
-audioContext.createBuffer(
-1,
-samples.length,
-16000
-);
+      await testAudio.play();
 
+    } catch (_) {
+      // Alguns navegadores bloqueiam
+      // áudio vazio. Isso não impede
+      // os próximos áudios.
+    }
 
-const channel =
-buffer.getChannelData(0);
 
+  } catch (error) {
 
-for(
-let i=0;
-i<samples.length;
-i++
-){
+    showMessage(
+      "Erro ativando áudio: "
+      + error.message
+    );
 
-channel[i] =
-samples[i] /
-32768;
+  }
 
 }
-
-
-const source =
-audioContext.createBufferSource();
-
-source.buffer =
-buffer;
-
-source.connect(
-audioContext.destination
-);
-
-
-source.onended =
-function(){
 
-playNextAudio();
 
-};
+// ========================================================
+// PARAR
+// ========================================================
 
+async function stopLive() {
 
-source.start();
+  if (!liveId) {
 
-}catch(error){
+    resetInterface();
 
-console.error(
-"Erro reproduzindo áudio:",
-error
-);
+    return;
 
-playNextAudio();
+  }
 
-}
-
-}
-
-
-/* =====================================================
-PARAR
-===================================================== */
 
-async function stopLive(){
+  try {
 
-running=false;
+    await fetch(
+      BACKEND_URL +
+      "/api/youtube-live/" +
+      encodeURIComponent(
+        liveId
+      ) +
+      "/stop",
+      {
+        method:
+          "POST"
+      }
+    );
 
-if(processor){
+  } catch (error) {
 
-try{
-processor.disconnect();
-}catch(e){}
+    console.log(
+      error
+    );
 
-processor=null;
+  }
 
-}
 
+  if (statusTimer) {
 
-if(audioContext){
+    clearInterval(
+      statusTimer
+    );
 
-try{
-await audioContext.close();
-}catch(e){}
+    statusTimer =
+      null;
 
-audioContext=null;
+  }
 
-}
 
+  if (audioTimer) {
 
-if(captureStream){
+    clearInterval(
+      audioTimer
+    );
 
-captureStream
-.getTracks()
-.forEach(
-track=>track.stop()
-);
+    audioTimer =
+      null;
 
-captureStream=null;
+  }
 
-}
 
+  if (audioPlayer) {
 
-if(socket){
+    audioPlayer.pause();
 
-try{
-socket.close();
-}catch(e){}
+    audioPlayer =
+      null;
 
-socket=null;
+  }
 
-}
 
+  liveId =
+    null;
 
-if(liveId){
 
-try{
+  resetInterface();
 
-await fetch(
-BACKEND_URL +
-"/api/youtube-live/" +
-encodeURIComponent(
-liveId
-) +
-"/stop",
-{
-method:"POST"
 }
-);
 
-}catch(e){}
 
-}
+// ========================================================
+// RESET
+// ========================================================
 
+function resetInterface() {
 
-liveId=null;
+  startButton.disabled =
+    false;
 
-resetInterface();
+  stopButton.disabled =
+    true;
 
-}
+  audioButton.disabled =
+    true;
 
+  audioButton.textContent =
+    "🔊 Ativar áudio";
 
-/* =====================================================
-RESET
-===================================================== */
+  audioEnabled =
+    false;
 
-function resetInterface(){
 
-startButton.disabled=false;
-stopButton.disabled=true;
-audioButton.disabled=true;
+  translation.textContent =
+    "A tradução aparecerá aqui...";
 
-translation.textContent =
-"A tradução aparecerá aqui...";
 
-showMessage(
-"Live parada."
-);
+  showMessage(
+    "Live parada."
+  );
 
 }
 
 
-/* =====================================================
-INÍCIO
-===================================================== */
+// ========================================================
+// INICIALIZAÇÃO
+// ========================================================
 
 checkServer();
 
 </script>
 
 </body>
+
 </html>
