@@ -1,20 +1,15 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-
 <head>
-
 <meta charset="UTF-8">
 
-<meta
-  name="viewport"
-  content="width=device-width, initial-scale=1.0"
->
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <title>SI Tradutor Live</title>
 
 <meta
   name="description"
-  content="SI Tradutor Live — tradução de transmissões ao vivo."
+  content="SI Tradutor Live — captura o áudio da transmissão e envia para tradução com voz IA."
 >
 
 <style>
@@ -26,314 +21,212 @@
 }
 
 body {
-
-  font-family:
-    Arial,
-    Helvetica,
-    sans-serif;
-
-  background:
-    linear-gradient(
-      135deg,
-      #0f172a,
-      #111827,
-      #1e293b
-    );
-
+  font-family: Arial, Helvetica, sans-serif;
+  background: linear-gradient(
+    135deg,
+    #0f172a,
+    #111827,
+    #1e293b
+  );
   color: white;
-
   min-height: 100vh;
 }
 
 .container {
-
   max-width: 1100px;
-
   margin: auto;
-
   padding: 20px;
 }
 
 header {
-
   text-align: center;
-
   padding: 25px 10px;
 }
 
 .logo {
-
   font-size: 34px;
-
   font-weight: 800;
 }
 
 .subtitle {
-
   margin-top: 8px;
-
   color: #cbd5e1;
 }
 
 .card {
-
-  background:
-    rgba(255,255,255,.08);
-
-  border:
-    1px solid
-    rgba(255,255,255,.12);
-
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.12);
   border-radius: 18px;
-
   padding: 20px;
-
   margin-bottom: 20px;
 }
 
 .status {
-
   display: flex;
-
   align-items: center;
-
   gap: 8px;
-
   margin-bottom: 18px;
-
   color: #cbd5e1;
 }
 
 .dot {
-
   width: 11px;
-
   height: 11px;
-
   border-radius: 50%;
-
   background: #f59e0b;
 }
 
 .dot.online {
-
   background: #22c55e;
 }
 
 .dot.error {
-
   background: #ef4444;
 }
 
 label {
-
   display: block;
-
   font-weight: 700;
-
   margin-bottom: 8px;
 }
 
 input,
 select {
-
   width: 100%;
-
   padding: 14px;
-
   border: none;
-
   border-radius: 12px;
-
   font-size: 16px;
-
   margin-bottom: 14px;
 }
 
 .buttons {
-
   display: flex;
-
   gap: 10px;
-
   flex-wrap: wrap;
 }
 
 button {
-
   border: none;
-
   border-radius: 12px;
-
   padding: 14px 20px;
-
   font-size: 16px;
-
   font-weight: 700;
-
   cursor: pointer;
-
   flex: 1;
 }
 
 button:disabled {
-
   opacity: .5;
-
   cursor: not-allowed;
 }
 
 .start {
-
   background: #22c55e;
-
   color: white;
 }
 
 .stop {
-
   background: #ef4444;
-
   color: white;
 }
 
 .audio {
-
   background: #2563eb;
+  color: white;
+}
 
+.capture {
+  background: #7c3aed;
   color: white;
 }
 
 .video {
-
   position: relative;
-
   width: 100%;
-
   padding-top: 56.25%;
-
   background: black;
-
   border-radius: 16px;
-
   overflow: hidden;
 }
 
 .video iframe {
-
   position: absolute;
-
   inset: 0;
-
   width: 100%;
-
   height: 100%;
-
   border: none;
 }
 
 .empty {
-
   position: absolute;
-
   inset: 0;
-
   display: flex;
-
   align-items: center;
-
   justify-content: center;
-
   color: #94a3b8;
-
   text-align: center;
-
   padding: 20px;
 }
 
 .translation {
-
   min-height: 150px;
-
-  background:
-    rgba(0,0,0,.25);
-
+  background: rgba(0,0,0,.25);
   border-radius: 14px;
-
   padding: 20px;
 }
 
 .translation-title {
-
   color: #94a3b8;
-
   font-size: 14px;
-
   margin-bottom: 12px;
 }
 
 #translation {
-
   font-size: 24px;
-
   line-height: 1.5;
-
   font-weight: 600;
 }
 
 .message {
-
   margin-top: 15px;
-
   padding: 13px;
-
-  background:
-    rgba(255,255,255,.06);
-
+  background: rgba(255,255,255,.06);
   border-radius: 10px;
-
   color: #cbd5e1;
-
   white-space: pre-wrap;
 }
 
 .live {
-
   display: inline-flex;
-
   align-items: center;
-
   gap: 7px;
-
-  background:
-    rgba(239,68,68,.15);
-
+  background: rgba(239,68,68,.15);
   color: #fca5a5;
-
   padding: 7px 11px;
-
   border-radius: 999px;
-
   margin-bottom: 15px;
 }
 
 .live-dot {
-
   width: 8px;
-
   height: 8px;
-
   border-radius: 50%;
-
   background: #ef4444;
 }
 
+.info {
+  margin-top: 15px;
+  padding: 15px;
+  background: rgba(37,99,235,.12);
+  border-radius: 12px;
+  color: #bfdbfe;
+  line-height: 1.5;
+}
+
 footer {
-
   text-align: center;
-
   color: #64748b;
-
   padding: 20px;
 }
 
@@ -362,7 +255,6 @@ footer {
 }
 
 </style>
-
 </head>
 
 <body>
@@ -382,14 +274,16 @@ YouTube Live → Áudio → Tradução → ElevenLabs
 </header>
 
 
+<!-- CONTROLE -->
+
 <div class="card">
 
 <div class="status">
 
 <span
   id="statusDot"
-  class="dot"
-></span>
+  class="dot">
+</span>
 
 <span id="connection">
 Verificando servidor...
@@ -427,6 +321,34 @@ Idioma da tradução
 🇪🇸 Espanhol
 </option>
 
+<option value="fr">
+🇫🇷 Francês
+</option>
+
+<option value="de">
+🇩🇪 Alemão
+</option>
+
+<option value="it">
+🇮🇹 Italiano
+</option>
+
+<option value="ja">
+🇯🇵 Japonês
+</option>
+
+<option value="ko">
+🇰🇷 Coreano
+</option>
+
+<option value="zh">
+🇨🇳 Chinês
+</option>
+
+<option value="ar">
+🇸🇦 Árabe
+</option>
+
 </select>
 
 
@@ -441,12 +363,12 @@ Idioma da tradução
 </button>
 
 <button
-  id="stopButton"
-  class="stop"
-  onclick="stopLive()"
+  id="captureButton"
+  class="capture"
+  onclick="startBrowserCapture()"
   disabled
 >
-🛑 Parar
+🎙️ Capturar áudio
 </button>
 
 <button
@@ -455,7 +377,16 @@ Idioma da tradução
   onclick="enableAudio()"
   disabled
 >
-🎙️ Capturar áudio
+🔊 Ativar áudio
+</button>
+
+<button
+  id="stopButton"
+  class="stop"
+  onclick="stopLive()"
+  disabled
+>
+🛑 Parar
 </button>
 
 </div>
@@ -468,8 +399,23 @@ Idioma da tradução
 Cole o link da YouTube Live para começar.
 </div>
 
+
+<div class="info">
+
+<strong>Como funciona:</strong><br><br>
+
+1. Cole o link da YouTube Live.<br>
+2. Clique em <strong>Iniciar tradução</strong>.<br>
+3. Clique em <strong>Capturar áudio</strong>.<br>
+4. Na janela do navegador, escolha a aba do YouTube e marque o áudio.<br>
+5. O áudio será enviado ao servidor para processamento.
+
 </div>
 
+</div>
+
+
+<!-- VÍDEO -->
 
 <div class="card">
 
@@ -495,6 +441,8 @@ O vídeo da live aparecerá aqui.
 </div>
 
 
+<!-- TRADUÇÃO -->
+
 <div class="card">
 
 <div class="translation">
@@ -513,9 +461,7 @@ A tradução aparecerá aqui...
 
 
 <footer>
-
 SI Tradutor Live • Powered by ElevenLabs
-
 </footer>
 
 </div>
@@ -523,22 +469,27 @@ SI Tradutor Live • Powered by ElevenLabs
 
 <script>
 
-
 // ========================================================
-// BACKEND
+// CONFIGURAÇÃO
 // ========================================================
 
 const BACKEND_URL =
   "https://si-u2ul.onrender.com";
 
 
-let sessionId = null;
+let liveId = null;
+
+let statusTimer = null;
 
 let mediaStream = null;
 
 let mediaRecorder = null;
 
-let statusTimer = null;
+let audioChunks = [];
+
+let audioEnabled = false;
+
+let audioPlayer = null;
 
 
 // ========================================================
@@ -546,54 +497,37 @@ let statusTimer = null;
 // ========================================================
 
 const youtubeUrl =
-  document.getElementById(
-    "youtubeUrl"
-  );
+  document.getElementById("youtubeUrl");
 
 const targetLang =
-  document.getElementById(
-    "targetLang"
-  );
+  document.getElementById("targetLang");
 
 const startButton =
-  document.getElementById(
-    "startButton"
-  );
+  document.getElementById("startButton");
 
-const stopButton =
-  document.getElementById(
-    "stopButton"
-  );
+const captureButton =
+  document.getElementById("captureButton");
 
 const audioButton =
-  document.getElementById(
-    "audioButton"
-  );
+  document.getElementById("audioButton");
+
+const stopButton =
+  document.getElementById("stopButton");
 
 const message =
-  document.getElementById(
-    "message"
-  );
+  document.getElementById("message");
 
 const translation =
-  document.getElementById(
-    "translation"
-  );
+  document.getElementById("translation");
 
 const video =
-  document.getElementById(
-    "video"
-  );
+  document.getElementById("video");
 
 const connection =
-  document.getElementById(
-    "connection"
-  );
+  document.getElementById("connection");
 
 const statusDot =
-  document.getElementById(
-    "statusDot"
-  );
+  document.getElementById("statusDot");
 
 
 // ========================================================
@@ -626,13 +560,13 @@ function getYouTubeId(url) {
 
     /youtu\.be\/([^?&#/]+)/i,
 
-    /youtube\.com\/embed\/([^?&#/]+)/i
+    /youtube\.com\/embed\/([^?&#/]+)/i,
+
+    /youtube\.com\/shorts\/([^?&#/]+)/i
 
   ];
 
-  for (
-    const pattern of patterns
-  ) {
+  for (const pattern of patterns) {
 
     const match =
       url.match(pattern);
@@ -658,19 +592,18 @@ function showYouTube(videoId) {
   video.innerHTML = `
 
     <iframe
-      src="https://www.youtube.com/embed/${encodeURIComponent(videoId)}?autoplay=1"
+      src="https://www.youtube.com/embed/${encodeURIComponent(videoId)}?autoplay=1&rel=0"
       title="YouTube Live"
       allow="autoplay; encrypted-media; picture-in-picture"
-      allowfullscreen
-    ></iframe>
+      allowfullscreen>
+    </iframe>
 
   `;
-
 }
 
 
 // ========================================================
-// VERIFICAR SERVIDOR
+// SERVIDOR
 // ========================================================
 
 async function checkServer() {
@@ -679,8 +612,7 @@ async function checkServer() {
 
     const response =
       await fetch(
-        BACKEND_URL +
-        "/api/health"
+        BACKEND_URL + "/api/health"
       );
 
     const data =
@@ -706,7 +638,7 @@ async function checkServer() {
 
       throw new Error(
         data.message ||
-        "Servidor indisponível."
+        "Servidor não conectado."
       );
 
     }
@@ -730,14 +662,13 @@ async function checkServer() {
 
 
 // ========================================================
-// INICIAR
+// INICIAR LIVE
 // ========================================================
 
 async function startLive() {
 
   const url =
     youtubeUrl.value.trim();
-
 
   if (!url) {
 
@@ -746,46 +677,44 @@ async function startLive() {
     );
 
     return;
-
   }
 
 
   const videoId =
     getYouTubeId(url);
 
-
   if (!videoId) {
 
     showMessage(
-      "Link do YouTube inválido."
+      "❌ Link do YouTube inválido."
     );
 
     return;
-
   }
 
 
   startButton.disabled =
     true;
 
-  stopButton.disabled =
+  captureButton.disabled =
     false;
 
   audioButton.disabled =
     false;
 
+  stopButton.disabled =
+    false;
 
-  showYouTube(
-    videoId
-  );
+
+  showYouTube(videoId);
 
 
   translation.textContent =
-    "Preparando tradução...";
+    "Aguardando captura de áudio...";
 
 
   showMessage(
-    "🔴 Criando sessão..."
+    "🔴 Live preparada. Agora clique em 'Capturar áudio'."
   );
 
 
@@ -794,27 +723,24 @@ async function startLive() {
     const response =
       await fetch(
         BACKEND_URL +
-        "/api/session",
+        "/api/youtube-live",
         {
 
-          method:
-            "POST",
+          method: "POST",
 
           headers: {
             "Content-Type":
               "application/json"
           },
 
-          body:
-            JSON.stringify({
+          body: JSON.stringify({
 
-              youtubeUrl:
-                url,
+            url: url,
 
-              targetLang:
-                targetLang.value
+            targetLang:
+              targetLang.value
 
-            })
+          })
 
         }
       );
@@ -831,18 +757,19 @@ async function startLive() {
 
       throw new Error(
         data.error ||
-        "Erro criando sessão."
+        data.message ||
+        "Erro iniciando live."
       );
 
     }
 
 
-    sessionId =
-      data.sessionId;
+    liveId =
+      data.liveId;
 
 
     showMessage(
-      "🟢 Sessão criada. Clique em 'Capturar áudio'."
+      "🟢 Live criada. Clique em 'Capturar áudio' para compartilhar o áudio da aba."
     );
 
 
@@ -864,39 +791,29 @@ async function startLive() {
 
 
 // ========================================================
-// CAPTURA DE ÁUDIO
+// CAPTURA DE ÁUDIO DO NAVEGADOR
 // ========================================================
 
-async function enableAudio() {
-
-  if (!sessionId) {
-
-    showMessage(
-      "Primeiro inicie a tradução."
-    );
-
-    return;
-
-  }
-
+async function startBrowserCapture() {
 
   try {
-
-    showMessage(
-      "🎙️ Selecione a aba/janela que contém a Live e marque a opção de compartilhar áudio."
-    );
-
 
     if (
       !navigator.mediaDevices ||
       !navigator.mediaDevices.getDisplayMedia
     ) {
 
-      throw new Error(
-        "Este navegador não oferece captura de áudio da tela/aba."
+      showMessage(
+        "❌ Este navegador não oferece captura de áudio da tela/aba. Tente usar o Google Chrome atualizado."
       );
 
+      return;
     }
+
+
+    showMessage(
+      "🎙️ Escolha a aba do YouTube e ative o compartilhamento de áudio."
+    );
 
 
     mediaStream =
@@ -914,131 +831,49 @@ async function enableAudio() {
 
 
     if (
-      !audioTracks.length
+      !audioTracks ||
+      audioTracks.length === 0
     ) {
+
+      showMessage(
+        "❌ Nenhum áudio foi compartilhado. Ao escolher a aba do YouTube, marque a opção de compartilhar áudio."
+      );
 
       mediaStream
         .getTracks()
         .forEach(
-          track =>
-            track.stop()
+          track => track.stop()
         );
-
 
       mediaStream =
         null;
 
-
-      throw new Error(
-        "Nenhum áudio foi compartilhado. Ao selecionar a aba, marque 'Compartilhar áudio'."
-      );
-
+      return;
     }
-
-
-    const audioStream =
-      new MediaStream(
-        audioTracks
-      );
-
-
-    let mimeType =
-      "audio/webm";
-
-
-    if (
-      MediaRecorder.isTypeSupported(
-        "audio/webm;codecs=opus"
-      )
-    ) {
-
-      mimeType =
-        "audio/webm;codecs=opus";
-
-    }
-
-
-    mediaRecorder =
-      new MediaRecorder(
-        audioStream,
-        {
-          mimeType:
-            mimeType
-        }
-      );
-
-
-    mediaRecorder.ondataavailable =
-      async function(event) {
-
-        if (
-          event.data &&
-          event.data.size > 0
-        ) {
-
-          await sendAudioChunk(
-            event.data
-          );
-
-        }
-
-      };
-
-
-    mediaRecorder.onstop =
-      function() {
-
-        console.log(
-          "Captura parada."
-        );
-
-      };
-
-
-    mediaRecorder.start(
-      3000
-    );
-
-
-    await fetch(
-
-      BACKEND_URL +
-      "/api/session/" +
-      encodeURIComponent(
-        sessionId
-      ) +
-      "/start",
-
-      {
-        method:
-          "POST"
-      }
-
-    );
-
-
-    audioButton.textContent =
-      "🎙️ Áudio capturado";
-
-    audioButton.disabled =
-      true;
 
 
     showMessage(
-      "🟢 Áudio da aba sendo enviado para o servidor."
+      "🟢 Áudio da aba capturado. Enviando para o servidor..."
     );
+
+
+    captureButton.disabled =
+      true;
+
+
+    startRecording();
 
 
   } catch (error) {
 
     console.error(
+      "Captura:",
       error
     );
 
 
     showMessage(
-      "❌ " +
-      error.message
+      "❌ Captura cancelada ou bloqueada pelo navegador."
     );
 
   }
@@ -1047,14 +882,179 @@ async function enableAudio() {
 
 
 // ========================================================
-// ENVIAR BLOCO DE ÁUDIO
+// GRAVAÇÃO
 // ========================================================
 
-async function sendAudioChunk(
+function startRecording() {
+
+  if (!mediaStream) {
+    return;
+  }
+
+
+  const audioTracks =
+    mediaStream.getAudioTracks();
+
+
+  const audioOnlyStream =
+    new MediaStream(
+      audioTracks
+    );
+
+
+  let options = {};
+
+
+  if (
+    MediaRecorder.isTypeSupported(
+      "audio/webm;codecs=opus"
+    )
+  ) {
+
+    options.mimeType =
+      "audio/webm;codecs=opus";
+
+  } else if (
+    MediaRecorder.isTypeSupported(
+      "audio/webm"
+    )
+  ) {
+
+    options.mimeType =
+      "audio/webm";
+
+  }
+
+
+  try {
+
+    mediaRecorder =
+      new MediaRecorder(
+        audioOnlyStream,
+        options
+      );
+
+  } catch (error) {
+
+    console.error(
+      error
+    );
+
+    showMessage(
+      "❌ Seu navegador não conseguiu iniciar a gravação de áudio."
+    );
+
+    return;
+
+  }
+
+
+  audioChunks = [];
+
+
+  mediaRecorder.ondataavailable =
+    event => {
+
+      if (
+        event.data &&
+        event.data.size > 0
+      ) {
+
+        audioChunks.push(
+          event.data
+        );
+
+      }
+
+    };
+
+
+  mediaRecorder.onstop =
+    async () => {
+
+      const blob =
+        new Blob(
+          audioChunks,
+          {
+            type:
+              mediaRecorder.mimeType ||
+              "audio/webm"
+          }
+        );
+
+
+      await sendAudioToServer(
+        blob
+      );
+
+    };
+
+
+  mediaRecorder.start(
+    5000
+  );
+
+
+  showMessage(
+    "🎙️ Capturando áudio da YouTube Live..."
+  );
+
+
+  // Envia pequenos blocos continuamente.
+  setTimeout(
+    stopAndRestartRecording,
+    5000
+  );
+
+}
+
+
+// ========================================================
+// ENVIAR BLOCO
+// ========================================================
+
+async function stopAndRestartRecording() {
+
+  if (
+    !mediaRecorder ||
+    mediaRecorder.state !== "recording"
+  ) {
+
+    return;
+  }
+
+
+  mediaRecorder.stop();
+
+
+  setTimeout(
+    () => {
+
+      if (
+        mediaStream &&
+        mediaStream.active
+      ) {
+
+        startRecording();
+
+      }
+
+    },
+    300
+  );
+
+}
+
+
+// ========================================================
+// ENVIO DO ÁUDIO
+// ========================================================
+
+async function sendAudioToServer(
   blob
 ) {
 
-  if (!sessionId) {
+  if (!liveId) {
     return;
   }
 
@@ -1068,20 +1068,26 @@ async function sendAudioChunk(
     formData.append(
       "audio",
       blob,
-      "live.webm"
+      "live-audio.webm"
+    );
+
+
+    formData.append(
+      "liveId",
+      liveId
+    );
+
+
+    formData.append(
+      "targetLang",
+      targetLang.value
     );
 
 
     const response =
       await fetch(
-
         BACKEND_URL +
-        "/api/session/" +
-        encodeURIComponent(
-          sessionId
-        ) +
-        "/audio",
-
+        "/api/live-audio",
         {
 
           method:
@@ -1091,7 +1097,6 @@ async function sendAudioChunk(
             formData
 
         }
-
       );
 
 
@@ -1099,19 +1104,44 @@ async function sendAudioChunk(
       await response.json();
 
 
-    if (!data.ok) {
+    if (
+      !response.ok ||
+      !data.ok
+    ) {
 
       console.log(
-        "Áudio:",
-        data.error
+        "Servidor de áudio:",
+        data
+      );
+
+      return;
+    }
+
+
+    if (
+      data.translation
+    ) {
+
+      translation.textContent =
+        data.translation;
+
+    }
+
+
+    if (
+      data.audioUrl
+    ) {
+
+      playTranslatedAudio(
+        data.audioUrl
       );
 
     }
 
   } catch (error) {
 
-    console.log(
-      "Erro enviando áudio:",
+    console.error(
+      "Envio de áudio:",
       error
     );
 
@@ -1137,19 +1167,19 @@ function startStatusPolling() {
 
   statusTimer =
     setInterval(
-      checkStatus,
-      2000
+      checkLiveStatus,
+      2500
     );
 
 
-  checkStatus();
+  checkLiveStatus();
 
 }
 
 
-async function checkStatus() {
+async function checkLiveStatus() {
 
-  if (!sessionId) {
+  if (!liveId) {
     return;
   }
 
@@ -1158,13 +1188,11 @@ async function checkStatus() {
 
     const response =
       await fetch(
-
         BACKEND_URL +
-        "/api/session/" +
+        "/api/youtube-live/" +
         encodeURIComponent(
-          sessionId
+          liveId
         )
-
       );
 
 
@@ -1183,29 +1211,6 @@ async function checkStatus() {
 
       translation.textContent =
         data.lastTranslation;
-
-    }
-
-
-    if (
-      data.audioCapture ===
-      "running"
-    ) {
-
-      showMessage(
-        "🟢 Áudio sendo recebido pelo servidor."
-      );
-
-    }
-
-
-    if (
-      data.message
-    ) {
-
-      console.log(
-        data.message
-      );
 
     }
 
@@ -1234,6 +1239,97 @@ async function checkStatus() {
 
 
 // ========================================================
+// ÁUDIO DA TRADUÇÃO
+// ========================================================
+
+async function enableAudio() {
+
+  audioEnabled =
+    true;
+
+
+  audioButton.textContent =
+    "🔊 Áudio ativado";
+
+
+  audioButton.disabled =
+    true;
+
+
+  showMessage(
+    "🔊 Áudio da tradução ativado."
+  );
+
+
+  try {
+
+    const audio =
+      new Audio();
+
+
+    audio.volume =
+      0;
+
+
+    await audio.play();
+
+  } catch (_) {
+
+    console.log(
+      "Navegador bloqueou áudio inicial."
+    );
+
+  }
+
+}
+
+
+// ========================================================
+// TOCAR ÁUDIO GERADO
+// ========================================================
+
+function playTranslatedAudio(
+  audioUrl
+) {
+
+  if (!audioEnabled) {
+    return;
+  }
+
+
+  if (audioPlayer) {
+
+    audioPlayer.pause();
+
+  }
+
+
+  audioPlayer =
+    new Audio(
+      audioUrl
+    );
+
+
+  audioPlayer.volume =
+    1;
+
+
+  audioPlayer.play()
+    .catch(
+      error => {
+
+        console.log(
+          "Erro reproduzindo voz:",
+          error
+        );
+
+      }
+    );
+
+}
+
+
+// ========================================================
 // PARAR
 // ========================================================
 
@@ -1244,8 +1340,8 @@ async function stopLive() {
     try {
 
       if (
-        mediaRecorder.state !==
-        "inactive"
+        mediaRecorder.state ===
+        "recording"
       ) {
 
         mediaRecorder.stop();
@@ -1262,34 +1358,11 @@ async function stopLive() {
     mediaStream
       .getTracks()
       .forEach(
-        track =>
-          track.stop()
+        track => track.stop()
       );
 
-  }
-
-
-  if (sessionId) {
-
-    try {
-
-      await fetch(
-
-        BACKEND_URL +
-        "/api/session/" +
-        encodeURIComponent(
-          sessionId
-        ) +
-        "/stop",
-
-        {
-          method:
-            "POST"
-        }
-
-      );
-
-    } catch (_) {}
+    mediaStream =
+      null;
 
   }
 
@@ -1306,13 +1379,29 @@ async function stopLive() {
   }
 
 
-  sessionId =
-    null;
+  if (liveId) {
 
-  mediaStream =
-    null;
+    try {
 
-  mediaRecorder =
+      await fetch(
+        BACKEND_URL +
+        "/api/youtube-live/" +
+        encodeURIComponent(
+          liveId
+        ) +
+        "/stop",
+        {
+          method:
+            "POST"
+        }
+      );
+
+    } catch (_) {}
+
+  }
+
+
+  liveId =
     null;
 
 
@@ -1330,14 +1419,30 @@ function resetInterface() {
   startButton.disabled =
     false;
 
-  stopButton.disabled =
+  captureButton.disabled =
     true;
 
   audioButton.disabled =
     true;
 
+  stopButton.disabled =
+    true;
+
+
   audioButton.textContent =
-    "🎙️ Capturar áudio";
+    "🔊 Ativar áudio";
+
+
+  audioEnabled =
+    false;
+
+
+  mediaRecorder =
+    null;
+
+
+  audioChunks =
+    [];
 
 
   translation.textContent =
@@ -1352,7 +1457,7 @@ function resetInterface() {
 
 
 // ========================================================
-// INICIAR
+// INICIALIZAÇÃO
 // ========================================================
 
 checkServer();
@@ -1360,5 +1465,4 @@ checkServer();
 </script>
 
 </body>
-
 </html>
