@@ -1,1325 +1,1573 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  >
+<title>SI Tradutor Live — Tradução em Tempo Real</title>
 
-  <title>SI Tradutor Live — Tradução em Tempo Real</title>
+<meta name="description"
+content="SI Tradutor Live: assista a transmissões do YouTube e acompanhe a tradução em português.">
 
-  <meta
-    name="description"
-    content="SI Tradutor Live: assista a transmissões do YouTube e acompanhe a tradução para português."
-  >
+<meta name="theme-color" content="#111827">
 
-  <meta
-    name="theme-color"
-    content="#111827"
-  >
+<style>
+*{
+  box-sizing:border-box;
+  margin:0;
+  padding:0;
+}
 
-  <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+body{
+  font-family:Arial,Helvetica,sans-serif;
+  background:linear-gradient(135deg,#0f172a,#111827,#1e293b);
+  color:#fff;
+  min-height:100vh;
+}
 
-    body {
-      font-family:
-        Arial,
-        Helvetica,
-        sans-serif;
+.container{
+  width:100%;
+  max-width:1100px;
+  margin:auto;
+  padding:20px;
+}
 
-      background:
-        linear-gradient(
-          135deg,
-          #0f172a,
-          #111827,
-          #1e293b
-        );
+header{
+  text-align:center;
+  padding:25px 10px 20px;
+}
 
-      color: #ffffff;
-      min-height: 100vh;
-    }
+.logo{
+  font-size:34px;
+  font-weight:800;
+  margin-bottom:8px;
+}
 
-    .container {
-      width: 100%;
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 20px;
-    }
+.subtitle{
+  color:#cbd5e1;
+  font-size:16px;
+}
 
-    header {
-      text-align: center;
-      padding: 25px 10px 20px;
-    }
+.card{
+  background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:18px;
+  padding:20px;
+  margin-bottom:20px;
+  backdrop-filter:blur(10px);
+}
 
-    .logo {
-      font-size: 34px;
-      font-weight: 800;
-      margin-bottom: 8px;
-    }
+.status{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-bottom:18px;
+  color:#cbd5e1;
+  font-size:14px;
+}
 
-    .subtitle {
-      color: #cbd5e1;
-      font-size: 16px;
-    }
+.status-dot{
+  width:11px;
+  height:11px;
+  border-radius:50%;
+  background:#f59e0b;
+}
 
-    .card {
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.12);
-      border-radius: 18px;
-      padding: 20px;
-      margin-bottom: 20px;
-      backdrop-filter: blur(10px);
-    }
+.status-dot.online{
+  background:#22c55e;
+}
 
-    .status {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 18px;
-      color: #cbd5e1;
-      font-size: 14px;
-    }
+.status-dot.error{
+  background:#ef4444;
+}
 
-    .status-dot {
-      width: 11px;
-      height: 11px;
-      border-radius: 50%;
-      background: #f59e0b;
-      display: inline-block;
-    }
+label{
+  display:block;
+  margin-bottom:8px;
+  font-weight:700;
+}
 
-    .status-dot.online {
-      background: #22c55e;
-    }
+input,select{
+  width:100%;
+  border:none;
+  outline:none;
+  border-radius:12px;
+  padding:14px;
+  font-size:16px;
+  background:#fff;
+  color:#111827;
+  margin-bottom:14px;
+}
 
-    .status-dot.error {
-      background: #ef4444;
-    }
+.buttons{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+}
 
-    label {
-      display: block;
-      margin-bottom: 8px;
-      font-weight: 700;
-    }
+button{
+  border:none;
+  border-radius:12px;
+  padding:14px 20px;
+  font-size:16px;
+  font-weight:700;
+  cursor:pointer;
+}
 
-    input,
-    select {
-      width: 100%;
-      border: none;
-      outline: none;
-      border-radius: 12px;
-      padding: 14px;
-      font-size: 16px;
-      background: #ffffff;
-      color: #111827;
-      margin-bottom: 14px;
-    }
+button:disabled{
+  opacity:.5;
+  cursor:not-allowed;
+}
 
-    .buttons {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
+.start-btn{
+  background:#22c55e;
+  color:white;
+  flex:1;
+}
 
-    button {
-      border: none;
-      border-radius: 12px;
-      padding: 14px 20px;
-      font-size: 16px;
-      font-weight: 700;
-      cursor: pointer;
-      transition: 0.2s;
-    }
+.stop-btn{
+  background:#ef4444;
+  color:white;
+  flex:1;
+}
 
-    button:hover {
-      transform: translateY(-1px);
-    }
+.audio-btn{
+  background:#2563eb;
+  color:white;
+  flex:1;
+}
 
-    button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-      transform: none;
-    }
+.video-wrapper{
+  position:relative;
+  width:100%;
+  padding-top:56.25%;
+  overflow:hidden;
+  border-radius:16px;
+  background:#000;
+}
 
-    .start-btn {
-      background: #22c55e;
-      color: #ffffff;
-      flex: 1;
-    }
+.video-wrapper iframe{
+  position:absolute;
+  top:0;
+  left:0;
+  width:100%;
+  height:100%;
+  border:none;
+}
 
-    .stop-btn {
-      background: #ef4444;
-      color: #ffffff;
-      flex: 1;
-    }
+.empty-video{
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  color:#94a3b8;
+  padding:20px;
+}
 
-    .audio-btn {
-      background: #2563eb;
-      color: #ffffff;
-      flex: 1;
-    }
+.translation-box{
+  min-height:150px;
+  border-radius:14px;
+  padding:18px;
+  background:rgba(0,0,0,.25);
+  border:1px solid rgba(255,255,255,.08);
+}
 
-    .video-wrapper {
-      position: relative;
-      width: 100%;
-      padding-top: 56.25%;
-      overflow: hidden;
-      border-radius: 16px;
-      background: #000000;
-    }
+.translation-title{
+  font-size:14px;
+  color:#94a3b8;
+  margin-bottom:10px;
+}
 
-    .video-wrapper iframe {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      border: none;
-    }
+#translation{
+  font-size:23px;
+  line-height:1.5;
+  font-weight:600;
+}
 
-    .empty-video {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      color: #94a3b8;
-      padding: 20px;
-    }
+.message{
+  margin-top:15px;
+  padding:13px;
+  border-radius:10px;
+  background:rgba(255,255,255,.06);
+  color:#cbd5e1;
+  font-size:14px;
+  white-space:pre-wrap;
+}
 
-    .translation-box {
-      min-height: 130px;
-      border-radius: 14px;
-      padding: 18px;
-      background: rgba(0,0,0,0.25);
-      border: 1px solid rgba(255,255,255,0.08);
-    }
+.live-indicator{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  padding:7px 11px;
+  border-radius:999px;
+  background:rgba(239,68,68,.15);
+  color:#fca5a5;
+  font-size:13px;
+  margin-bottom:15px;
+}
 
-    .translation-title {
-      font-size: 14px;
-      color: #94a3b8;
-      margin-bottom: 10px;
-    }
+.live-dot{
+  width:8px;
+  height:8px;
+  background:#ef4444;
+  border-radius:50%;
+}
 
-    #translation {
-      font-size: 23px;
-      line-height: 1.5;
-      font-weight: 600;
-    }
+.capture-info{
+  margin-top:12px;
+  padding:12px;
+  border-radius:10px;
+  background:rgba(37,99,235,.12);
+  color:#bfdbfe;
+  font-size:13px;
+  line-height:1.5;
+}
 
-    .message {
-      margin-top: 15px;
-      padding: 13px;
-      border-radius: 10px;
-      background: rgba(255,255,255,0.06);
-      color: #cbd5e1;
-      font-size: 14px;
-      white-space: pre-wrap;
-    }
+footer{
+  text-align:center;
+  color:#64748b;
+  font-size:13px;
+  padding:20px;
+}
 
-    .live-indicator {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      padding: 7px 11px;
-      border-radius: 999px;
-      background: rgba(239,68,68,0.15);
-      color: #fca5a5;
-      font-size: 13px;
-      margin-bottom: 15px;
-    }
+@media(max-width:600px){
 
-    .live-dot {
-      width: 8px;
-      height: 8px;
-      background: #ef4444;
-      border-radius: 50%;
-    }
+  .container{
+    padding:12px;
+  }
 
-    footer {
-      text-align: center;
-      color: #64748b;
-      font-size: 13px;
-      padding: 20px;
-    }
+  .logo{
+    font-size:28px;
+  }
 
-    @media (max-width: 600px) {
+  .card{
+    padding:15px;
+  }
 
-      .container {
-        padding: 12px;
-      }
+  #translation{
+    font-size:19px;
+  }
 
-      .logo {
-        font-size: 28px;
-      }
+  .buttons{
+    flex-direction:column;
+  }
 
-      .card {
-        padding: 15px;
-      }
-
-      #translation {
-        font-size: 19px;
-      }
-
-      .buttons {
-        flex-direction: column;
-      }
-
-      button {
-        width: 100%;
-      }
-    }
-  </style>
+  button{
+    width:100%;
+  }
+}
+</style>
 </head>
 
 <body>
 
-  <div class="container">
+<div class="container">
 
-    <header>
-      <div class="logo">
-        🎙️ SI Tradutor Live
-      </div>
+<header>
+<div class="logo">🎙️ SI Tradutor Live</div>
 
-      <div class="subtitle">
-        Tradução de transmissões ao vivo para português
-      </div>
-    </header>
+<div class="subtitle">
+Tradução de transmissões ao vivo para português
+</div>
+</header>
 
 
-    <!-- STATUS -->
+<div class="card">
 
-    <div class="card">
+<div class="status">
 
-      <div class="status">
-        <span
-          id="statusDot"
-          class="status-dot"
-        ></span>
+<span id="statusDot" class="status-dot"></span>
 
-        <span id="connectionStatus">
-          Verificando conexão com o servidor...
-        </span>
-      </div>
+<span id="connectionStatus">
+Verificando conexão com o servidor...
+</span>
 
-      <label for="youtubeUrl">
-        Cole o link da YouTube Live
-      </label>
-
-      <input
-        id="youtubeUrl"
-        type="url"
-        placeholder="https://www.youtube.com/live/..."
-        autocomplete="off"
-      >
-
-      <label for="targetLang">
-        Idioma da tradução
-      </label>
-
-      <select id="targetLang">
-
-        <option value="pt">
-          🇧🇷 Português
-        </option>
-
-        <option value="en">
-          🇺🇸 Inglês
-        </option>
-
-        <option value="es">
-          🇪🇸 Espanhol
-        </option>
-
-        <option value="fr">
-          🇫🇷 Francês
-        </option>
-
-        <option value="de">
-          🇩🇪 Alemão
-        </option>
-
-        <option value="it">
-          🇮🇹 Italiano
-        </option>
-
-        <option value="ja">
-          🇯🇵 Japonês
-        </option>
-
-        <option value="ko">
-          🇰🇷 Coreano
-        </option>
-
-        <option value="zh">
-          🇨🇳 Chinês
-        </option>
-
-        <option value="ar">
-          🇸🇦 Árabe
-        </option>
-
-      </select>
+</div>
 
 
-      <div class="buttons">
+<label for="youtubeUrl">
+Cole o link da YouTube Live
+</label>
 
-        <button
-          id="startButton"
-          class="start-btn"
-          onclick="startLive()"
-        >
-          🔴 Iniciar tradução
-        </button>
-
-        <button
-          id="stopButton"
-          class="stop-btn"
-          onclick="stopLive()"
-          disabled
-        >
-          🛑 Parar
-        </button>
-
-        <button
-          id="audioButton"
-          class="audio-btn"
-          onclick="enableAudio()"
-          disabled
-        >
-          🔊 Ativar áudio
-        </button>
-
-      </div>
-
-      <div
-        id="message"
-        class="message"
-      >
-        Cole o link da YouTube Live para começar.
-      </div>
-
-    </div>
+<input
+id="youtubeUrl"
+type="url"
+placeholder="https://www.youtube.com/live/..."
+autocomplete="off"
+>
 
 
-    <!-- VÍDEO -->
+<label for="targetLang">
+Idioma da tradução
+</label>
 
-    <div class="card">
+<select id="targetLang">
 
-      <div class="live-indicator">
-        <span class="live-dot"></span>
-        YouTube Live
-      </div>
+<option value="pt">🇧🇷 Português</option>
+<option value="en">🇺🇸 Inglês</option>
+<option value="es">🇪🇸 Espanhol</option>
+<option value="fr">🇫🇷 Francês</option>
+<option value="de">🇩🇪 Alemão</option>
+<option value="it">🇮🇹 Italiano</option>
+<option value="ja">🇯🇵 Japonês</option>
+<option value="ko">🇰🇷 Coreano</option>
+<option value="zh">🇨🇳 Chinês</option>
+<option value="ar">🇸🇦 Árabe</option>
 
-      <div
-        id="videoWrapper"
-        class="video-wrapper"
-      >
-
-        <div class="empty-video">
-          O vídeo da live aparecerá aqui.
-        </div>
-
-      </div>
-
-    </div>
+</select>
 
 
-    <!-- TRADUÇÃO -->
+<div class="buttons">
 
-    <div class="card">
+<button
+id="startButton"
+class="start-btn"
+onclick="startLive()">
+🔴 Iniciar tradução
+</button>
 
-      <div class="translation-box">
+<button
+id="stopButton"
+class="stop-btn"
+onclick="stopLive()"
+disabled>
+🛑 Parar
+</button>
 
-        <div class="translation-title">
-          📝 Tradução em português
-        </div>
+<button
+id="audioButton"
+class="audio-btn"
+onclick="captureAudio()"
+disabled>
+🎙️ Capturar áudio da Live
+</button>
 
-        <div id="translation">
-          A tradução aparecerá aqui...
-        </div>
-
-      </div>
-
-    </div>
+</div>
 
 
-    <footer>
-      SI Tradutor Live • Powered by ElevenLabs
-    </footer>
+<div class="capture-info">
+Para a tradução em tempo real, depois de iniciar a Live,
+toque em <b>🎙️ Capturar áudio da Live</b> e permita o
+compartilhamento de áudio da aba quando o navegador oferecer essa opção.
+</div>
 
-  </div>
+
+<div id="message" class="message">
+Cole o link da YouTube Live para começar.
+</div>
+
+</div>
+
+
+<div class="card">
+
+<div class="live-indicator">
+<span class="live-dot"></span>
+YouTube Live
+</div>
+
+<div id="videoWrapper" class="video-wrapper">
+
+<div class="empty-video">
+O vídeo da live aparecerá aqui.
+</div>
+
+</div>
+
+</div>
+
+
+<div class="card">
+
+<div class="translation-box">
+
+<div class="translation-title">
+📝 Tradução
+</div>
+
+<div id="translation">
+A tradução aparecerá aqui...
+</div>
+
+</div>
+
+</div>
+
+
+<footer>
+SI Tradutor Live • Powered by ElevenLabs
+</footer>
+
+</div>
 
 
 <script>
 
-  // =====================================================
-  // CONFIGURAÇÃO
-  // =====================================================
+const BACKEND_URL =
+"https://si-u2ul.onrender.com";
 
-  const BACKEND_URL =
-    "https://si-u2ul.onrender.com";
+let liveId = null;
+let socket = null;
 
-  let liveId = null;
+let captureStream = null;
+let audioContext = null;
+let processor = null;
 
-  let statusTimer = null;
+let audioQueue = [];
+let playingAudio = false;
 
-  let audioEventSource = null;
+let running = false;
 
-  let audioEnabled = false;
 
-  let audioContext = null;
+/* =====================================================
+ELEMENTOS
+===================================================== */
 
+const youtubeUrl =
+document.getElementById("youtubeUrl");
 
-  // =====================================================
-  // ELEMENTOS
-  // =====================================================
+const targetLang =
+document.getElementById("targetLang");
 
-  const youtubeUrl =
-    document.getElementById(
-      "youtubeUrl"
-    );
+const startButton =
+document.getElementById("startButton");
 
-  const targetLang =
-    document.getElementById(
-      "targetLang"
-    );
+const stopButton =
+document.getElementById("stopButton");
 
-  const startButton =
-    document.getElementById(
-      "startButton"
-    );
+const audioButton =
+document.getElementById("audioButton");
 
-  const stopButton =
-    document.getElementById(
-      "stopButton"
-    );
+const message =
+document.getElementById("message");
 
-  const audioButton =
-    document.getElementById(
-      "audioButton"
-    );
+const translation =
+document.getElementById("translation");
 
-  const message =
-    document.getElementById(
-      "message"
-    );
+const videoWrapper =
+document.getElementById("videoWrapper");
 
-  const translation =
-    document.getElementById(
-      "translation"
-    );
+const connectionStatus =
+document.getElementById("connectionStatus");
 
-  const videoWrapper =
-    document.getElementById(
-      "videoWrapper"
-    );
+const statusDot =
+document.getElementById("statusDot");
 
-  const connectionStatus =
-    document.getElementById(
-      "connectionStatus"
-    );
 
-  const statusDot =
-    document.getElementById(
-      "statusDot"
-    );
+/* =====================================================
+MENSAGEM
+===================================================== */
 
+function showMessage(text){
 
-  // =====================================================
-  // MENSAGEM
-  // =====================================================
+message.textContent =
+text || "";
 
-  function showMessage(text) {
+}
 
-    message.textContent =
-      text || "";
 
-  }
+/* =====================================================
+YOUTUBE ID
+===================================================== */
 
+function getYouTubeId(url){
 
-  // =====================================================
-  // YOUTUBE ID
-  // =====================================================
+if(!url){
+return null;
+}
 
-  function getYouTubeId(url) {
+const patterns=[
 
-    if (!url) {
-      return null;
-    }
+/youtube\.com\/live\/([^?&#/]+)/i,
 
-    const patterns = [
+/youtube\.com\/watch\?v=([^&#]+)/i,
 
-      /youtube\.com\/live\/([^?&#/]+)/i,
+/youtu\.be\/([^?&#/]+)/i,
 
-      /youtube\.com\/watch\?v=([^&#]+)/i,
+/youtube\.com\/embed\/([^?&#/]+)/i
 
-      /youtu\.be\/([^?&#/]+)/i,
+];
 
-      /youtube\.com\/embed\/([^?&#/]+)/i
+for(const pattern of patterns){
 
-    ];
+const match =
+url.match(pattern);
 
-    for (
-      const pattern
-      of patterns
-    ) {
+if(match){
+return match[1];
+}
 
-      const match =
-        url.match(pattern);
+}
 
-      if (match) {
+return null;
 
-        return match[1];
+}
 
-      }
 
-    }
+/* =====================================================
+MOSTRAR VÍDEO
+===================================================== */
 
-    return null;
+function showYouTubeVideo(videoId){
 
-  }
+if(!videoId){
 
+videoWrapper.innerHTML =
+`
+<div class="empty-video">
+Não foi possível identificar o vídeo.
+</div>
+`;
 
-  // =====================================================
-  // MOSTRAR VÍDEO
-  // =====================================================
+return;
+}
 
-  function showYouTubeVideo(
-    videoId
-  ) {
+const iframeUrl =
+"https://www.youtube.com/embed/"
++
+encodeURIComponent(videoId)
++
+"?autoplay=1&rel=0";
 
-    if (!videoId) {
+videoWrapper.innerHTML =
+`
+<iframe
+id="youtubeFrame"
+src="${iframeUrl}"
+title="YouTube Live"
+allow="autoplay; encrypted-media; picture-in-picture; web-share"
+allowfullscreen>
+</iframe>
+`;
 
-      videoWrapper.innerHTML = `
-        <div class="empty-video">
-          Não foi possível identificar o vídeo.
-        </div>
-      `;
+}
 
-      return;
 
-    }
+/* =====================================================
+SERVIDOR
+===================================================== */
 
-    const iframeUrl =
-      "https://www.youtube.com/embed/"
-      + encodeURIComponent(videoId)
-      + "?autoplay=1&rel=0";
+async function checkServer(){
 
-    videoWrapper.innerHTML = `
+try{
 
-      <iframe
-        src="${iframeUrl}"
-        title="YouTube Live"
-        allow="
-          autoplay;
-          encrypted-media;
-          picture-in-picture;
-          web-share
-        "
-        allowfullscreen
-      ></iframe>
+const response =
+await fetch(
+BACKEND_URL +
+"/api/health"
+);
 
-    `;
+const data =
+await response.json();
 
-  }
+if(response.ok && data.ok){
 
+connectionStatus.textContent =
+"Servidor conectado à ElevenLabs";
 
-  // =====================================================
-  // VERIFICAR SERVIDOR
-  // =====================================================
+statusDot.classList.add("online");
+statusDot.classList.remove("error");
 
-  async function checkServer() {
+}else{
 
-    try {
+throw new Error(
+data.message ||
+"Servidor não conectado."
+);
 
-      const response =
-        await fetch(
-          BACKEND_URL +
-          "/api/health"
-        );
+}
 
-      const data =
-        await response.json();
+}catch(error){
 
-      if (
-        response.ok &&
-        data.ok
-      ) {
+connectionStatus.textContent =
+"Servidor não conectado";
 
-        connectionStatus.textContent =
-          "Servidor conectado à ElevenLabs";
+statusDot.classList.remove("online");
+statusDot.classList.add("error");
 
-        statusDot.classList.add(
-          "online"
-        );
+}
 
-        statusDot.classList.remove(
-          "error"
-        );
+}
 
-      } else {
 
-        throw new Error(
-          data.message ||
-          "Servidor não conectado."
-        );
+/* =====================================================
+INICIAR LIVE
+===================================================== */
 
-      }
+async function startLive(){
 
-    } catch (error) {
+const url =
+youtubeUrl.value.trim();
 
-      connectionStatus.textContent =
-        "Servidor não conectado";
+if(!url){
 
-      statusDot.classList.remove(
-        "online"
-      );
+showMessage(
+"Cole primeiro o link da YouTube Live."
+);
 
-      statusDot.classList.add(
-        "error"
-      );
+return;
 
-    }
+}
 
-  }
+const videoId =
+getYouTubeId(url);
 
+if(!videoId){
 
-  // =====================================================
-  // INICIAR LIVE
-  // =====================================================
+showMessage(
+"Não consegui identificar o vídeo do YouTube."
+);
 
-  async function startLive() {
+return;
 
-    const url =
-      youtubeUrl.value.trim();
+}
 
-    if (!url) {
+startButton.disabled=true;
+stopButton.disabled=false;
+audioButton.disabled=false;
 
-      showMessage(
-        "Cole primeiro o link da YouTube Live."
-      );
+running=true;
 
-      return;
+translation.textContent =
+"Live conectada. Pronto para capturar o áudio.";
 
-    }
+showYouTubeVideo(videoId);
 
-    const videoId =
-      getYouTubeId(url);
+showMessage(
+"🟢 Live conectada. Agora toque em 'Capturar áudio da Live'."
+);
 
-    if (!videoId) {
 
-      showMessage(
-        "Não consegui identificar o vídeo do YouTube."
-      );
+try{
 
-      return;
+const response =
+await fetch(
+BACKEND_URL +
+"/api/youtube-live",
+{
+method:"POST",
 
-    }
+headers:{
+"Content-Type":
+"application/json"
+},
 
+body:JSON.stringify({
 
-    startButton.disabled =
-      true;
+url:url,
 
-    stopButton.disabled =
-      false;
+targetLang:
+targetLang.value
 
-    audioButton.disabled =
-      false;
+})
 
+}
+);
 
-    translation.textContent =
-      "Conectando à transmissão...";
+const data =
+await response.json();
 
+if(!response.ok || !data.ok){
 
-    showYouTubeVideo(
-      videoId
-    );
+throw new Error(
+data.error ||
+data.message ||
+"Erro iniciando a Live."
+);
 
+}
 
-    showMessage(
-      "Conectando a live ao servidor..."
-    );
+liveId =
+data.liveId;
 
+}catch(error){
 
-    try {
+showMessage(
+"❌ " +
+error.message
+);
 
-      const response =
-        await fetch(
-          BACKEND_URL +
-          "/api/youtube-live",
-          {
-            method: "POST",
+resetInterface();
 
-            headers: {
-              "Content-Type":
-                "application/json"
-            },
+}
 
-            body: JSON.stringify({
+}
 
-              url: url,
 
-              targetLang:
-                targetLang.value
+/* =====================================================
+CAPTURA DE ÁUDIO
+===================================================== */
 
-            })
+async function captureAudio(){
 
-          }
-        );
+if(!running){
 
+showMessage(
+"Inicie a Live primeiro."
+);
 
-      const data =
-        await response.json();
+return;
 
+}
 
-      if (!response.ok || !data.ok) {
+if(!navigator.mediaDevices ||
+!navigator.mediaDevices.getDisplayMedia){
 
-        throw new Error(
-          data.error ||
-          data.message ||
-          "Erro iniciando a live."
-        );
+showMessage(
+"❌ Este navegador não oferece captura de áudio da tela/aba."
+);
 
-      }
+return;
 
+}
 
-      liveId =
-        data.liveId;
+try{
 
+showMessage(
+"Escolha a aba/janela da YouTube Live e ative o compartilhamento de áudio."
+);
 
-      showMessage(
-        "🟢 Live conectada. "
-        + "Aguardando áudio da transmissão..."
-      );
 
+/*
+O navegador exibirá a janela de compartilhamento.
+*/
 
-      startStatusPolling();
+captureStream =
+await navigator.mediaDevices.getDisplayMedia({
 
-      startAudioStream();
+video:true,
 
+audio:true
 
-    } catch (error) {
+});
 
-      showMessage(
-        "❌ " +
-        error.message
-      );
 
-      startButton.disabled =
-        false;
+const audioTracks =
+captureStream.getAudioTracks();
 
-      stopButton.disabled =
-        true;
+if(!audioTracks.length){
 
-      audioButton.disabled =
-        true;
+showMessage(
+"⚠️ A captura foi iniciada, mas nenhum áudio foi compartilhado. Escolha uma aba com áudio e marque o compartilhamento de áudio."
+);
 
-    }
+captureStream
+.getTracks()
+.forEach(track=>track.stop());
 
-  }
+return;
 
+}
 
-  // =====================================================
-  // STATUS
-  // =====================================================
 
-  function startStatusPolling() {
+showMessage(
+"🟢 Áudio da Live capturado. Conectando à ElevenLabs..."
+);
 
-    if (statusTimer) {
+audioButton.disabled=true;
 
-      clearInterval(
-        statusTimer
-      );
+await connectElevenLabs();
 
-    }
+}catch(error){
 
-    statusTimer =
-      setInterval(
-        checkLiveStatus,
-        3000
-      );
+console.error(error);
 
-    checkLiveStatus();
+showMessage(
+"❌ Não foi possível capturar o áudio: "
++
+error.message
+);
 
-  }
+}
 
+}
 
-  async function checkLiveStatus() {
 
-    if (!liveId) {
-      return;
-    }
+/* =====================================================
+ELEVENLABS
+===================================================== */
 
-    try {
+async function connectElevenLabs(){
 
-      const response =
-        await fetch(
-          BACKEND_URL +
-          "/api/youtube-live/" +
-          encodeURIComponent(
-            liveId
-          )
-        );
+try{
 
-      const data =
-        await response.json();
+const response =
+await fetch(
+BACKEND_URL +
+"/api/elevenlabs/signed-url"
+);
 
+const data =
+await response.json();
 
-      if (!response.ok || !data.ok) {
+if(!response.ok || !data.ok){
 
-        return;
+throw new Error(
+data.error ||
+"Não foi possível obter a conexão da ElevenLabs."
+);
 
-      }
+}
 
 
-      if (
-        data.lastTranscript
-      ) {
+socket =
+new WebSocket(
+data.signed_url
+);
 
-        translation.textContent =
-          "Ouvindo: " +
-          data.lastTranscript;
 
-      }
+socket.onopen =
+function(){
 
+showMessage(
+"🟢 Tradução ativa e conectada à ElevenLabs."
+);
 
-      if (
-        data.lastTranslation
-      ) {
+startAudioProcessing();
 
-        translation.textContent =
-          data.lastTranslation;
+};
 
-      }
 
+socket.onmessage =
+function(event){
 
-      if (
-        data.audioCapture ===
-        "running"
-      ) {
+handleElevenMessage(
+event.data
+);
 
-        showMessage(
-          "🟢 Áudio da live sendo capturado."
-        );
+};
 
-      }
 
+socket.onerror =
+function(error){
 
-      if (
-        data.error
-      ) {
+console.error(
+"WebSocket ElevenLabs:",
+error
+);
 
-        showMessage(
-          "⚠️ " +
-          data.error
-        );
+showMessage(
+"❌ Erro na conexão com ElevenLabs."
+);
 
-      }
+};
 
 
-      if (
-        data.status ===
-        "error"
-      ) {
+socket.onclose =
+function(){
 
-        showMessage(
-          "❌ " +
-          (
-            data.error ||
-            data.message ||
-            "Erro no processamento."
-          )
-        );
+if(running){
 
-      }
+showMessage(
+"⚠️ Conexão da tradução encerrada."
+);
 
-    } catch (error) {
+}
 
-      console.log(
-        "Erro status:",
-        error
-      );
+};
 
-    }
+}catch(error){
 
-  }
+console.error(error);
 
+showMessage(
+"❌ " +
+error.message
+);
 
-  // =====================================================
-  // STREAM DE ÁUDIO
-  // =====================================================
+}
 
-  function startAudioStream() {
+}
 
-    if (!liveId) {
-      return;
-    }
 
+/* =====================================================
+INICIAR PROCESSAMENTO
+===================================================== */
 
-    if (audioEventSource) {
+function startAudioProcessing(){
 
-      audioEventSource.close();
+if(!captureStream){
+return;
+}
 
-    }
+const audioTracks =
+captureStream.getAudioTracks();
 
+if(!audioTracks.length){
+return;
+}
 
-    const url =
-      BACKEND_URL +
-      "/api/youtube-live/" +
-      encodeURIComponent(
-        liveId
-      ) +
-      "/audio";
 
+const audioOnlyStream =
+new MediaStream(
+audioTracks
+);
 
-    audioEventSource =
-      new EventSource(
-        url
-      );
 
+audioContext =
+new (
+window.AudioContext ||
+window.webkitAudioContext
+)();
 
-    audioEventSource.onmessage =
-      function(event) {
 
-        try {
+const source =
+audioContext.createMediaStreamSource(
+audioOnlyStream
+);
 
-          const data =
-            JSON.parse(
-              event.data
-            );
 
+/*
+ScriptProcessor é usado aqui para
+manter o arquivo simples e compatível
+com navegadores modernos.
+*/
 
-          if (
-            data.audio
-          ) {
+processor =
+audioContext.createScriptProcessor(
+4096,
+1,
+1
+);
 
-            playBase64Audio(
-              data.audio
-            );
 
-          }
+processor.onaudioprocess =
+function(event){
 
-        } catch (error) {
+if(!socket ||
+socket.readyState !== WebSocket.OPEN){
 
-          console.log(
-            "Erro no áudio:",
-            error
-          );
+return;
 
-        }
+}
 
-      };
 
+const input =
+event.inputBuffer.getChannelData(0);
 
-    audioEventSource.onerror =
-      function() {
 
-        console.log(
-          "Stream de áudio desconectado."
-        );
+/*
+O Agent está configurado para PCM 16 kHz.
+*/
 
-      };
+const pcm16 =
+downsampleTo16k(
+input,
+audioContext.sampleRate
+);
 
-  }
 
+if(!pcm16.length){
+return;
+}
 
-  // =====================================================
-  // ATIVAR ÁUDIO
-  // =====================================================
 
-  async function enableAudio() {
+const base64 =
+arrayBufferToBase64(
+pcm16.buffer
+);
 
-    try {
 
-      if (!audioContext) {
+const packet =
+{
 
-        audioContext =
-          new (
-            window.AudioContext ||
-            window.webkitAudioContext
-          )();
+user_audio_chunk:
+base64
 
-      }
+};
 
 
-      if (
-        audioContext.state ===
-        "suspended"
-      ) {
+socket.send(
+JSON.stringify(packet)
+);
 
-        await audioContext.resume();
+};
 
-      }
 
+source.connect(
+processor
+);
 
-      audioEnabled =
-        true;
+processor.connect(
+audioContext.destination
+);
 
+}
 
-      audioButton.textContent =
-        "🔊 Áudio ativado";
 
-      audioButton.disabled =
-        true;
+/* =====================================================
+DOWNSAMPLE
+===================================================== */
 
+function downsampleTo16k(
+buffer,
+sampleRate
+){
 
-      showMessage(
-        "🔊 Áudio da tradução ativado."
-      );
+if(sampleRate === 16000){
 
-    } catch (error) {
+const output =
+new Int16Array(
+buffer.length
+);
 
-      showMessage(
-        "Não foi possível ativar o áudio: "
-        + error.message
-      );
+for(
+let i=0;
+i<buffer.length;
+i++
+){
 
-    }
+let sample =
+Math.max(
+-1,
+Math.min(
+1,
+buffer[i]
+)
+);
 
-  }
+output[i] =
+sample < 0
+? sample * 0x8000
+: sample * 0x7fff;
 
+}
 
-  // =====================================================
-  // REPRODUZIR ÁUDIO BASE64
-  // =====================================================
+return output;
 
-  async function playBase64Audio(
-    base64
-  ) {
+}
 
-    if (!audioEnabled) {
-      return;
-    }
 
-    try {
+const ratio =
+sampleRate / 16000;
 
-      if (!audioContext) {
+const newLength =
+Math.round(
+buffer.length / ratio
+);
 
-        audioContext =
-          new (
-            window.AudioContext ||
-            window.webkitAudioContext
-          )();
+const result =
+new Int16Array(
+newLength
+);
 
-      }
+let offsetResult=0;
+let offsetBuffer=0;
 
 
-      if (
-        audioContext.state ===
-        "suspended"
-      ) {
+while(
+offsetResult <
+result.length
+){
 
-        await audioContext.resume();
+const nextOffsetBuffer =
+Math.round(
+(offsetResult + 1) *
+ratio
+);
 
-      }
+let accum=0;
+let count=0;
 
 
-      const binary =
-        atob(base64);
+for(
+let i=offsetBuffer;
+i<nextOffsetBuffer &&
+i<buffer.length;
+i++
+){
 
-      const bytes =
-        new Uint8Array(
-          binary.length
-        );
+accum += buffer[i];
+count++;
 
+}
 
-      for (
-        let i = 0;
-        i < binary.length;
-        i++
-      ) {
 
-        bytes[i] =
-          binary.charCodeAt(i);
+const sample =
+count
+? accum/count
+: 0;
 
-      }
 
+const clamped =
+Math.max(
+-1,
+Math.min(
+1,
+sample
+)
+);
 
-      /*
-        O Agent está configurado
-        para PCM 16 kHz mono.
 
-        Cada amostra possui
-        16 bits = 2 bytes.
-      */
+result[offsetResult++] =
+clamped < 0
+? clamped * 0x8000
+: clamped * 0x7fff;
 
-      const sampleRate =
-        16000;
 
-      const samples =
-        new Int16Array(
-          bytes.buffer
-        );
+offsetBuffer =
+nextOffsetBuffer;
 
+}
 
-      const audioBuffer =
-        audioContext.createBuffer(
-          1,
-          samples.length,
-          sampleRate
-        );
+return result;
 
+}
 
-      const channel =
-        audioBuffer.getChannelData(
-          0
-        );
 
+/* =====================================================
+ARRAY BUFFER → BASE64
+===================================================== */
 
-      for (
-        let i = 0;
-        i < samples.length;
-        i++
-      ) {
+function arrayBufferToBase64(
+buffer
+){
 
-        channel[i] =
-          samples[i] / 32768;
+const bytes =
+new Uint8Array(buffer);
 
-      }
+let binary="";
 
+const chunkSize=0x8000;
 
-      const source =
-        audioContext.createBufferSource();
+for(
+let i=0;
+i<bytes.length;
+i+=chunkSize
+){
 
+const chunk =
+bytes.subarray(
+i,
+Math.min(
+i+chunkSize,
+bytes.length
+)
+);
 
-      source.buffer =
-        audioBuffer;
+binary +=
+String.fromCharCode(
+...chunk
+);
 
+}
 
-      source.connect(
-        audioContext.destination
-      );
+return btoa(binary);
 
+}
 
-      source.start();
 
-    } catch (error) {
+/* =====================================================
+RECEBER ELEVENLABS
+===================================================== */
 
-      console.log(
-        "Erro reproduzindo áudio:",
-        error
-      );
+function handleElevenMessage(
+raw
+){
 
-    }
+try{
 
-  }
+const data =
+JSON.parse(raw);
 
 
-  // =====================================================
-  // PARAR LIVE
-  // =====================================================
+if(
+data.type ===
+"conversation_initiation_metadata"
+){
 
-  async function stopLive() {
+showMessage(
+"🟢 ElevenLabs conectado. Recebendo áudio..."
+);
 
-    if (!liveId) {
+return;
 
-      resetInterface();
+}
 
-      return;
 
-    }
+if(
+data.type ===
+"user_transcript"
+){
 
+const text =
+data.user_transcription_event
+?.user_transcript;
 
-    try {
+if(text){
 
-      await fetch(
-        BACKEND_URL +
-        "/api/youtube-live/" +
-        encodeURIComponent(
-          liveId
-        ) +
-        "/stop",
-        {
-          method: "POST"
-        }
-      );
+translation.textContent =
+text;
 
-    } catch (error) {
+}
 
-      console.log(
-        error
-      );
+return;
 
-    }
+}
 
 
-    if (statusTimer) {
+if(
+data.type ===
+"agent_response"
+){
 
-      clearInterval(
-        statusTimer
-      );
+const text =
+data.agent_response_event
+?.agent_response;
 
-      statusTimer =
-        null;
+if(text){
 
-    }
+translation.textContent =
+text;
 
+}
 
-    if (audioEventSource) {
+return;
 
-      audioEventSource.close();
+}
 
-      audioEventSource =
-        null;
 
-    }
+if(
+data.type ===
+"audio"
+){
 
+const audio =
+data.audio_event
+?.audio_base_64;
 
-    liveId =
-      null;
+if(audio){
 
+queueAudio(
+audio
+);
 
-    resetInterface();
+}
 
-  }
+return;
 
+}
 
-  // =====================================================
-  // RESET
-  // =====================================================
 
-  function resetInterface() {
+if(
+data.type ===
+"ping"
+){
 
-    startButton.disabled =
-      false;
+if(
+socket &&
+socket.readyState ===
+WebSocket.OPEN
+){
 
-    stopButton.disabled =
-      true;
+socket.send(
+JSON.stringify({
+type:"pong"
+})
+);
 
-    audioButton.disabled =
-      true;
+}
 
-    audioButton.textContent =
-      "🔊 Ativar áudio";
+return;
 
-    audioEnabled =
-      false;
+}
 
 
-    showMessage(
-      "Live parada."
-    );
+if(
+data.type ===
+"error"
+){
 
+console.error(
+"ElevenLabs:",
+data
+);
 
-    translation.textContent =
-      "A tradução aparecerá aqui...";
+showMessage(
+"❌ ElevenLabs: "
++
+(
+data.message ||
+"erro"
+)
+);
 
-  }
+}
 
+}catch(error){
 
-  // =====================================================
-  // INICIAR
-  // =====================================================
+console.error(
+"Erro lendo mensagem ElevenLabs:",
+error
+);
 
-  checkServer();
+}
+
+}
+
+
+/* =====================================================
+FILA DE ÁUDIO
+===================================================== */
+
+function queueAudio(
+base64
+){
+
+audioQueue.push(
+base64
+);
+
+if(!playingAudio){
+
+playNextAudio();
+
+}
+
+}
+
+
+/* =====================================================
+REPRODUZIR ÁUDIO
+===================================================== */
+
+async function playNextAudio(){
+
+if(!audioQueue.length){
+
+playingAudio=false;
+return;
+
+}
+
+playingAudio=true;
+
+const base64 =
+audioQueue.shift();
+
+try{
+
+const binary =
+atob(base64);
+
+const bytes =
+new Uint8Array(
+binary.length
+);
+
+
+for(
+let i=0;
+i<binary.length;
+i++
+){
+
+bytes[i] =
+binary.charCodeAt(i);
+
+}
+
+
+/*
+PCM 16 kHz mono.
+*/
+
+const samples =
+new Int16Array(
+bytes.buffer
+);
+
+
+if(!audioContext){
+
+audioContext =
+new (
+window.AudioContext ||
+window.webkitAudioContext
+)();
+
+}
+
+
+if(
+audioContext.state ===
+"suspended"
+){
+
+await audioContext.resume();
+
+}
+
+
+const buffer =
+audioContext.createBuffer(
+1,
+samples.length,
+16000
+);
+
+
+const channel =
+buffer.getChannelData(0);
+
+
+for(
+let i=0;
+i<samples.length;
+i++
+){
+
+channel[i] =
+samples[i] /
+32768;
+
+}
+
+
+const source =
+audioContext.createBufferSource();
+
+source.buffer =
+buffer;
+
+source.connect(
+audioContext.destination
+);
+
+
+source.onended =
+function(){
+
+playNextAudio();
+
+};
+
+
+source.start();
+
+}catch(error){
+
+console.error(
+"Erro reproduzindo áudio:",
+error
+);
+
+playNextAudio();
+
+}
+
+}
+
+
+/* =====================================================
+PARAR
+===================================================== */
+
+async function stopLive(){
+
+running=false;
+
+if(processor){
+
+try{
+processor.disconnect();
+}catch(e){}
+
+processor=null;
+
+}
+
+
+if(audioContext){
+
+try{
+await audioContext.close();
+}catch(e){}
+
+audioContext=null;
+
+}
+
+
+if(captureStream){
+
+captureStream
+.getTracks()
+.forEach(
+track=>track.stop()
+);
+
+captureStream=null;
+
+}
+
+
+if(socket){
+
+try{
+socket.close();
+}catch(e){}
+
+socket=null;
+
+}
+
+
+if(liveId){
+
+try{
+
+await fetch(
+BACKEND_URL +
+"/api/youtube-live/" +
+encodeURIComponent(
+liveId
+) +
+"/stop",
+{
+method:"POST"
+}
+);
+
+}catch(e){}
+
+}
+
+
+liveId=null;
+
+resetInterface();
+
+}
+
+
+/* =====================================================
+RESET
+===================================================== */
+
+function resetInterface(){
+
+startButton.disabled=false;
+stopButton.disabled=true;
+audioButton.disabled=true;
+
+translation.textContent =
+"A tradução aparecerá aqui...";
+
+showMessage(
+"Live parada."
+);
+
+}
+
+
+/* =====================================================
+INÍCIO
+===================================================== */
+
+checkServer();
 
 </script>
 
