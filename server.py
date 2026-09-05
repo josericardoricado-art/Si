@@ -1,48 +1,63 @@
 import os
 import uuid
 import time
-import base64
 import threading
+import base64
+import io
 
 import requests
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 
 
 # =========================================================
-# APP
+# SI TRADUTOR LIVE
+# YouTube Live → Áudio do navegador → Tradução → ElevenLabs
+# =========================================================
+
+
+# =========================================================
+# FLASK
 # =========================================================
 
 app = Flask(__name__)
-CORS(app)
+
+CORS(
+    app,
+    resources={
+        r"/*": {
+            "origins": "*"
+        }
+    }
+)
 
 
 # =========================================================
-# CONFIGURAÇÃO
+# CONFIGURAÇÕES
 # =========================================================
 
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "").strip()
+ELEVENLABS_API_KEY = os.getenv(
+    "ELEVENLABS_API_KEY",
+    ""
+).strip()
+
 
 AGENT_ID = os.getenv(
     "AGENT_ID",
     "agent_1601m1q929bhf2zvts65479fyzdw"
 ).strip()
 
+
 VOICE_ID = os.getenv(
     "VOICE_ID",
     "cjVigY5qzO86Huf0OWal"
 ).strip()
 
-PORT = int(os.getenv("PORT", "10000"))
 
-
-# =========================================================
-# TRABALHOS
-# =========================================================
-
-jobs = {}
-jobs_lock = threading.Lock()
+ELEVENLABS_BASE_URL = (
+    "https://api.elevenlabs.io/v1"
+)
 
 
 # =========================================================
@@ -64,11 +79,31 @@ ALLOWED_LANGUAGES = {
 
 
 # =========================================================
+# MEMÓRIA DOS TRABALHOS
+# =========================================================
+
+jobs = {}
+
+jobs_lock = threading.Lock()
+
+
+# =========================================================
+# ÁUDIO GERADO
+# =========================================================
+
+audio_cache = {}
+
+audio_lock = threading.Lock()
+
+
+# =========================================================
 # HEADERS ELEVENLABS
 # =========================================================
 
-def eleven_headers():
+def elevenlabs_headers():
+
     if not ELEVENLABS_API_KEY:
+
         raise Exception(
             "ELEVENLABS_API_KEY não configurada no Render."
         )
@@ -83,69 +118,497 @@ def eleven_headers():
 # ATUALIZAR JOB
 # =========================================================
 
-def update_job(job_id, **values):
+def update_job(
+    job_id,
+    **values
+):
 
     with jobs_lock:
 
         if job_id in jobs:
-            jobs[job_id].update(values)
+
+            jobs[job_id].update(
+                values
+            )
 
 
 # =========================================================
-# HEALTH
+# CRIAR JOB
+# =========================================================
+
+def create_job(
+    youtube_url,
+    youtube_id,
+    target_lang
+):
+
+    job_id = str(
+        uuid.uuid4()
+    )
+
+    job = {
+
+        "liveId": job_id,
+
+        "youtubeUrl":
+            youtube_url,
+
+        "youtubeId":
+            youtube_id,
+
+        "targetLang":
+            target_lang,
+
+        "status":
+            "waiting_audio",
+
+        "audioCapture":
+            "waiting",
+
+        "translationStatus":
+            "waiting",
+
+        "lastTranscript":
+            "",
+
+        "lastTranslation":
+            "",
+
+        "audioReady":
+            False,
+
+        "message":
+            "Aguardando áudio do navegador.",
+
+        "error":
+            None,
+
+        "createdAt":
+            time.time(),
+
+        "updatedAt":
+            time.time()
+    }
+
+    with jobs_lock:
+
+        jobs[job_id] = job
+
+    return job_id
+
+
+# =========================================================
+# EXTRAIR ID DO YOUTUBE
+# =========================================================
+
+def extract_youtube_id(url):
+
+    if not url:
+        return None
+
+    url = url.strip()
+
+    patterns = [
+
+        "/live/",
+
+        "watch?v=",
+
+        "youtu.be/",
+
+        "/embed/",
+
+        "youtube.com/shorts/"
+
+    ]
+
+    for pattern in patterns:
+
+        if pattern not in url:
+
+            continue
+
+        value = url.split(
+            pattern,
+            1
+        )[1]
+
+        value = value.split(
+            "?",
+            1
+        )[0]
+
+        value = value.split(
+            "&",
+            1
+        )[0]
+
+        value = value.split(
+            "/",
+            1
+        )[0]
+
+        if value:
+
+            return value
+
+    return None
+
+
+# =========================================================
+# SIGNED URL ELEVENLABS
+# =========================================================
+
+def get_agent_signed_url():
+
+    if not ELEVENLABS_API_KEY:
+
+        raise Exception(
+            "ELEVENLABS_API_KEY não configurada."
+        )
+
+    if not AGENT_ID:
+
+        raise Exception(
+            "AGENT_ID não configurado."
+        )
+
+    url = (
+        ELEVENLABS_BASE_URL
+        + "/convai/conversation/get-signed-url"
+    )
+
+    response = requests.get(
+
+        url,
+
+        headers={
+            "xi-api-key":
+                ELEVENLABS_API_KEY
+        },
+
+        params={
+            "agent_id":
+                AGENT_ID
+        },
+
+        timeout=30
+    )
+
+    if not response.ok:
+
+        raise Exception(
+            "ElevenLabs erro "
+            + str(response.status_code)
+            + ": "
+            + response.text
+        )
+
+    data = response.json()
+
+    signed_url = data.get(
+        "signed_url"
+    )
+
+    if not signed_url:
+
+        raise Exception(
+            "ElevenLabs não retornou signed_url."
+        )
+
+    return signed_url
+
+
+# =========================================================
+# GERAR ÁUDIO COM ELEVENLABS
+# =========================================================
+
+def generate_elevenlabs_audio(
+    text
+):
+
+    if not text:
+
+        raise Exception(
+            "Texto vazio para geração de áudio."
+        )
+
+    if not ELEVENLABS_API_KEY:
+
+        raise Exception(
+            "ELEVENLABS_API_KEY não configurada."
+        )
+
+    if not VOICE_ID:
+
+        raise Exception(
+            "VOICE_ID não configurado."
+        )
+
+    url = (
+        ELEVENLABS_BASE_URL
+        + "/text-to-speech/"
+        + VOICE_ID
+    )
+
+    payload = {
+
+        "text":
+            text,
+
+        "model_id":
+            "eleven_multilingual_v2",
+
+        "voice_settings": {
+
+            "stability":
+                0.5,
+
+            "similarity_boost":
+                0.75
+        }
+    }
+
+    headers = {
+        "xi-api-key":
+            ELEVENLABS_API_KEY,
+
+        "Content-Type":
+            "application/json",
+
+        "Accept":
+            "audio/mpeg"
+    }
+
+    response = requests.post(
+
+        url,
+
+        json=payload,
+
+        headers=headers,
+
+        timeout=90
+    )
+
+    if not response.ok:
+
+        raise Exception(
+            "ElevenLabs TTS erro "
+            + str(response.status_code)
+            + ": "
+            + response.text
+        )
+
+    if not response.content:
+
+        raise Exception(
+            "ElevenLabs não retornou áudio."
+        )
+
+    return response.content
+
+
+# =========================================================
+# TESTAR ELEVENLABS
+# =========================================================
+
+def test_elevenlabs():
+
+    if not ELEVENLABS_API_KEY:
+
+        return False, (
+            "ELEVENLABS_API_KEY não configurada."
+        )
+
+    try:
+
+        response = requests.get(
+
+            ELEVENLABS_BASE_URL
+            + "/user",
+
+            headers={
+                "xi-api-key":
+                    ELEVENLABS_API_KEY
+            },
+
+            timeout=20
+        )
+
+        if response.ok:
+
+            return True, "ElevenLabs conectado."
+
+        return False, (
+            "ElevenLabs retornou "
+            + str(response.status_code)
+        )
+
+    except Exception as error:
+
+        return False, str(error)
+
+
+# =========================================================
+# HOME
 # =========================================================
 
 @app.get("/")
 def home():
 
     return jsonify({
-        "ok": True,
-        "service": "SI Tradutor Live",
-        "provider": "ElevenLabs",
-        "agent_id": AGENT_ID,
-        "voice_id": VOICE_ID,
-        "message": "Servidor funcionando."
+
+        "ok":
+            True,
+
+        "service":
+            "SI Tradutor Live",
+
+        "provider":
+            "ElevenLabs",
+
+        "agent_id":
+            AGENT_ID,
+
+        "voice_id":
+            VOICE_ID,
+
+        "architecture":
+            "YouTube Browser Audio → Render → ElevenLabs",
+
+        "message":
+            "Servidor funcionando."
+
     })
 
+
+# =========================================================
+# HEALTH
+# =========================================================
 
 @app.get("/api/health")
 def health():
 
+    eleven_ok, eleven_message = (
+        test_elevenlabs()
+    )
+
     return jsonify({
-        "ok": True,
-        "service": "SI Tradutor Live",
-        "provider": "ElevenLabs",
-        "elevenlabs": bool(ELEVENLABS_API_KEY),
-        "agent_id": AGENT_ID,
-        "voice_id": VOICE_ID,
-        "message": "Servidor funcionando."
-    })
+
+        "ok":
+            eleven_ok,
+
+        "server":
+            True,
+
+        "elevenlabs":
+            eleven_ok,
+
+        "message":
+            eleven_message,
+
+        "provider":
+            "ElevenLabs",
+
+        "service":
+            "SI Tradutor Live",
+
+        "agent_id":
+            AGENT_ID,
+
+        "voice_id":
+            VOICE_ID
+
+    }), (200 if eleven_ok else 500)
 
 
 # =========================================================
-# CONFIGURAÇÃO
+# AGENT
 # =========================================================
 
-@app.get("/api/config")
-def config():
+@app.get("/api/agent")
+def agent():
 
-    return jsonify({
-        "ok": True,
-        "service": "SI Tradutor Live",
-        "agent_id": AGENT_ID,
-        "voice_id": VOICE_ID,
-        "languages": sorted(
-            list(ALLOWED_LANGUAGES)
+    try:
+
+        signed_url = (
+            get_agent_signed_url()
         )
-    })
+
+        return jsonify({
+
+            "ok":
+                True,
+
+            "agent_id":
+                AGENT_ID,
+
+            "signed_url":
+                signed_url
+
+        })
+
+    except Exception as error:
+
+        return jsonify({
+
+            "ok":
+                False,
+
+            "error":
+                str(error)
+
+        }), 500
 
 
 # =========================================================
-# CRIAR SESSÃO
+# SIGNED URL
 # =========================================================
 
-@app.post("/api/session")
-def create_session():
+@app.get(
+    "/api/elevenlabs/signed-url"
+)
+def elevenlabs_signed_url():
+
+    try:
+
+        signed_url = (
+            get_agent_signed_url()
+        )
+
+        return jsonify({
+
+            "ok":
+                True,
+
+            "agent_id":
+                AGENT_ID,
+
+            "signed_url":
+                signed_url
+
+        })
+
+    except Exception as error:
+
+        return jsonify({
+
+            "ok":
+                False,
+
+            "error":
+                str(error)
+
+        }), 500
+
+
+# =========================================================
+# INICIAR LIVE
+# =========================================================
+
+@app.post("/api/youtube-live")
+def youtube_live():
 
     data = (
         request.get_json(
@@ -154,6 +617,13 @@ def create_session():
         or {}
     )
 
+    youtube_url = str(
+        data.get(
+            "url",
+            ""
+        )
+    ).strip()
+
     target_lang = str(
         data.get(
             "targetLang",
@@ -161,161 +631,128 @@ def create_session():
         )
     ).strip().lower()
 
-    youtube_url = str(
-        data.get(
-            "youtubeUrl",
-            ""
+
+    if not youtube_url:
+
+        return jsonify({
+
+            "ok":
+                False,
+
+            "error":
+                "Cole o link da YouTube Live."
+
+        }), 400
+
+
+    youtube_id = (
+        extract_youtube_id(
+            youtube_url
         )
-    ).strip()
+    )
+
+
+    if not youtube_id:
+
+        return jsonify({
+
+            "ok":
+                False,
+
+            "error":
+                "Link do YouTube inválido."
+
+        }), 400
+
 
     if target_lang not in ALLOWED_LANGUAGES:
 
         return jsonify({
-            "ok": False,
-            "error": "Idioma não suportado."
+
+            "ok":
+                False,
+
+            "error":
+                "Idioma não suportado."
+
         }), 400
 
-    session_id = str(
-        uuid.uuid4()
+
+    live_id = create_job(
+
+        youtube_url,
+
+        youtube_id,
+
+        target_lang
+
     )
 
-    with jobs_lock:
-
-        jobs[session_id] = {
-
-            "sessionId": session_id,
-
-            "youtubeUrl": youtube_url,
-
-            "targetLang": target_lang,
-
-            "status": "ready",
-
-            "audioCapture": "waiting",
-
-            "lastTranscript": "",
-
-            "lastTranslation": "",
-
-            "audio": None,
-
-            "error": None,
-
-            "createdAt": time.time()
-
-        }
 
     return jsonify({
 
-        "ok": True,
+        "ok":
+            True,
 
-        "sessionId": session_id,
+        "liveId":
+            live_id,
 
-        "targetLang": target_lang,
+        "youtubeId":
+            youtube_id,
 
-        "status": "ready",
+        "targetLang":
+            target_lang,
 
-        "message": "Sessão criada."
+        "status":
+            "waiting_audio",
+
+        "audioCapture":
+            "waiting",
+
+        "message":
+            "Live criada. "
+            "Aguardando áudio capturado pelo navegador."
 
     })
 
 
 # =========================================================
-# STATUS
+# RECEBER ÁUDIO DO NAVEGADOR
 # =========================================================
 
-@app.get("/api/session/<session_id>")
-def session_status(session_id):
+@app.post(
+    "/api/youtube-live/<live_id>/audio"
+)
+def receive_audio(
+    live_id
+):
 
     with jobs_lock:
 
         job = jobs.get(
-            session_id
+            live_id
         )
 
         if job:
+
             job = dict(job)
 
-    if not job:
-
-        return jsonify({
-            "ok": False,
-            "error": "Sessão não encontrada."
-        }), 404
-
-    return jsonify({
-        "ok": True,
-        **job
-    })
-
-
-# =========================================================
-# INICIAR CAPTURA
-# =========================================================
-
-@app.post("/api/session/<session_id>/start")
-def start_session(session_id):
-
-    with jobs_lock:
-
-        job = jobs.get(
-            session_id
-        )
-
-        if not job:
-
-            return jsonify({
-                "ok": False,
-                "error": "Sessão não encontrada."
-            }), 404
-
-        job["status"] = "capturing"
-
-        job["audioCapture"] = "running"
-
-        job["message"] = (
-            "Recebendo áudio do navegador."
-        )
-
-    return jsonify({
-
-        "ok": True,
-
-        "sessionId": session_id,
-
-        "status": "capturing",
-
-        "audioCapture": "running",
-
-        "message":
-            "Captura de áudio iniciada."
-
-    })
-
-
-# =========================================================
-# RECEBER ÁUDIO
-# =========================================================
-
-@app.post("/api/session/<session_id>/audio")
-def receive_audio(session_id):
-
-    with jobs_lock:
-
-        job = jobs.get(
-            session_id
-        )
 
     if not job:
 
         return jsonify({
-            "ok": False,
-            "error": "Sessão não encontrada."
+
+            "ok":
+                False,
+
+            "error":
+                "Live não encontrada."
+
         }), 404
 
 
     # -----------------------------------------------------
-    # Verificar arquivo
+    # OPÇÃO 1 — arquivo multipart
     # -----------------------------------------------------
 
     audio_file = request.files.get(
@@ -325,245 +762,409 @@ def receive_audio(session_id):
 
     if audio_file:
 
-        audio_bytes = audio_file.read()
-
-        if not audio_bytes:
-
-            return jsonify({
-                "ok": False,
-                "error": "Áudio vazio."
-            }), 400
-
-        audio_size = len(
-            audio_bytes
-        )
-
-        update_job(
-            session_id,
-            audioCapture="running",
-            lastAudioSize=audio_size,
-            lastAudioAt=time.time(),
-            message="Áudio recebido."
-        )
-
-        return jsonify({
-
-            "ok": True,
-
-            "sessionId":
-                session_id,
-
-            "received": True,
-
-            "bytes":
-                audio_size,
-
-            "message":
-                "Bloco de áudio recebido."
-
-        })
-
-
-    # -----------------------------------------------------
-    # Base64
-    # -----------------------------------------------------
-
-    data = (
-        request.get_json(
-            silent=True
-        )
-        or {}
-    )
-
-    audio_base64 = data.get(
-        "audio"
-    )
-
-
-    if audio_base64:
-
         try:
 
-            audio_bytes = base64.b64decode(
-                audio_base64
+            audio_data = (
+                audio_file.read()
             )
 
-        except Exception:
+        except Exception as error:
 
             return jsonify({
-                "ok": False,
-                "error": "Áudio Base64 inválido."
+
+                "ok":
+                    False,
+
+                "error":
+                    "Erro lendo áudio: "
+                    + str(error)
+
             }), 400
-
-
-        update_job(
-            session_id,
-            audioCapture="running",
-            lastAudioSize=len(audio_bytes),
-            lastAudioAt=time.time(),
-            message="Áudio recebido."
-        )
-
-
-        return jsonify({
-
-            "ok": True,
-
-            "sessionId":
-                session_id,
-
-            "received": True,
-
-            "bytes":
-                len(audio_bytes),
-
-            "message":
-                "Bloco de áudio recebido."
-
-        })
-
-
-    return jsonify({
-
-        "ok": False,
-
-        "error":
-            "Envie um arquivo no campo 'audio'."
-
-    }), 400
-
-
-# =========================================================
-# TEXTO PARA TRADUÇÃO
-# =========================================================
-#
-# Este endpoint recebe texto transcrito.
-# Depois podemos conectar Whisper/Google/Deepgram/etc.
-#
-# =========================================================
-
-@app.post("/api/session/<session_id>/text")
-def receive_text(session_id):
-
-    with jobs_lock:
-
-        job = jobs.get(
-            session_id
-        )
-
-    if not job:
-
-        return jsonify({
-            "ok": False,
-            "error": "Sessão não encontrada."
-        }), 404
-
-
-    data = (
-        request.get_json(
-            silent=True
-        )
-        or {}
-    )
-
-
-    text = str(
-        data.get(
-            "text",
-            ""
-        )
-    ).strip()
-
-
-    if not text:
-
-        return jsonify({
-            "ok": False,
-            "error": "Texto vazio."
-        }), 400
-
-
-    update_job(
-        session_id,
-        lastTranscript=text,
-        status="translating",
-        message="Texto recebido."
-    )
-
-
-    # -----------------------------------------------------
-    # Nesta primeira versão, se o texto já estiver em
-    # português, devolvemos o próprio texto.
-    #
-    # A etapa de tradução automática será conectada
-    # posteriormente ao motor de tradução.
-    # -----------------------------------------------------
-
-    target_lang = job.get(
-        "targetLang",
-        "pt"
-    )
-
-
-    if target_lang == "pt":
-
-        translated = text
 
     else:
 
-        translated = text
+        # -------------------------------------------------
+        # OPÇÃO 2 — JSON base64
+        # -------------------------------------------------
+
+        data = (
+            request.get_json(
+                silent=True
+            )
+            or {}
+        )
+
+        audio_base64 = data.get(
+            "audio"
+        )
+
+        if not audio_base64:
+
+            return jsonify({
+
+                "ok":
+                    False,
+
+                "error":
+                    "Nenhum áudio recebido."
+
+            }), 400
+
+        try:
+
+            if "," in audio_base64:
+
+                audio_base64 = (
+                    audio_base64.split(
+                        ",",
+                        1
+                    )[1]
+                )
+
+            audio_data = (
+                base64.b64decode(
+                    audio_base64
+                )
+            )
+
+        except Exception as error:
+
+            return jsonify({
+
+                "ok":
+                    False,
+
+                "error":
+                    "Áudio base64 inválido: "
+                    + str(error)
+
+            }), 400
+
+
+    if not audio_data:
+
+        return jsonify({
+
+            "ok":
+                False,
+
+            "error":
+                "O áudio recebido está vazio."
+
+        }), 400
+
+
+    # -----------------------------------------------------
+    # Limite de segurança
+    # -----------------------------------------------------
+
+    max_audio_size = (
+        8 * 1024 * 1024
+    )
+
+    if len(audio_data) > max_audio_size:
+
+        return jsonify({
+
+            "ok":
+                False,
+
+            "error":
+                "Arquivo de áudio muito grande."
+
+        }), 413
+
+
+    # -----------------------------------------------------
+    # Guardar último áudio
+    # -----------------------------------------------------
+
+    with audio_lock:
+
+        audio_cache[live_id] = {
+
+            "data":
+                audio_data,
+
+            "content_type":
+                request.files.get(
+                    "audio"
+                ).content_type
+                if request.files.get("audio")
+                else "audio/webm",
+
+            "createdAt":
+                time.time()
+        }
 
 
     update_job(
 
-        session_id,
+        live_id,
 
-        lastTranslation=translated,
+        status="audio_received",
 
-        status="running",
+        audioCapture="running",
 
-        message="Tradução processada."
+        message="Áudio recebido do navegador.",
+
+        audioReady=True,
+
+        updatedAt=time.time()
 
     )
 
 
     return jsonify({
 
-        "ok": True,
+        "ok":
+            True,
 
-        "sessionId":
-            session_id,
+        "liveId":
+            live_id,
 
-        "original":
-            text,
+        "audioCapture":
+            "running",
 
-        "translation":
-            translated,
+        "bytes":
+            len(audio_data),
 
-        "targetLang":
-            target_lang
+        "message":
+            "Áudio recebido."
 
     })
 
 
 # =========================================================
-# TEXT-TO-SPEECH ELEVENLABS
+# OBTER ÚLTIMO ÁUDIO
 # =========================================================
 
-@app.post("/api/session/<session_id>/tts")
-def text_to_speech(session_id):
+@app.get(
+    "/api/youtube-live/<live_id>/audio"
+)
+def get_audio(
+    live_id
+):
+
+    with audio_lock:
+
+        audio = audio_cache.get(
+            live_id
+        )
+
+        if audio:
+
+            audio = dict(audio)
+
+
+    if not audio:
+
+        return jsonify({
+
+            "ok":
+                False,
+
+            "error":
+                "Nenhum áudio disponível."
+
+        }), 404
+
+
+    return Response(
+
+        audio["data"],
+
+        mimetype=audio.get(
+            "content_type",
+            "audio/webm"
+        ),
+
+        headers={
+
+            "Cache-Control":
+                "no-cache",
+
+            "X-Live-ID":
+                live_id
+        }
+
+    )
+
+
+# =========================================================
+# STATUS
+# =========================================================
+
+@app.get(
+    "/api/youtube-live/<live_id>"
+)
+def youtube_live_status(
+    live_id
+):
 
     with jobs_lock:
 
         job = jobs.get(
-            session_id
+            live_id
         )
+
+        if job:
+
+            job = dict(job)
+
 
     if not job:
 
         return jsonify({
-            "ok": False,
-            "error": "Sessão não encontrada."
+
+            "ok":
+                False,
+
+            "error":
+                "Live não encontrada."
+
+        }), 404
+
+
+    return jsonify({
+
+        "ok":
+            True,
+
+        **job
+
+    })
+
+
+# =========================================================
+# ATUALIZAR TEXTO DA TRADUÇÃO
+# =========================================================
+
+@app.post(
+    "/api/youtube-live/<live_id>/translation"
+)
+def update_translation(
+    live_id
+):
+
+    with jobs_lock:
+
+        if live_id not in jobs:
+
+            return jsonify({
+
+                "ok":
+                    False,
+
+                "error":
+                    "Live não encontrada."
+
+            }), 404
+
+
+    data = (
+        request.get_json(
+            silent=True
+        )
+        or {}
+    )
+
+
+    transcript = str(
+        data.get(
+            "transcript",
+            ""
+        )
+    ).strip()
+
+
+    translation = str(
+        data.get(
+            "translation",
+            ""
+        )
+    ).strip()
+
+
+    if transcript:
+
+        update_job(
+
+            live_id,
+
+            lastTranscript=
+                transcript
+
+        )
+
+
+    if translation:
+
+        update_job(
+
+            live_id,
+
+            lastTranslation=
+                translation,
+
+            translationStatus=
+                "translated",
+
+            status=
+                "translating"
+
+        )
+
+
+    return jsonify({
+
+        "ok":
+            True,
+
+        "liveId":
+            live_id,
+
+        "lastTranscript":
+            transcript,
+
+        "lastTranslation":
+            translation
+
+    })
+
+
+# =========================================================
+# GERAR VOZ ELEVENLABS
+# =========================================================
+
+@app.post(
+    "/api/youtube-live/<live_id>/tts"
+)
+def text_to_speech(
+    live_id
+):
+
+    with jobs_lock:
+
+        job = jobs.get(
+            live_id
+        )
+
+        if job:
+
+            job = dict(job)
+
+
+    if not job:
+
+        return jsonify({
+
+            "ok":
+                False,
+
+            "error":
+                "Live não encontrada."
+
         }), 404
 
 
@@ -585,142 +1186,190 @@ def text_to_speech(session_id):
 
     if not text:
 
+        text = str(
+            job.get(
+                "lastTranslation",
+                ""
+            )
+        ).strip()
+
+
+    if not text:
+
         return jsonify({
-            "ok": False,
-            "error": "Texto para voz não informado."
+
+            "ok":
+                False,
+
+            "error":
+                "Nenhum texto para transformar em voz."
+
         }), 400
-
-
-    if not ELEVENLABS_API_KEY:
-
-        return jsonify({
-            "ok": False,
-            "error":
-                "ELEVENLABS_API_KEY não configurada no Render."
-        }), 500
-
-
-    if not VOICE_ID:
-
-        return jsonify({
-            "ok": False,
-            "error":
-                "VOICE_ID não configurado."
-        }), 500
-
-
-    url = (
-        "https://api.elevenlabs.io/v1/text-to-speech/"
-        + VOICE_ID
-    )
-
-
-    payload = {
-
-        "text": text,
-
-        "model_id":
-            "eleven_multilingual_v2",
-
-        "voice_settings": {
-
-            "stability": 0.5,
-
-            "similarity_boost": 0.75
-
-        }
-
-    }
 
 
     try:
 
-        response = requests.post(
+        update_job(
 
-            url,
+            live_id,
 
-            headers={
-                "xi-api-key":
-                    ELEVENLABS_API_KEY,
+            status="generating_audio",
 
-                "Content-Type":
-                    "application/json",
+            message=
+                "Gerando voz com ElevenLabs.",
 
-                "Accept":
-                    "audio/mpeg"
-
-            },
-
-            json=payload,
-
-            timeout=60
+            error=None
 
         )
 
 
-        if not response.ok:
-
-            return jsonify({
-
-                "ok": False,
-
-                "error":
-                    "ElevenLabs retornou "
-                    f"{response.status_code}",
-
-                "details":
-                    response.text
-
-            }), 500
+        audio_data = (
+            generate_elevenlabs_audio(
+                text
+            )
+        )
 
 
-        audio_base64 = base64.b64encode(
-            response.content
-        ).decode("utf-8")
+        audio_id = str(
+            uuid.uuid4()
+        )
+
+
+        with audio_lock:
+
+            audio_cache[
+                audio_id
+            ] = {
+
+                "data":
+                    audio_data,
+
+                "content_type":
+                    "audio/mpeg",
+
+                "createdAt":
+                    time.time()
+            }
 
 
         update_job(
 
-            session_id,
+            live_id,
 
-            status="running",
+            status="ready",
 
-            lastTranslation=text,
+            audioReady=True,
 
-            message="Áudio gerado pela ElevenLabs."
+            translationStatus=
+                "translated",
+
+            message=
+                "Tradução e voz prontas.",
+
+            audioId=
+                audio_id,
+
+            updatedAt=
+                time.time()
 
         )
 
 
         return jsonify({
 
-            "ok": True,
+            "ok":
+                True,
 
-            "sessionId":
-                session_id,
+            "liveId":
+                live_id,
 
-            "voiceId":
-                VOICE_ID,
+            "audioId":
+                audio_id,
 
-            "audio":
-                audio_base64,
+            "text":
+                text,
 
-            "mimeType":
-                "audio/mpeg"
+            "message":
+                "Áudio gerado pela ElevenLabs."
 
         })
 
 
-    except requests.RequestException as error:
+    except Exception as error:
+
+        update_job(
+
+            live_id,
+
+            status="error",
+
+            error=str(error),
+
+            message=
+                "Erro gerando voz com ElevenLabs."
+
+        )
+
 
         return jsonify({
 
-            "ok": False,
+            "ok":
+                False,
 
             "error":
-                f"Erro comunicando com ElevenLabs: {error}"
+                str(error)
 
         }), 500
+
+
+# =========================================================
+# TOCAR ÁUDIO GERADO
+# =========================================================
+
+@app.get(
+    "/api/audio/<audio_id>"
+)
+def serve_generated_audio(
+    audio_id
+):
+
+    with audio_lock:
+
+        audio = audio_cache.get(
+            audio_id
+        )
+
+        if audio:
+
+            audio = dict(audio)
+
+
+    if not audio:
+
+        return jsonify({
+
+            "ok":
+                False,
+
+            "error":
+                "Áudio não encontrado."
+
+        }), 404
+
+
+    return Response(
+
+        audio["data"],
+
+        mimetype="audio/mpeg",
+
+        headers={
+
+            "Cache-Control":
+                "no-cache"
+        }
+
+    )
 
 
 # =========================================================
@@ -728,21 +1377,44 @@ def text_to_speech(session_id):
 # =========================================================
 
 @app.get("/api/voice")
-def test_voice():
+def voice():
+
+    if not ELEVENLABS_API_KEY:
+
+        return jsonify({
+
+            "ok":
+                False,
+
+            "error":
+                "ELEVENLABS_API_KEY não configurada."
+
+        }), 500
+
+
+    if not VOICE_ID:
+
+        return jsonify({
+
+            "ok":
+                False,
+
+            "error":
+                "VOICE_ID não configurado."
+
+        }), 500
+
 
     return jsonify({
 
         "ok":
-            bool(ELEVENLABS_API_KEY),
+            True,
 
         "provider":
             "ElevenLabs",
 
         "voice_id":
             VOICE_ID,
-
-        "agent_id":
-            AGENT_ID,
 
         "message":
             "VOICE_ID configurado."
@@ -751,23 +1423,116 @@ def test_voice():
 
 
 # =========================================================
-# PARAR SESSÃO
+# TESTE TTS
 # =========================================================
 
-@app.post("/api/session/<session_id>/stop")
-def stop_session(session_id):
+@app.post("/api/test-voice")
+def test_voice():
+
+    data = (
+        request.get_json(
+            silent=True
+        )
+        or {}
+    )
+
+
+    text = str(
+        data.get(
+            "text",
+            "Olá! Este é um teste do SI Tradutor Live."
+        )
+    ).strip()
+
+
+    try:
+
+        audio_data = (
+            generate_elevenlabs_audio(
+                text
+            )
+        )
+
+
+        audio_id = str(
+            uuid.uuid4()
+        )
+
+
+        with audio_lock:
+
+            audio_cache[
+                audio_id
+            ] = {
+
+                "data":
+                    audio_data,
+
+                "content_type":
+                    "audio/mpeg",
+
+                "createdAt":
+                    time.time()
+            }
+
+
+        return jsonify({
+
+            "ok":
+                True,
+
+            "audioId":
+                audio_id,
+
+            "voice_id":
+                VOICE_ID,
+
+            "message":
+                "Teste de voz concluído."
+
+        })
+
+
+    except Exception as error:
+
+        return jsonify({
+
+            "ok":
+                False,
+
+            "error":
+                str(error)
+
+        }), 500
+
+
+# =========================================================
+# PARAR LIVE
+# =========================================================
+
+@app.post(
+    "/api/youtube-live/<live_id>/stop"
+)
+def stop_live(
+    live_id
+):
 
     with jobs_lock:
 
         job = jobs.get(
-            session_id
+            live_id
         )
 
         if not job:
 
             return jsonify({
-                "ok": False,
-                "error": "Sessão não encontrada."
+
+                "ok":
+                    False,
+
+                "error":
+                    "Live não encontrada."
+
             }), 404
 
 
@@ -775,23 +1540,133 @@ def stop_session(session_id):
 
         job["audioCapture"] = "stopped"
 
-        job["message"] = "Sessão parada."
+        job["translationStatus"] = "stopped"
+
+        job["audioReady"] = False
+
+        job["message"] = (
+            "Live parada."
+        )
+
+        job["updatedAt"] = (
+            time.time()
+        )
+
+
+    with audio_lock:
+
+        if live_id in audio_cache:
+
+            del audio_cache[
+                live_id
+            ]
 
 
     return jsonify({
 
-        "ok": True,
+        "ok":
+            True,
 
-        "sessionId":
-            session_id,
+        "liveId":
+            live_id,
 
         "status":
             "stopped",
 
         "message":
-            "Sessão parada."
+            "Live parada."
 
     })
+
+
+# =========================================================
+# LIMPEZA AUTOMÁTICA
+# =========================================================
+
+def cleanup_old_jobs():
+
+    while True:
+
+        try:
+
+            now = time.time()
+
+            expired_jobs = []
+
+            with jobs_lock:
+
+                for job_id, job in list(
+                    jobs.items()
+                ):
+
+                    created_at = job.get(
+                        "createdAt",
+                        now
+                    )
+
+                    if (
+                        now - created_at
+                        > 3600
+                    ):
+
+                        expired_jobs.append(
+                            job_id
+                        )
+
+
+                for job_id in expired_jobs:
+
+                    jobs.pop(
+                        job_id,
+                        None
+                    )
+
+
+            with audio_lock:
+
+                for key, value in list(
+                    audio_cache.items()
+                ):
+
+                    created_at = value.get(
+                        "createdAt",
+                        now
+                    )
+
+                    if (
+                        now - created_at
+                        > 3600
+                    ):
+
+                        audio_cache.pop(
+                            key,
+                            None
+                        )
+
+
+        except Exception:
+
+            pass
+
+
+        time.sleep(
+            300
+        )
+
+
+# =========================================================
+# THREAD DE LIMPEZA
+# =========================================================
+
+cleanup_thread = threading.Thread(
+
+    target=cleanup_old_jobs,
+
+    daemon=True
+
+)
+
+cleanup_thread.start()
 
 
 # =========================================================
@@ -800,8 +1675,16 @@ def stop_session(session_id):
 
 if __name__ == "__main__":
 
+    port = int(
+        os.getenv(
+            "PORT",
+            "10000"
+        )
+    )
+
+
     print(
-        "========================================"
+        "======================================"
     )
 
     print(
@@ -809,23 +1692,26 @@ if __name__ == "__main__":
     )
 
     print(
-        "Servidor iniciando..."
+        "Servidor iniciado"
     )
 
     print(
-        f"Porta: {PORT}"
+        "Porta:",
+        port
     )
 
     print(
-        f"Agent ID: {AGENT_ID}"
+        "Agent ID:",
+        AGENT_ID
     )
 
     print(
-        f"Voice ID: {VOICE_ID}"
+        "Voice ID:",
+        VOICE_ID
     )
 
     print(
-        "========================================"
+        "======================================"
     )
 
 
@@ -833,7 +1719,7 @@ if __name__ == "__main__":
 
         host="0.0.0.0",
 
-        port=PORT,
+        port=port,
 
         debug=False
 
