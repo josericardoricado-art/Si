@@ -1,17 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="24dp"
-    android:gravity="center">
+    android:gravity="center"
+    android:padding="24dp">
 
     <TextView
         android:id="@+id/status"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Tradutor IA"
-        android:textSize="24sp"
+        android:text="SI Tradutor"
+        android:textSize="26sp"
         android:textStyle="bold"
         android:layout_marginBottom="30dp" />
 
@@ -19,7 +21,7 @@
         android:id="@+id/startButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Iniciar tradução"
+        android:text="🎙️ Iniciar tradução"
         android:textSize="18sp" />
 
 </LinearLayout>
