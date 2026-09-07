@@ -8,11 +8,20 @@
     android:gravity="center"
     android:padding="24dp">
 
+    <ImageView
+        android:id="@+id/logo"
+        android:layout_width="220dp"
+        android:layout_height="220dp"
+        android:src="@drawable/si_logo"
+        android:contentDescription="SI Tradutor Live"
+        android:scaleType="fitCenter"
+        android:layout_marginBottom="25dp" />
+
     <TextView
         android:id="@+id/status"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="SI Tradutor"
+        android:text="SI Tradutor Live"
         android:textSize="26sp"
         android:textStyle="bold"
         android:layout_marginBottom="30dp" />
