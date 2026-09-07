@@ -1,2 +1,1 @@
-mkdir -p android/app/src/main/res/drawable
-mv android/app/src/main/AndroidManifest.xml android/app/src/main/res/drawable/ic_circle.xml
+android:src="@drawable/ic_launcher_foreground"
