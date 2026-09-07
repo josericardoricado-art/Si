@@ -8,13 +8,12 @@ pluginManagement {
 
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-
     repositories {
         google()
         mavenCentral()
     }
 }
 
-rootProject.name = "SITradutor"
+rootProject.name = "SI Tradutor"
 
 include(":app")
