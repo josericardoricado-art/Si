@@ -5,10 +5,12 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application
-        android:allowBackup="true"
-        android:label="SI Tradutor"
-        android:supportsRtl="true"
-        android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+    android:allowBackup="true"
+    android:label="SI Tradutor"
+    android:icon="@drawable/si_logo"
+    android:roundIcon="@drawable/si_logo"
+    android:supportsRtl="true"
+    android:theme="@style/Theme.AppCompat.Light.NoActionBar">
 
         <activity
             android:name=".MainActivity"
