@@ -20,6 +20,22 @@ const ADMIN_PASSWORD =
 
 
 /* =====================================
+   ELEVENLABS
+===================================== */
+
+const ELEVENLABS_API_KEY =
+  process.env.ELEVENLABS_API_KEY || "";
+
+const ELEVENLABS_AGENT_ID =
+  process.env.ELEVENLABS_AGENT_ID ||
+  "agent_1601m1q929bhf2zvts65479fyzdw";
+
+const ELEVENLABS_VOICE_ID =
+  process.env.ELEVENLABS_VOICE_ID ||
+  "cjVigY5qzO86Huf0OWal";
+
+
+/* =====================================
    CORS
 ===================================== */
 
@@ -35,7 +51,9 @@ app.use(
     ],
     allowedHeaders: [
       "Content-Type",
-      "Authorization"
+      "Authorization",
+      "X-Admin-Password",
+      "X-Client-Id"
     ]
   })
 );
@@ -47,13 +65,14 @@ app.use(
 
 app.use(
   express.json({
-    limit: "10mb"
+    limit: "20mb"
   })
 );
 
 app.use(
   express.urlencoded({
-    extended: true
+    extended: true,
+    limit: "20mb"
   })
 );
 
@@ -79,7 +98,6 @@ if (
       recursive: true
     }
   );
-
 }
 
 
@@ -101,7 +119,6 @@ const storage =
           null,
           uploadFolder
         );
-
       },
 
     filename:
@@ -129,7 +146,6 @@ const storage =
           null,
           name
         );
-
       }
 
   });
@@ -174,9 +190,7 @@ const upload =
               "Envie somente arquivos de vídeo."
             )
           );
-
         }
-
       }
 
   });
@@ -187,6 +201,28 @@ const upload =
 ===================================== */
 
 const messages = [];
+
+
+/* =====================================
+   SESSÕES DE ÁUDIO
+===================================== */
+
+const audioSessions =
+  new Map();
+
+
+/*
+ * Cada sessão guarda:
+ *
+ * jobId
+ * clientId
+ * targetLang
+ * startedAt
+ * chunks
+ * bytes
+ */
+
+const MAX_AUDIO_SESSIONS = 100;
 
 
 /* =====================================
@@ -202,7 +238,6 @@ function generateId() {
       .toString(36)
       .substring(2, 10)
   );
-
 }
 
 
@@ -224,9 +259,694 @@ app.get(
       message:
         "Servidor online",
 
+      audioCapture:
+        true,
+
+      elevenlabs:
+        Boolean(
+          ELEVENLABS_API_KEY
+        ),
+
       time:
         new Date().toISOString()
+    });
 
+  }
+);
+
+
+/* =====================================
+   CONFIGURAÇÃO DO ÁUDIO
+===================================== */
+
+app.get(
+  "/api/audio/config",
+  function(req, res) {
+
+    res.json({
+
+      ok: true,
+
+      sampleRate:
+        48000,
+
+      channels:
+        1,
+
+      encoding:
+        "PCM_16BIT",
+
+      format:
+        "audio/pcm",
+
+      architecture:
+        "Android AudioPlaybackCapture -> Render -> ElevenLabs",
+
+      message:
+        "Configuração de captura disponível."
+    });
+
+  }
+);
+
+
+/* =====================================
+   INICIAR SESSÃO DE ÁUDIO
+===================================== */
+
+app.post(
+  "/api/audio/start",
+  function(req, res) {
+
+    try {
+
+      const clientId =
+        String(
+          req.body.clientId ||
+          ""
+        ).trim();
+
+      const targetLang =
+        String(
+          req.body.targetLang ||
+          "pt"
+        ).trim();
+
+
+      if (!clientId) {
+
+        return res
+          .status(400)
+          .json({
+
+            ok: false,
+
+            error:
+              "clientId é obrigatório."
+          });
+      }
+
+
+      const allowedLanguages = [
+        "pt",
+        "en",
+        "es",
+        "fr",
+        "de",
+        "it",
+        "ja",
+        "ko",
+        "zh",
+        "ru",
+        "ar",
+        "hi",
+        "tr",
+        "nl",
+        "pl",
+        "uk",
+        "th",
+        "id",
+        "vi"
+      ];
+
+
+      if (
+        !allowedLanguages.includes(
+          targetLang
+        )
+      ) {
+
+        return res
+          .status(400)
+          .json({
+
+            ok: false,
+
+            error:
+              "Idioma de destino não suportado."
+          });
+      }
+
+
+      if (
+        audioSessions.size >=
+        MAX_AUDIO_SESSIONS
+      ) {
+
+        return res
+          .status(503)
+          .json({
+
+            ok: false,
+
+            error:
+              "Limite de sessões de áudio atingido."
+          });
+      }
+
+
+      const jobId =
+        generateId();
+
+
+      audioSessions.set(
+        jobId,
+        {
+
+          jobId:
+            jobId,
+
+          clientId:
+            clientId,
+
+          targetLang:
+            targetLang,
+
+          startedAt:
+            new Date().toISOString(),
+
+          chunks:
+            0,
+
+          bytes:
+            0,
+
+          lastAudioAt:
+            null
+        }
+      );
+
+
+      console.log(
+        "================================"
+      );
+
+      console.log(
+        "NOVA SESSÃO DE ÁUDIO"
+      );
+
+      console.log(
+        "JOB:",
+        jobId
+      );
+
+      console.log(
+        "CLIENTE:",
+        clientId
+      );
+
+      console.log(
+        "IDIOMA:",
+        targetLang
+      );
+
+      console.log(
+        "================================"
+      );
+
+
+      res.json({
+
+        ok: true,
+
+        jobId:
+          jobId,
+
+        targetLang:
+          targetLang,
+
+        status:
+          "capturando_audio",
+
+        sampleRate:
+          48000,
+
+        channels:
+          1,
+
+        encoding:
+          "PCM_16BIT",
+
+        message:
+          "Sessão de áudio iniciada."
+      });
+
+
+    } catch (error) {
+
+      console.error(
+        "Erro em /api/audio/start:",
+        error
+      );
+
+      res
+        .status(500)
+        .json({
+
+          ok: false,
+
+          error:
+            "Erro ao iniciar sessão de áudio."
+        });
+    }
+
+  }
+);
+
+
+/* =====================================
+   RECEBER BLOCO DE ÁUDIO
+===================================== */
+
+app.post(
+  "/api/audio/chunk",
+  function(req, res) {
+
+    try {
+
+      const jobId =
+        String(
+          req.headers[
+            "x-job-id"
+          ] ||
+          req.body.jobId ||
+          ""
+        ).trim();
+
+
+      if (!jobId) {
+
+        return res
+          .status(400)
+          .json({
+
+            ok: false,
+
+            error:
+              "jobId é obrigatório."
+          });
+      }
+
+
+      const session =
+        audioSessions.get(
+          jobId
+        );
+
+
+      if (!session) {
+
+        return res
+          .status(404)
+          .json({
+
+            ok: false,
+
+            error:
+              "Sessão de áudio não encontrada."
+          });
+      }
+
+
+      /*
+       * O Android poderá enviar
+       * o PCM diretamente como corpo
+       * application/octet-stream.
+       */
+
+      let audioBuffer = null;
+
+
+      if (
+        Buffer.isBuffer(
+          req.body
+        )
+      ) {
+
+        audioBuffer =
+          req.body;
+
+      } else if (
+        req.body &&
+        req.body.audioBase64
+      ) {
+
+        audioBuffer =
+          Buffer.from(
+            String(
+              req.body.audioBase64
+            ),
+            "base64"
+          );
+
+      } else if (
+        req.body &&
+        req.body.audio
+      ) {
+
+        audioBuffer =
+          Buffer.from(
+            String(
+              req.body.audio
+            ),
+            "base64"
+          );
+      }
+
+
+      if (
+        !audioBuffer ||
+        audioBuffer.length === 0
+      ) {
+
+        return res
+          .status(400)
+          .json({
+
+            ok: false,
+
+            error:
+              "Nenhum áudio recebido."
+          });
+      }
+
+
+      /*
+       * Proteção contra blocos gigantes.
+       */
+
+      const MAX_CHUNK_SIZE =
+        1024 * 1024;
+
+
+      if (
+        audioBuffer.length >
+        MAX_CHUNK_SIZE
+      ) {
+
+        return res
+          .status(413)
+          .json({
+
+            ok: false,
+
+            error:
+              "Bloco de áudio muito grande."
+          });
+      }
+
+
+      session.chunks += 1;
+
+      session.bytes +=
+        audioBuffer.length;
+
+      session.lastAudioAt =
+        new Date().toISOString();
+
+
+      /*
+       * Neste momento o Render recebeu
+       * corretamente o áudio.
+       *
+       * NÃO salvamos cada bloco no disco.
+       *
+       * A próxima etapa poderá encaminhar
+       * os blocos para o processamento
+       * de tradução/dublagem.
+       */
+
+      console.log(
+        "ÁUDIO RECEBIDO:",
+        jobId,
+        "chunk:",
+        session.chunks,
+        "bytes:",
+        audioBuffer.length
+      );
+
+
+      res.json({
+
+        ok: true,
+
+        jobId:
+          jobId,
+
+        received:
+          true,
+
+        chunk:
+          session.chunks,
+
+        bytes:
+          audioBuffer.length,
+
+        totalBytes:
+          session.bytes,
+
+        status:
+          "audio_recebido"
+      });
+
+
+    } catch (error) {
+
+      console.error(
+        "Erro em /api/audio/chunk:",
+        error
+      );
+
+      res
+        .status(500)
+        .json({
+
+          ok: false,
+
+          error:
+            "Erro ao receber bloco de áudio."
+        });
+    }
+
+  }
+);
+
+
+/* =====================================
+   STATUS DA SESSÃO DE ÁUDIO
+===================================== */
+
+app.get(
+  "/api/audio/status/:jobId",
+  function(req, res) {
+
+    const jobId =
+      req.params.jobId;
+
+
+    const session =
+      audioSessions.get(
+        jobId
+      );
+
+
+    if (!session) {
+
+      return res
+        .status(404)
+        .json({
+
+          ok: false,
+
+          error:
+            "Sessão não encontrada."
+        });
+    }
+
+
+    res.json({
+
+      ok: true,
+
+      jobId:
+        session.jobId,
+
+      clientId:
+        session.clientId,
+
+      targetLang:
+        session.targetLang,
+
+      startedAt:
+        session.startedAt,
+
+      chunks:
+        session.chunks,
+
+      bytes:
+        session.bytes,
+
+      lastAudioAt:
+        session.lastAudioAt,
+
+      status:
+        "capturando_audio"
+    });
+
+  }
+);
+
+
+/* =====================================
+   ENCERRAR SESSÃO DE ÁUDIO
+===================================== */
+
+app.post(
+  "/api/audio/stop",
+  function(req, res) {
+
+    try {
+
+      const jobId =
+        String(
+          req.body.jobId ||
+          req.headers[
+            "x-job-id"
+          ] ||
+          ""
+        ).trim();
+
+
+      if (!jobId) {
+
+        return res
+          .status(400)
+          .json({
+
+            ok: false,
+
+            error:
+              "jobId é obrigatório."
+          });
+      }
+
+
+      const session =
+        audioSessions.get(
+          jobId
+        );
+
+
+      if (!session) {
+
+        return res
+          .status(404)
+          .json({
+
+            ok: false,
+
+            error:
+              "Sessão não encontrada."
+          });
+      }
+
+
+      const result = {
+
+        jobId:
+          session.jobId,
+
+        clientId:
+          session.clientId,
+
+        targetLang:
+          session.targetLang,
+
+        startedAt:
+          session.startedAt,
+
+        finishedAt:
+          new Date().toISOString(),
+
+        chunks:
+          session.chunks,
+
+        bytes:
+          session.bytes,
+
+        status:
+          "encerrado"
+      };
+
+
+      audioSessions.delete(
+        jobId
+      );
+
+
+      console.log(
+        "SESSÃO DE ÁUDIO ENCERRADA:",
+        jobId
+      );
+
+
+      res.json({
+
+        ok: true,
+
+        session:
+          result,
+
+        message:
+          "Sessão encerrada."
+      });
+
+
+    } catch (error) {
+
+      console.error(
+        "Erro em /api/audio/stop:",
+        error
+      );
+
+      res
+        .status(500)
+        .json({
+
+          ok: false,
+
+          error:
+            "Erro ao encerrar sessão."
+        });
+    }
+
+  }
+);
+
+
+/* =====================================
+   STATUS DE TODAS AS SESSÕES
+===================================== */
+
+app.get(
+  "/api/audio/sessions",
+  function(req, res) {
+
+    const sessions =
+      Array.from(
+        audioSessions.values()
+      );
+
+
+    res.json({
+
+      ok: true,
+
+      total:
+        sessions.length,
+
+      sessions:
+        sessions
     });
 
   }
@@ -239,9 +959,7 @@ app.get(
 
 app.post(
   "/api/test-upload",
-
   upload.single("video"),
-
   function(req, res) {
 
     try {
@@ -256,9 +974,7 @@ app.post(
 
             error:
               "Nenhum vídeo foi enviado."
-
           });
-
       }
 
 
@@ -288,7 +1004,6 @@ app.post(
         targetLang:
           req.body.targetLang ||
           "pt"
-
       });
 
 
@@ -304,9 +1019,7 @@ app.post(
 
           error:
             "Erro ao receber o vídeo."
-
         });
-
     }
 
   }
@@ -319,14 +1032,14 @@ app.post(
 
 app.post(
   "/api/dub-url",
-
   async function(req, res) {
 
     try {
 
       const videoUrl =
         String(
-          req.body.url || ""
+          req.body.url ||
+          ""
         ).trim();
 
 
@@ -347,9 +1060,7 @@ app.post(
 
             error:
               "O link do vídeo é obrigatório."
-
           });
-
       }
 
 
@@ -370,9 +1081,7 @@ app.post(
 
             error:
               "Link inválido. Use um endereço começando com https://"
-
           });
-
       }
 
 
@@ -403,16 +1112,6 @@ app.post(
         generateId();
 
 
-      /*
-       * O aplicativo Android enviará
-       * o áudio capturado para o servidor
-       * na próxima etapa.
-       *
-       * Por enquanto esta rota recebe
-       * e valida o link.
-       */
-
-
       res.json({
 
         ok: true,
@@ -434,7 +1133,6 @@ app.post(
 
         architecture:
           "Android Audio Capture -> Render -> ElevenLabs"
-
       });
 
 
@@ -454,9 +1152,7 @@ app.post(
 
           error:
             "Erro ao processar o link."
-
         });
-
     }
 
   }
@@ -469,20 +1165,21 @@ app.post(
 
 app.post(
   "/api/chat/send",
-
   function(req, res) {
 
     try {
 
       const clientId =
         String(
-          req.body.clientId || ""
+          req.body.clientId ||
+          ""
         ).trim();
 
 
       const message =
         String(
-          req.body.message || ""
+          req.body.message ||
+          ""
         ).trim();
 
 
@@ -494,9 +1191,7 @@ app.post(
 
             error:
               "clientId é obrigatório."
-
           });
-
       }
 
 
@@ -508,13 +1203,14 @@ app.post(
 
             error:
               "A mensagem está vazia."
-
           });
-
       }
 
 
-      if (message.length > 2000) {
+      if (
+        message.length >
+        2000
+      ) {
 
         return res
           .status(400)
@@ -522,9 +1218,7 @@ app.post(
 
             error:
               "Mensagem muito grande."
-
           });
-
       }
 
 
@@ -544,7 +1238,6 @@ app.post(
 
         date:
           new Date().toISOString()
-
       };
 
 
@@ -570,7 +1263,6 @@ app.post(
 
         message:
           newMessage
-
       });
 
 
@@ -584,9 +1276,7 @@ app.post(
 
           error:
             "Erro ao enviar mensagem."
-
         });
-
     }
 
   }
@@ -599,7 +1289,6 @@ app.post(
 
 app.get(
   "/api/chat/messages/:clientId",
-
   function(req, res) {
 
     const clientId =
@@ -614,7 +1303,6 @@ app.get(
             item.clientId ===
             clientId
           );
-
         }
       );
 
@@ -625,7 +1313,6 @@ app.get(
 
       messages:
         clientMessages
-
     });
 
   }
@@ -638,7 +1325,6 @@ app.get(
 
 app.get(
   "/api/admin/messages",
-
   function(req, res) {
 
     const password =
@@ -660,9 +1346,7 @@ app.get(
 
           error:
             "Senha de administrador inválida."
-
         });
-
     }
 
 
@@ -672,7 +1356,6 @@ app.get(
 
       messages:
         messages
-
     });
 
   }
@@ -685,7 +1368,6 @@ app.get(
 
 app.post(
   "/api/admin/reply",
-
   function(req, res) {
 
     const password =
@@ -707,21 +1389,21 @@ app.post(
 
           error:
             "Senha de administrador inválida."
-
         });
-
     }
 
 
     const clientId =
       String(
-        req.body.clientId || ""
+        req.body.clientId ||
+        ""
       ).trim();
 
 
     const message =
       String(
-        req.body.message || ""
+        req.body.message ||
+        ""
       ).trim();
 
 
@@ -738,9 +1420,7 @@ app.post(
 
           error:
             "clientId e message são obrigatórios."
-
         });
-
     }
 
 
@@ -760,7 +1440,6 @@ app.post(
 
       date:
         new Date().toISOString()
-
     };
 
 
@@ -781,7 +1460,6 @@ app.post(
 
       message:
         newMessage
-
     });
 
   }
@@ -794,7 +1472,6 @@ app.post(
 
 app.get(
   "/api/admin/clients",
-
   function(req, res) {
 
     const password =
@@ -816,21 +1493,17 @@ app.get(
 
           error:
             "Senha inválida."
-
         });
-
     }
 
 
     const clientIds = [
-
       ...new Set(
         messages.map(
           item =>
             item.clientId
         )
       )
-
     ];
 
 
@@ -858,7 +1531,6 @@ app.get(
               clientMessages[
                 clientMessages.length - 1
               ]
-
           };
 
         }
@@ -871,7 +1543,6 @@ app.get(
 
       clients:
         clients
-
     });
 
   }
@@ -921,9 +1592,7 @@ app.use(
           error:
             "Erro no upload: " +
             error.message
-
         });
-
     }
 
 
@@ -938,9 +1607,7 @@ app.use(
           error:
             error.message ||
             "Erro no servidor."
-
         });
-
     }
 
 
@@ -965,7 +1632,6 @@ app.use(
 
         error:
           "Endpoint não encontrado."
-
       });
 
   }
@@ -992,6 +1658,20 @@ app.listen(
     console.log(
       "Porta:",
       PORT
+    );
+
+    console.log(
+      "Audio Capture: ATIVO"
+    );
+
+    console.log(
+      "ElevenLabs Agent:",
+      ELEVENLABS_AGENT_ID
+    );
+
+    console.log(
+      "Voice ID:",
+      ELEVENLABS_VOICE_ID
     );
 
     console.log(
