@@ -41,6 +41,10 @@ app.use(
 );
 
 
+/* =====================================
+   BODY
+===================================== */
+
 app.use(
   express.json({
     limit: "10mb"
@@ -65,19 +69,23 @@ const uploadFolder =
   );
 
 
-if(
+if (
   !fs.existsSync(uploadFolder)
-){
+) {
 
   fs.mkdirSync(
     uploadFolder,
     {
-      recursive:true
+      recursive: true
     }
   );
 
 }
 
+
+/* =====================================
+   STORAGE
+===================================== */
 
 const storage =
   multer.diskStorage({
@@ -87,7 +95,7 @@ const storage =
         req,
         file,
         cb
-      ){
+      ) {
 
         cb(
           null,
@@ -101,7 +109,7 @@ const storage =
         req,
         file,
         cb
-      ){
+      ) {
 
         const extension =
           path.extname(
@@ -114,7 +122,7 @@ const storage =
           "-" +
           Math.random()
             .toString(36)
-            .substring(2,8) +
+            .substring(2, 8) +
           extension;
 
         cb(
@@ -127,12 +135,16 @@ const storage =
   });
 
 
+/* =====================================
+   MULTER
+===================================== */
+
 const upload =
   multer({
 
-    storage:storage,
+    storage: storage,
 
-    limits:{
+    limits: {
       fileSize:
         500 * 1024 * 1024
     },
@@ -142,20 +154,20 @@ const upload =
         req,
         file,
         cb
-      ){
+      ) {
 
-        if(
+        if (
           file.mimetype.startsWith(
             "video/"
           )
-        ){
+        ) {
 
           cb(
             null,
             true
           );
 
-        }else{
+        } else {
 
           cb(
             new Error(
@@ -177,31 +189,19 @@ const upload =
 const messages = [];
 
 
-/*
-  Exemplo:
-
-  {
-    id: "123",
-    clientId: "abc",
-    sender: "client",
-    message: "Olá",
-    date: "..."
-  }
-
-*/
-
-
 /* =====================================
-   ID DAS MENSAGENS
+   GERAR ID
 ===================================== */
 
-function generateId(){
+function generateId() {
 
-  return Date.now() +
+  return (
+    Date.now() +
     "-" +
     Math.random()
       .toString(36)
-      .substring(2,10);
+      .substring(2, 10)
+  );
 
 }
 
@@ -212,11 +212,11 @@ function generateId(){
 
 app.get(
   "/api/health",
-  function(req,res){
+  function(req, res) {
 
     res.json({
 
-      ok:true,
+      ok: true,
 
       service:
         "LinguaLive",
@@ -242,17 +242,17 @@ app.post(
 
   upload.single("video"),
 
-  function(req,res){
+  function(req, res) {
 
-    try{
+    try {
 
-      if(!req.file){
+      if (!req.file) {
 
         return res
           .status(400)
           .json({
 
-            ok:false,
+            ok: false,
 
             error:
               "Nenhum vídeo foi enviado."
@@ -274,9 +274,10 @@ app.post(
 
       res.json({
 
-        ok:true,
+        ok: true,
 
-        jobId:jobId,
+        jobId:
+          jobId,
 
         message:
           "Vídeo recebido com sucesso.",
@@ -285,12 +286,13 @@ app.post(
           req.file.filename,
 
         targetLang:
-          req.body.targetLang || "pt"
+          req.body.targetLang ||
+          "pt"
 
       });
 
 
-    }catch(error){
+    } catch (error) {
 
       console.error(error);
 
@@ -298,10 +300,160 @@ app.post(
         .status(500)
         .json({
 
-          ok:false,
+          ok: false,
 
           error:
             "Erro ao receber o vídeo."
+
+        });
+
+    }
+
+  }
+);
+
+
+/* =====================================
+   DUBLAGEM POR LINK
+===================================== */
+
+app.post(
+  "/api/dub-url",
+
+  async function(req, res) {
+
+    try {
+
+      const videoUrl =
+        String(
+          req.body.url || ""
+        ).trim();
+
+
+      const targetLang =
+        String(
+          req.body.targetLang ||
+          "pt"
+        ).trim();
+
+
+      if (!videoUrl) {
+
+        return res
+          .status(400)
+          .json({
+
+            ok: false,
+
+            error:
+              "O link do vídeo é obrigatório."
+
+          });
+
+      }
+
+
+      if (
+        !videoUrl.startsWith(
+          "http://"
+        ) &&
+        !videoUrl.startsWith(
+          "https://"
+        )
+      ) {
+
+        return res
+          .status(400)
+          .json({
+
+            ok: false,
+
+            error:
+              "Link inválido. Use um endereço começando com https://"
+
+          });
+
+      }
+
+
+      console.log(
+        "================================"
+      );
+
+      console.log(
+        "NOVO LINK PARA DUBLAGEM"
+      );
+
+      console.log(
+        "URL:",
+        videoUrl
+      );
+
+      console.log(
+        "IDIOMA:",
+        targetLang
+      );
+
+      console.log(
+        "================================"
+      );
+
+
+      const jobId =
+        generateId();
+
+
+      /*
+       * O aplicativo Android enviará
+       * o áudio capturado para o servidor
+       * na próxima etapa.
+       *
+       * Por enquanto esta rota recebe
+       * e valida o link.
+       */
+
+
+      res.json({
+
+        ok: true,
+
+        jobId:
+          jobId,
+
+        message:
+          "Link recebido com sucesso.",
+
+        url:
+          videoUrl,
+
+        targetLang:
+          targetLang,
+
+        status:
+          "aguardando_audio",
+
+        architecture:
+          "Android Audio Capture -> Render -> ElevenLabs"
+
+      });
+
+
+    } catch (error) {
+
+      console.error(
+        "Erro em /api/dub-url:",
+        error
+      );
+
+
+      res
+        .status(500)
+        .json({
+
+          ok: false,
+
+          error:
+            "Erro ao processar o link."
 
         });
 
@@ -317,9 +469,10 @@ app.post(
 
 app.post(
   "/api/chat/send",
-  function(req,res){
 
-    try{
+  function(req, res) {
+
+    try {
 
       const clientId =
         String(
@@ -333,7 +486,7 @@ app.post(
         ).trim();
 
 
-      if(!clientId){
+      if (!clientId) {
 
         return res
           .status(400)
@@ -347,7 +500,7 @@ app.post(
       }
 
 
-      if(!message){
+      if (!message) {
 
         return res
           .status(400)
@@ -361,7 +514,7 @@ app.post(
       }
 
 
-      if(message.length > 2000){
+      if (message.length > 2000) {
 
         return res
           .status(400)
@@ -413,7 +566,7 @@ app.post(
 
       res.json({
 
-        ok:true,
+        ok: true,
 
         message:
           newMessage
@@ -421,7 +574,7 @@ app.post(
       });
 
 
-    }catch(error){
+    } catch (error) {
 
       console.error(error);
 
@@ -447,7 +600,7 @@ app.post(
 app.get(
   "/api/chat/messages/:clientId",
 
-  function(req,res){
+  function(req, res) {
 
     const clientId =
       req.params.clientId;
@@ -455,10 +608,12 @@ app.get(
 
     const clientMessages =
       messages.filter(
-        function(item){
+        function(item) {
 
-          return item.clientId ===
-            clientId;
+          return (
+            item.clientId ===
+            clientId
+          );
 
         }
       );
@@ -466,7 +621,7 @@ app.get(
 
     res.json({
 
-      ok:true,
+      ok: true,
 
       messages:
         clientMessages
@@ -484,7 +639,7 @@ app.get(
 app.get(
   "/api/admin/messages",
 
-  function(req,res){
+  function(req, res) {
 
     const password =
       req.headers[
@@ -492,16 +647,16 @@ app.get(
       ];
 
 
-    if(
+    if (
       password !==
       ADMIN_PASSWORD
-    ){
+    ) {
 
       return res
         .status(401)
         .json({
 
-          ok:false,
+          ok: false,
 
           error:
             "Senha de administrador inválida."
@@ -513,7 +668,7 @@ app.get(
 
     res.json({
 
-      ok:true,
+      ok: true,
 
       messages:
         messages
@@ -531,7 +686,7 @@ app.get(
 app.post(
   "/api/admin/reply",
 
-  function(req,res){
+  function(req, res) {
 
     const password =
       req.headers[
@@ -539,16 +694,16 @@ app.post(
       ];
 
 
-    if(
+    if (
       password !==
       ADMIN_PASSWORD
-    ){
+    ) {
 
       return res
         .status(401)
         .json({
 
-          ok:false,
+          ok: false,
 
           error:
             "Senha de administrador inválida."
@@ -570,16 +725,16 @@ app.post(
       ).trim();
 
 
-    if(
+    if (
       !clientId ||
       !message
-    ){
+    ) {
 
       return res
         .status(400)
         .json({
 
-          ok:false,
+          ok: false,
 
           error:
             "clientId e message são obrigatórios."
@@ -622,7 +777,7 @@ app.post(
 
     res.json({
 
-      ok:true,
+      ok: true,
 
       message:
         newMessage
@@ -640,7 +795,7 @@ app.post(
 app.get(
   "/api/admin/clients",
 
-  function(req,res){
+  function(req, res) {
 
     const password =
       req.headers[
@@ -648,16 +803,16 @@ app.get(
       ];
 
 
-    if(
+    if (
       password !==
       ADMIN_PASSWORD
-    ){
+    ) {
 
       return res
         .status(401)
         .json({
 
-          ok:false,
+          ok: false,
 
           error:
             "Senha inválida."
@@ -667,20 +822,21 @@ app.get(
     }
 
 
-    const clientIds =
-      [
-        ...new Set(
-          messages.map(
-            item =>
-              item.clientId
-          )
+    const clientIds = [
+
+      ...new Set(
+        messages.map(
+          item =>
+            item.clientId
         )
-      ];
+      )
+
+    ];
 
 
     const clients =
       clientIds.map(
-        function(clientId){
+        function(clientId) {
 
           const clientMessages =
             messages.filter(
@@ -693,15 +849,12 @@ app.get(
           return {
 
             clientId:
-
               clientId,
 
             messages:
-
               clientMessages,
 
             lastMessage:
-
               clientMessages[
                 clientMessages.length - 1
               ]
@@ -714,10 +867,9 @@ app.get(
 
     res.json({
 
-      ok:true,
+      ok: true,
 
       clients:
-
         clients
 
     });
@@ -748,22 +900,23 @@ app.use(
     req,
     res,
     next
-  ){
+  ) {
 
     console.error(
       error
     );
 
 
-    if(
-      error instanceof multer.MulterError
-    ){
+    if (
+      error instanceof
+      multer.MulterError
+    ) {
 
       return res
         .status(400)
         .json({
 
-          ok:false,
+          ok: false,
 
           error:
             "Erro no upload: " +
@@ -774,13 +927,13 @@ app.use(
     }
 
 
-    if(error){
+    if (error) {
 
       return res
         .status(400)
         .json({
 
-          ok:false,
+          ok: false,
 
           error:
             error.message ||
@@ -802,13 +955,13 @@ app.use(
 ===================================== */
 
 app.use(
-  function(req,res){
+  function(req, res) {
 
     res
       .status(404)
       .json({
 
-        ok:false,
+        ok: false,
 
         error:
           "Endpoint não encontrado."
@@ -826,7 +979,7 @@ app.use(
 app.listen(
   PORT,
   "0.0.0.0",
-  function(){
+  function() {
 
     console.log(
       "================================"
