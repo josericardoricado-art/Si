@@ -2,33 +2,48 @@
 
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Internet para comunicação com o servidor Render -->
+    <!-- Internet para comunicação com o Render -->
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- Microfone -->
+    <!-- Necessária para AudioPlaybackCapture -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Serviço em primeiro plano -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <!-- Necessária para MediaProjection no Android 14+ -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
 
     <application
         android:allowBackup="true"
-        android:label="SI Tradutor"
         android:icon="@drawable/si_logo"
+        android:label="SI Tradutor Live"
         android:roundIcon="@drawable/si_logo"
         android:supportsRtl="true"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
 
+        <!-- Tela principal -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
 
             <intent-filter>
 
-                <action android:name="android.intent.action.MAIN" />
+                <action
+                    android:name="android.intent.action.MAIN" />
 
-                <category android:name="android.intent.category.LAUNCHER" />
+                <category
+                    android:name="android.intent.category.LAUNCHER" />
 
             </intent-filter>
 
         </activity>
+
+        <!-- Serviço responsável pela captura do áudio da reprodução -->
+        <service
+            android:name=".AudioCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
 
     </application>
 
