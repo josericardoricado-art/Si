@@ -1,599 +1,339 @@
 package com.si.tradutor
 
 import android.Manifest
-import android.app.AlertDialog
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
+import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.os.Bundle
-import android.view.View
-import android.widget.ArrayAdapter
 import android.widget.Button
-import android.widget.EditText
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
-import android.widget.VideoView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
-import kotlin.concurrent.thread
 
 class MainActivity : AppCompatActivity() {
 
-    private val BACKEND_URL = "https://si-u2ul.onrender.com"
+    companion object {
+        private const val BACKEND_URL = "https://si-u2ul.onrender.com"
 
-    private lateinit var status: TextView
-    private lateinit var videoView: VideoView
-    private lateinit var videoMessage: TextView
-    private lateinit var socialUrl: EditText
+        private const val REQUEST_CAPTURE_AUDIO = 100
+    }
+
+    private lateinit var statusText: TextView
+    private lateinit var monitorButton: Button
+    private lateinit var stopButton: Button
     private lateinit var languageSpinner: Spinner
 
-    private var microphoneOn = false
+    private var mediaProjectionManager: MediaProjectionManager? = null
 
-    private val languages = arrayOf(
-        "Português",
-        "English",
-        "Español",
-        "Français",
-        "Deutsch",
-        "Italiano",
-        "日本語",
-        "한국어",
-        "中文",
-        "Русский",
-        "العربية",
-        "हिन्दी",
-        "Türkçe",
-        "Nederlands",
-        "Polski",
-        "Українська",
-        "ไทย",
-        "Bahasa Indonesia",
-        "Tiếng Việt"
-    )
+    /*
+     * Autorização do microfone.
+     *
+     * IMPORTANTE:
+     * O aplicativo não vai usar o microfone
+     * para ouvir o vídeo.
+     *
+     * Essa permissão é necessária pelo Android
+     * para utilizar AudioPlaybackCapture.
+     */
+    private val microphonePermissionLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { granted ->
 
-    private val languageCodes = arrayOf(
-        "pt",
-        "en",
-        "es",
-        "fr",
-        "de",
-        "it",
-        "ja",
-        "ko",
-        "zh",
-        "ru",
-        "ar",
-        "hi",
-        "tr",
-        "nl",
-        "pl",
-        "uk",
-        "th",
-        "id",
-        "vi"
-    )
+            if (granted) {
+                solicitarCapturaDeTela()
+            } else {
+
+                statusText.text =
+                    "Permissão de áudio não concedida."
+
+                Toast.makeText(
+                    this,
+                    "Precisamos da permissão de áudio para monitorar a reprodução.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+
+    /*
+     * Resultado da autorização oficial do Android
+     * para MediaProjection.
+     */
+    private val screenCaptureLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+
+            if (
+                result.resultCode == Activity.RESULT_OK &&
+                result.data != null
+            ) {
+
+                iniciarServicoDeCaptura(
+                    result.resultCode,
+                    result.data!!
+                )
+
+            } else {
+
+                statusText.text =
+                    "Monitoramento cancelado."
+
+                Toast.makeText(
+                    this,
+                    "Você cancelou a autorização de monitoramento.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         setContentView(R.layout.activity_main)
 
-        status = findViewById(R.id.status)
-        videoView = findViewById(R.id.videoView)
-        videoMessage = findViewById(R.id.videoMessage)
-        socialUrl = findViewById(R.id.socialUrl)
-        languageSpinner = findViewById(R.id.languageSpinner)
+        mediaProjectionManager =
+            getSystemService(
+                MEDIA_PROJECTION_SERVICE
+            ) as MediaProjectionManager
 
-        val startButton = findViewById<Button>(R.id.startButton)
-        val loadVideoButton = findViewById<Button>(R.id.loadVideoButton)
-        val dubButton = findViewById<Button>(R.id.dubButton)
-        val microphoneButton = findViewById<Button>(R.id.microphoneButton)
-        val translationButton = findViewById<Button>(R.id.translationButton)
-        val registerButton = findViewById<Button>(R.id.registerButton)
-        val plansButton = findViewById<Button>(R.id.plansButton)
+        localizarElementos()
 
-        configurarIdiomas()
-
-        startButton.setOnClickListener {
-            status.text =
-                "🟢 SI Tradutor iniciado!\n\n" +
-                "Cole o link do vídeo ou live abaixo."
-
-            socialUrl.requestFocus()
-        }
-
-        loadVideoButton.setOnClickListener {
-            carregarVideo()
-        }
-
-        dubButton.setOnClickListener {
-            enviarLinkParaServidor(dubButton)
-        }
-
-        microphoneButton.setOnClickListener {
-            alternarMicrofone(microphoneButton)
-        }
-
-        translationButton.setOnClickListener {
-            iniciarTraducao()
-        }
-
-        registerButton.setOnClickListener {
-            mostrarCadastro()
-        }
-
-        plansButton.setOnClickListener {
-            mostrarPlanos()
-        }
+        configurarBotoes()
 
         verificarServidor()
     }
 
-    private fun configurarIdiomas() {
+    private fun localizarElementos() {
 
-        val adapter = ArrayAdapter(
-            this,
-            android.R.layout.simple_spinner_item,
-            languages
-        )
+        statusText =
+            findViewById(R.id.statusText)
 
-        adapter.setDropDownViewResource(
-            android.R.layout.simple_spinner_dropdown_item
-        )
+        monitorButton =
+            findViewById(R.id.monitorButton)
 
-        languageSpinner.adapter = adapter
+        stopButton =
+            findViewById(R.id.stopButton)
+
+        languageSpinner =
+            findViewById(R.id.languageSpinner)
     }
 
-    private fun obterIdiomaSelecionado(): String {
+    private fun configurarBotoes() {
 
-        val position = languageSpinner.selectedItemPosition
+        monitorButton.setOnClickListener {
 
-        if (position < 0 || position >= languageCodes.size) {
-            return "pt"
+            iniciarProcessoDeMonitoramento()
         }
 
-        return languageCodes[position]
+        stopButton.setOnClickListener {
+
+            pararMonitoramento()
+        }
     }
 
-    private fun obterNomeIdioma(): String {
+    private fun iniciarProcessoDeMonitoramento() {
 
-        val position = languageSpinner.selectedItemPosition
-
-        if (position < 0 || position >= languages.size) {
-            return "Português"
-        }
-
-        return languages[position]
-    }
-
-    private fun carregarVideo() {
-
-        val link = socialUrl.text.toString().trim()
-
-        if (link.isEmpty()) {
-
-            Toast.makeText(
-                this,
-                "Cole primeiro o link do vídeo.",
-                Toast.LENGTH_LONG
-            ).show()
-
-            socialUrl.requestFocus()
-            return
-        }
-
-        if (!link.startsWith("http://") &&
-            !link.startsWith("https://")
-        ) {
-
-            Toast.makeText(
-                this,
-                "Digite um link começando com https://",
-                Toast.LENGTH_LONG
-            ).show()
-
-            return
-        }
-
-        videoMessage.visibility = View.VISIBLE
-
-        videoMessage.text =
-            "⏳ Tentando carregar o vídeo..."
-
-        status.text =
-            "🟡 Carregando vídeo...\n\n" +
-            "Verificando o endereço informado."
+        statusText.text =
+            "Preparando monitoramento..."
 
         /*
-         * VideoView funciona com arquivos de vídeo diretos,
-         * como MP4.
-         *
-         * Links de páginas do YouTube, TikTok etc.
-         * não são necessariamente arquivos de vídeo.
+         * Android 10 ou superior é necessário
+         * para AudioPlaybackCapture.
          */
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
 
-        try {
-
-            videoView.setVideoURI(Uri.parse(link))
-
-            videoView.setOnPreparedListener {
-
-                videoMessage.visibility = View.GONE
-
-                status.text =
-                    "🟢 Vídeo carregado!\n\n" +
-                    "Você pode iniciar a reprodução."
-
-                videoView.start()
-            }
-
-            videoView.setOnErrorListener { _, _, _ ->
-
-                videoMessage.visibility = View.VISIBLE
-
-                videoMessage.text =
-                    "🎬 Este link é uma página de vídeo.\n\n" +
-                    "A reprodução direta ainda será integrada."
-
-                status.text =
-                    "🟡 Link recebido.\n\n" +
-                    "Para YouTube/live/TikTok precisamos usar a captura de áudio do Android."
-
-                false
-            }
-
-            videoView.requestFocus()
-
-        } catch (e: Exception) {
-
-            videoMessage.visibility = View.VISIBLE
-
-            videoMessage.text =
-                "⚠️ Não foi possível abrir este endereço."
-
-            status.text =
-                "🔴 Erro ao abrir vídeo\n\n" +
-                "${e.message}"
-        }
-    }
-
-    private fun enviarLinkParaServidor(button: Button) {
-
-        val link = socialUrl.text.toString().trim()
-
-        if (link.isEmpty()) {
+            statusText.text =
+                "Seu Android precisa ser 10 ou superior."
 
             Toast.makeText(
                 this,
-                "Cole primeiro o link do vídeo ou live.",
+                "A captura de áudio da reprodução exige Android 10+.",
                 Toast.LENGTH_LONG
             ).show()
 
-            socialUrl.requestFocus()
             return
         }
 
-        if (!link.startsWith("http://") &&
-            !link.startsWith("https://")
+        /*
+         * Primeiro verificamos RECORD_AUDIO.
+         */
+        val permission =
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.RECORD_AUDIO
+            )
+
+        if (
+            permission !=
+            PackageManager.PERMISSION_GRANTED
         ) {
 
-            Toast.makeText(
-                this,
-                "Digite um link válido começando com https://",
-                Toast.LENGTH_LONG
-            ).show()
+            statusText.text =
+                "Solicitando permissão de áudio..."
 
-            return
-        }
-
-        val targetLang = obterIdiomaSelecionado()
-        val languageName = obterNomeIdioma()
-
-        status.text =
-            "🟡 Enviando link...\n\n" +
-            "Idioma: $languageName\n" +
-            "Conectando ao servidor SI..."
-
-        button.isEnabled = false
-
-        thread {
-
-            var connection: HttpURLConnection? = null
-
-            try {
-
-                val url =
-                    URL("$BACKEND_URL/api/dub-url")
-
-                connection =
-                    url.openConnection() as HttpURLConnection
-
-                connection.requestMethod = "POST"
-
-                connection.setRequestProperty(
-                    "Content-Type",
-                    "application/json"
-                )
-
-                connection.setRequestProperty(
-                    "Accept",
-                    "application/json"
-                )
-
-                connection.doOutput = true
-
-                connection.connectTimeout = 15000
-                connection.readTimeout = 30000
-
-                val json = JSONObject()
-
-                json.put("url", link)
-                json.put("targetLang", targetLang)
-
-                connection.outputStream.use { output ->
-
-                    output.write(
-                        json.toString()
-                            .toByteArray(Charsets.UTF_8)
-                    )
-                }
-
-                val responseCode =
-                    connection.responseCode
-
-                val responseText =
-
-                    if (responseCode in 200..299) {
-
-                        connection.inputStream
-                            .bufferedReader()
-                            .use { it.readText() }
-
-                    } else {
-
-                        connection.errorStream
-                            ?.bufferedReader()
-                            ?.use { it.readText() }
-                            ?: ""
-                    }
-
-                runOnUiThread {
-
-                    button.isEnabled = true
-
-                    if (responseCode in 200..299) {
-
-                        try {
-
-                            val response =
-                                JSONObject(responseText)
-
-                            val jobId =
-                                response.optString(
-                                    "jobId"
-                                )
-
-                            status.text =
-                                "🟢 Link recebido pelo servidor!\n\n" +
-                                "Idioma: $languageName\n" +
-                                "Job: $jobId\n\n" +
-                                "Preparando a captura de áudio..."
-
-                            Toast.makeText(
-                                this,
-                                "Dublagem iniciada!",
-                                Toast.LENGTH_LONG
-                            ).show()
-
-                        } catch (e: Exception) {
-
-                            status.text =
-                                "🟢 Link enviado com sucesso!\n\n" +
-                                "Preparando a dublagem..."
-                        }
-
-                    } else {
-
-                        status.text =
-                            "🔴 Erro no servidor\n\n" +
-                            "Código: $responseCode\n" +
-                            responseText
-
-                        Toast.makeText(
-                            this,
-                            "O servidor recusou o link.",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-                }
-
-            } catch (e: Exception) {
-
-                runOnUiThread {
-
-                    button.isEnabled = true
-
-                    status.text =
-                        "🔴 Erro de conexão\n\n" +
-                        "${e.message}"
-
-                    Toast.makeText(
-                        this,
-                        "Não foi possível conectar ao servidor.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-
-            } finally {
-
-                connection?.disconnect()
-            }
-        }
-    }
-
-    private fun alternarMicrofone(button: Button) {
-
-        if (!microphoneOn) {
-
-            if (
-                ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.RECORD_AUDIO
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-
-                ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(
-                        Manifest.permission.RECORD_AUDIO
-                    ),
-                    100
-                )
-
-                return
-            }
-
-            microphoneOn = true
-
-            button.text =
-                "🔴  DESLIGAR MICROFONE"
-
-            status.text =
-                "🟢 Microfone ligado!\n\n" +
-                "O aplicativo está pronto para captura de áudio."
+            microphonePermissionLauncher.launch(
+                Manifest.permission.RECORD_AUDIO
+            )
 
         } else {
 
-            microphoneOn = false
-
-            button.text =
-                "🎙️  LIGAR MICROFONE"
-
-            status.text =
-                "🟡 Microfone desligado."
+            solicitarCapturaDeTela()
         }
     }
 
-    private fun iniciarTraducao() {
+    private fun solicitarCapturaDeTela() {
 
-        val languageName = obterNomeIdioma()
+        statusText.text =
+            "Solicitando autorização do Android..."
 
-        status.text =
-            "🌎 Tradução selecionada\n\n" +
-            "Idioma de saída: $languageName\n\n" +
-            "Aguardando captura do áudio do vídeo."
+        val captureIntent =
+            mediaProjectionManager
+                ?.createScreenCaptureIntent()
+
+        if (captureIntent == null) {
+
+            statusText.text =
+                "Não foi possível iniciar o monitoramento."
+
+            return
+        }
+
+        /*
+         * O Android exibirá a tela oficial
+         * perguntando se o usuário permite
+         * que o SI Tradutor monitore a tela.
+         */
+        screenCaptureLauncher.launch(
+            captureIntent
+        )
+    }
+
+    private fun iniciarServicoDeCaptura(
+        resultCode: Int,
+        data: Intent
+    ) {
+
+        val selectedLanguage =
+            languageSpinner.selectedItem
+                ?.toString()
+                ?: "Português"
+
+        statusText.text =
+            "Monitoramento ativado • $selectedLanguage"
+
+        monitorButton.isEnabled = false
+        stopButton.isEnabled = true
+
+        val serviceIntent =
+            Intent(
+                this,
+                AudioCaptureService::class.java
+            ).apply {
+
+                action =
+                    AudioCaptureService.ACTION_START
+
+                putExtra(
+                    AudioCaptureService.EXTRA_RESULT_CODE,
+                    resultCode
+                )
+
+                putExtra(
+                    AudioCaptureService.EXTRA_RESULT_DATA,
+                    data
+                )
+            }
+
+        /*
+         * Android 8+ exige startForegroundService
+         * para serviços que continuarão funcionando
+         * em segundo plano.
+         */
+        ContextCompat.startForegroundService(
+            this,
+            serviceIntent
+        )
 
         Toast.makeText(
             this,
-            "Idioma selecionado: $languageName",
-            Toast.LENGTH_LONG
+            "Monitoramento iniciado.",
+            Toast.LENGTH_SHORT
         ).show()
     }
 
-    private fun mostrarCadastro() {
+    private fun pararMonitoramento() {
 
-        val layout = EditText(this)
+        val serviceIntent =
+            Intent(
+                this,
+                AudioCaptureService::class.java
+            ).apply {
 
-        layout.hint = "Digite seu e-mail"
-        layout.setPadding(30, 20, 30, 20)
-
-        AlertDialog.Builder(this)
-            .setTitle("👤 Cadastro / Entrar")
-            .setMessage(
-                "Crie sua conta para acessar o SI Tradutor."
-            )
-            .setView(layout)
-            .setPositiveButton("CONTINUAR") { _, _ ->
-
-                val email =
-                    layout.text.toString().trim()
-
-                if (email.isEmpty()) {
-
-                    Toast.makeText(
-                        this,
-                        "Digite seu e-mail.",
-                        Toast.LENGTH_LONG
-                    ).show()
-
-                } else {
-
-                    status.text =
-                        "👤 Cadastro iniciado!\n\n" +
-                        "E-mail: $email\n\n" +
-                        "A autenticação completa será conectada ao servidor."
-                }
+                action =
+                    AudioCaptureService.ACTION_STOP
             }
-            .setNegativeButton("CANCELAR", null)
-            .show()
-    }
 
-    private fun mostrarPlanos() {
+        stopService(serviceIntent)
 
-        AlertDialog.Builder(this)
-            .setTitle("💳 Planos SI Tradutor")
-            .setMessage(
-                "🆓 GRÁTIS\n" +
-                "Teste limitado\n\n" +
+        statusText.text =
+            "Monitoramento parado."
 
-                "⭐ PLANO MENSAL\n" +
-                "Tradução e dublagem com mais recursos\n\n" +
+        monitorButton.isEnabled = true
+        stopButton.isEnabled = false
 
-                "🚀 PLANO PRO\n" +
-                "Mais tempo de tradução e recursos avançados\n\n" +
-
-                "O sistema de pagamento será conectado ao checkout na próxima etapa."
-            )
-            .setPositiveButton("ESCOLHER PLANO") { _, _ ->
-
-                status.text =
-                    "💳 Planos selecionados.\n\n" +
-                    "O checkout será conectado nesta etapa."
-
-            }
-            .setNegativeButton("FECHAR", null)
-            .show()
+        Toast.makeText(
+            this,
+            "Monitoramento encerrado.",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     private fun verificarServidor() {
 
-        thread {
+        Thread {
 
             try {
 
                 val url =
-                    URL("$BACKEND_URL/api/health")
+                    java.net.URL(
+                        "$BACKEND_URL/api/health"
+                    )
 
                 val connection =
-                    url.openConnection() as HttpURLConnection
+                    url.openConnection()
+                        as java.net.HttpURLConnection
 
-                connection.requestMethod = "GET"
+                connection.requestMethod =
+                    "GET"
 
-                connection.connectTimeout = 10000
-                connection.readTimeout = 10000
+                connection.connectTimeout =
+                    10000
 
-                val code =
+                connection.readTimeout =
+                    10000
+
+                val responseCode =
                     connection.responseCode
 
                 connection.disconnect()
 
                 runOnUiThread {
 
-                    if (code in 200..299) {
+                    if (responseCode == 200) {
 
-                        status.text =
-                            "🟢 Servidor SI conectado!\n\n" +
-                            "Pronto para receber o vídeo."
+                        statusText.text =
+                            "Servidor online • Pronto para monitorar"
 
                     } else {
 
-                        status.text =
-                            "🟡 Servidor respondeu com código $code"
+                        statusText.text =
+                            "Servidor respondeu com erro."
                     }
                 }
 
@@ -601,48 +341,22 @@ class MainActivity : AppCompatActivity() {
 
                 runOnUiThread {
 
-                    status.text =
-                        "🔴 Servidor indisponível.\n\n" +
-                        "Verifique sua conexão com a internet."
+                    statusText.text =
+                        "Servidor offline ou sem conexão."
                 }
             }
-        }
+
+        }.start()
     }
 
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
+    override fun onDestroy() {
 
-        super.onRequestPermissionsResult(
-            requestCode,
-            permissions,
-            grantResults
-        )
+        /*
+         * Não encerramos o serviço aqui,
+         * porque o monitoramento pode continuar
+         * enquanto o usuário utiliza outro aplicativo.
+         */
 
-        if (requestCode == 100) {
-
-            if (
-                grantResults.isNotEmpty() &&
-                grantResults[0] ==
-                PackageManager.PERMISSION_GRANTED
-            ) {
-
-                Toast.makeText(
-                    this,
-                    "Microfone autorizado!",
-                    Toast.LENGTH_LONG
-                ).show()
-
-            } else {
-
-                Toast.makeText(
-                    this,
-                    "Permissão do microfone recusada.",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-        }
+        super.onDestroy()
     }
 }
