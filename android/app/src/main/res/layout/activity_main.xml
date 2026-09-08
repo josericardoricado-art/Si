@@ -4,131 +4,213 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#020B1C"
+    android:background="#020B1B"
     android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:gravity="center_horizontal"
-        android:padding="22dp">
+        android:padding="20dp">
 
+        <!-- LOGO -->
         <ImageView
             android:id="@+id/logo"
-            android:layout_width="150dp"
-            android:layout_height="150dp"
-            android:layout_marginTop="20dp"
-            android:src="@drawable/si_logo"
-            android:scaleType="fitCenter"
-            android:contentDescription="SI Tradutor Live" />
+            android:layout_width="180dp"
+            android:layout_height="180dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="15dp"
+            android:contentDescription="Logo SI Tradutor"
+            android:src="@drawable/si_logo" />
 
+        <!-- TÍTULO -->
         <TextView
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:gravity="center"
             android:text="SI Tradutor Live"
             android:textColor="#FFFFFF"
             android:textSize="30sp"
             android:textStyle="bold" />
 
         <TextView
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center"
             android:text="Tradução e dublagem em tempo real"
-            android:textColor="#7DCBFF"
-            android:textSize="16sp"
-            android:layout_marginTop="6dp"
-            android:layout_marginBottom="25dp" />
+            android:textColor="#6EC6FF"
+            android:textSize="18sp" />
 
+        <!-- STATUS -->
         <TextView
             android:id="@+id/status"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="#071A35"
+            android:layout_marginTop="25dp"
+            android:background="#061D3D"
             android:padding="18dp"
-            android:text="🟢 Pronto para traduzir"
+            android:text="🟢 Servidor conectado\n\nCole um link de vídeo ou live para começar."
             android:textColor="#20E879"
-            android:textSize="17sp"
-            android:layout_marginBottom="20dp" />
+            android:textSize="17sp" />
 
+        <!-- BOTÃO INICIAR -->
         <Button
             android:id="@+id/startButton"
             android:layout_width="match_parent"
-            android:layout_height="62dp"
+            android:layout_height="60dp"
+            android:layout_marginTop="20dp"
+            android:backgroundTint="#168BFF"
             android:text="🎙️  INICIAR TRADUÇÃO"
             android:textColor="#FFFFFF"
             android:textSize="18sp"
-            android:textStyle="bold"
-            android:backgroundTint="#087FF5"
-            android:layout_marginBottom="15dp" />
+            android:textStyle="bold" />
 
-        <!-- CAMPO DO LINK -->
-
+        <!-- LINK -->
         <EditText
             android:id="@+id/socialUrl"
             android:layout_width="match_parent"
             android:layout_height="60dp"
-            android:hint="Cole aqui o link do vídeo ou live"
-            android:textColor="#FFFFFF"
-            android:textColorHint="#7894B5"
-            android:inputType="textUri"
-            android:singleLine="true"
-            android:padding="16dp"
+            android:layout_marginTop="20dp"
             android:backgroundTint="#168BFF"
-            android:layout_marginBottom="15dp" />
+            android:hint="Cole aqui o link do vídeo ou live"
+            android:inputType="textUri"
+            android:padding="12dp"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#8BA8C8"
+            android:textSize="16sp" />
 
+        <!-- CARREGAR VÍDEO -->
+        <Button
+            android:id="@+id/loadVideoButton"
+            android:layout_width="match_parent"
+            android:layout_height="55dp"
+            android:layout_marginTop="12dp"
+            android:backgroundTint="#16457A"
+            android:text="▶️  CARREGAR VÍDEO"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <!-- PLAYER -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="230dp"
+            android:layout_marginTop="18dp"
+            android:background="#000000"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <VideoView
+                android:id="@+id/videoView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <TextView
+                android:id="@+id/videoMessage"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:padding="15dp"
+                android:text="🎬 O vídeo aparecerá aqui"
+                android:textColor="#8BA8C8"
+                android:textSize="16sp" />
+
+        </LinearLayout>
+
+        <!-- IDIOMA -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="🌎 Idioma da dublagem"
+            android:textColor="#FFFFFF"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+
+        <Spinner
+            android:id="@+id/languageSpinner"
+            android:layout_width="match_parent"
+            android:layout_height="55dp"
+            android:layout_marginTop="8dp"
+            android:backgroundTint="#168BFF" />
+
+        <!-- DUBLAR -->
         <Button
             android:id="@+id/dubButton"
             android:layout_width="match_parent"
             android:layout_height="60dp"
+            android:layout_marginTop="18dp"
+            android:backgroundTint="#16457A"
             android:text="🚀  DUBLAR ESTE VÍDEO"
             android:textColor="#FFFFFF"
-            android:textSize="17sp"
-            android:textStyle="bold"
-            android:backgroundTint="#12345C"
-            android:layout_marginBottom="15dp" />
+            android:textSize="18sp"
+            android:textStyle="bold" />
 
+        <!-- MICROFONE -->
         <Button
             android:id="@+id/microphoneButton"
             android:layout_width="match_parent"
-            android:layout_height="58dp"
-            android:text="🎤  LIGAR MICROFONE"
+            android:layout_height="60dp"
+            android:layout_marginTop="15dp"
+            android:backgroundTint="#16457A"
+            android:text="🎙️  LIGAR MICROFONE"
             android:textColor="#FFFFFF"
-            android:textSize="16sp"
-            android:backgroundTint="#12345C"
-            android:layout_marginBottom="15dp" />
+            android:textSize="17sp"
+            android:textStyle="bold" />
 
+        <!-- TRADUÇÃO -->
         <Button
             android:id="@+id/translationButton"
             android:layout_width="match_parent"
-            android:layout_height="58dp"
-            android:text="🌎  TRADUÇÃO"
+            android:layout_height="60dp"
+            android:layout_marginTop="15dp"
+            android:backgroundTint="#16457A"
+            android:text="🌐  TRADUÇÃO"
             android:textColor="#FFFFFF"
-            android:textSize="16sp"
-            android:backgroundTint="#12345C"
-            android:layout_marginBottom="25dp" />
+            android:textSize="17sp"
+            android:textStyle="bold" />
 
+        <!-- CADASTRO -->
+        <Button
+            android:id="@+id/registerButton"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:layout_marginTop="25dp"
+            android:backgroundTint="#0E315A"
+            android:text="👤  CADASTRO / ENTRAR"
+            android:textColor="#FFFFFF"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+
+        <!-- PLANOS -->
+        <Button
+            android:id="@+id/plansButton"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:layout_marginTop="12dp"
+            android:backgroundTint="#0E315A"
+            android:text="💳  PLANOS"
+            android:textColor="#FFFFFF"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+
+        <!-- INFORMAÇÃO -->
         <TextView
+            android:id="@+id/infoText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="#071A35"
+            android:layout_marginTop="25dp"
+            android:background="#061D3D"
             android:padding="18dp"
-            android:text="🇧🇷  Idioma de saída: Português"
-            android:textColor="#FFFFFF"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="15dp" />
+            android:text="🌎 Traduza vídeos e lives para vários idiomas.\n\n🔊 Dublagem em tempo real\n🎙️ Captura de áudio\n🌐 Tradução automática\n👤 Conta do usuário\n💳 Planos de assinatura"
+            android:textColor="#BBD5F2"
+            android:textSize="15sp" />
 
-        <TextView
+        <Space
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="#071A35"
-            android:padding="18dp"
-            android:text="🌐  Cole um link de vídeo ou live para iniciar."
-            android:textColor="#A9C7E8"
-            android:textSize="15sp"
-            android:gravity="center"
-            android:layout_marginBottom="25dp" />
+            android:layout_height="30dp" />
 
     </LinearLayout>
 
