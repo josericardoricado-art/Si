@@ -1,18 +1,21 @@
 {
-  "name": "si-tradutor-universal",
-  "version": "2.0.0",
-  "description": "Backend do Si - Tradutor Universal",
+  "name": "si-tradutor-backend",
+  "version": "1.0.0",
+  "description": "Backend do SI Tradutor Live",
   "main": "server.js",
+  "type": "commonjs",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "nodemon server.js"
   },
   "dependencies": {
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1",
     "cors": "^2.8.5",
-    "express": "^4.21.2",
-    "multer": "^2.0.2",
-    "uuid": "^11.1.0"
+    "uuid": "^9.0.1",
+    "ws": "^8.18.3"
   },
-  "engines": {
-    "node": "20.x"
+  "devDependencies": {
+    "nodemon": "^3.1.0"
   }
 }
