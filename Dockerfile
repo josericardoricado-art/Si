@@ -1,15 +1,15 @@
-FROM python:3.11-slim
+FROM node:20-bookworm-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY package*.json ./
 
-RUN pip install --no-cache-dir -r requirements.txt
+RUN npm install --omit=dev
 
 COPY . .
 
-ENV PYTHONUNBUFFERED=1
+ENV NODE_ENV=production
 
 EXPOSE 10000
 
-CMD ["gunicorn", "--bind", "0.0.0.0:10000", "--workers", "1", "--timeout", "120", "server:app"]
+CMD ["node", "server.js"]
