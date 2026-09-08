@@ -10,8 +10,6 @@ import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.IBinder
 import android.util.Base64
-import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
@@ -48,30 +46,44 @@ class AudioCaptureService : Service() {
         private const val SAMPLE_RATE =
             48000
 
-        private const val CHANNEL_COUNT =
-            1
-
-        private const val BYTES_PER_SAMPLE =
-            2
+        private const val BUFFER_SIZE =
+            9600
     }
 
-    private var mediaProjection: MediaProjection? = null
+    private var mediaProjection: MediaProjection? =
+        null
 
-    private var audioRecord: AudioRecord? = null
+    private var audioRecord: AudioRecord? =
+        null
 
-    private var recordingThread: Thread? = null
+    private var captureThread: Thread? =
+        null
+
+    private var outputThread: Thread? =
+        null
 
     @Volatile
-    private var isRecording = false
+    private var recording =
+        false
 
-    private var currentJobId: String? = null
+    @Volatile
+    private var playingOutput =
+        true
+
+    private var jobId: String? =
+        null
+
+    private var audioTrack: AudioTrack? =
+        null
+
 
     override fun onCreate() {
 
         super.onCreate()
 
-        criarCanalNotificacao()
+        criarCanal()
     }
+
 
     override fun onStartCommand(
         intent: Intent?,
@@ -94,7 +106,10 @@ class AudioCaptureService : Service() {
                     )
 
                 val resultData =
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    if (
+                        Build.VERSION.SDK_INT >=
+                        Build.VERSION_CODES.TIRAMISU
+                    ) {
 
                         intent.getParcelableExtra(
                             EXTRA_RESULT_DATA,
@@ -109,13 +124,14 @@ class AudioCaptureService : Service() {
                         )
                     }
 
-                val jobId =
+                jobId =
                     intent.getStringExtra(
                         EXTRA_JOB_ID
                     )
 
                 if (
-                    resultCode != Activity.RESULT_OK ||
+                    resultCode !=
+                    Activity.RESULT_OK ||
                     resultData == null ||
                     jobId.isNullOrEmpty()
                 ) {
@@ -127,14 +143,12 @@ class AudioCaptureService : Service() {
                     return START_NOT_STICKY
                 }
 
-                currentJobId =
-                    jobId
-
                 iniciarCaptura(
                     resultCode,
                     resultData
                 )
             }
+
 
             ACTION_STOP -> {
 
@@ -147,12 +161,13 @@ class AudioCaptureService : Service() {
         return START_NOT_STICKY
     }
 
+
     private fun iniciarCaptura(
         resultCode: Int,
         resultData: Intent
     ) {
 
-        if (isRecording) {
+        if (recording) {
             return
         }
 
@@ -160,13 +175,13 @@ class AudioCaptureService : Service() {
 
             iniciarForeground()
 
-            val projectionManager =
+            val manager =
                 getSystemService(
                     Context.MEDIA_PROJECTION_SERVICE
                 ) as MediaProjectionManager
 
             mediaProjection =
-                projectionManager.getMediaProjection(
+                manager.getMediaProjection(
                     resultCode,
                     resultData
                 )
@@ -178,10 +193,16 @@ class AudioCaptureService : Service() {
                 return
             }
 
+
+            /*
+             * Captura de áudio interno.
+             */
+
             val config =
-                AudioPlaybackCaptureConfiguration.Builder(
-                    mediaProjection!!
-                )
+                AudioPlaybackCaptureConfiguration
+                    .Builder(
+                        mediaProjection!!
+                    )
                     .addMatchingUsage(
                         AudioAttributes.USAGE_MEDIA
                     )
@@ -193,24 +214,17 @@ class AudioCaptureService : Service() {
                     )
                     .build()
 
-            val channelConfig =
-                AudioFormat.CHANNEL_IN_MONO
 
-            val audioFormat =
-                AudioFormat.ENCODING_PCM_16BIT
-
-            val minBufferSize =
+            val minBuffer =
                 AudioRecord.getMinBufferSize(
                     SAMPLE_RATE,
-                    channelConfig,
-                    audioFormat
+                    AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT
                 )
 
+
             if (
-                minBufferSize ==
-                AudioRecord.ERROR ||
-                minBufferSize ==
-                AudioRecord.ERROR_BAD_VALUE
+                minBuffer <= 0
             ) {
 
                 pararTudo()
@@ -220,34 +234,37 @@ class AudioCaptureService : Service() {
                 return
             }
 
-            val bufferSize =
+
+            val realBuffer =
                 maxOf(
-                    minBufferSize * 2,
-                    9600
+                    minBuffer * 2,
+                    BUFFER_SIZE
                 )
+
 
             audioRecord =
                 AudioRecord.Builder()
                     .setAudioFormat(
                         AudioFormat.Builder()
                             .setEncoding(
-                                audioFormat
+                                AudioFormat.ENCODING_PCM_16BIT
                             )
                             .setSampleRate(
                                 SAMPLE_RATE
                             )
                             .setChannelMask(
-                                channelConfig
+                                AudioFormat.CHANNEL_IN_MONO
                             )
                             .build()
                     )
                     .setBufferSizeInBytes(
-                        bufferSize
+                        realBuffer
                     )
                     .setAudioPlaybackCaptureConfig(
                         config
                     )
                     .build()
+
 
             if (
                 audioRecord?.state !=
@@ -261,9 +278,9 @@ class AudioCaptureService : Service() {
                 return
             }
 
+
             mediaProjection?.registerCallback(
-                object :
-                    MediaProjection.Callback() {
+                object : MediaProjection.Callback() {
 
                     override fun onStop() {
 
@@ -275,11 +292,26 @@ class AudioCaptureService : Service() {
                 null
             )
 
+
+            /*
+             * Inicia captura.
+             */
+
             audioRecord?.startRecording()
 
-            isRecording = true
+            recording =
+                true
 
-            recordingThread =
+            playingOutput =
+                true
+
+
+            /*
+             * Thread que captura o áudio
+             * do vídeo e envia ao Render.
+             */
+
+            captureThread =
                 Thread {
 
                     capturarAudio()
@@ -287,10 +319,30 @@ class AudioCaptureService : Service() {
                 }.apply {
 
                     name =
-                        "SI-AudioCapture"
+                        "SI-Capture"
 
                     start()
                 }
+
+
+            /*
+             * Thread que busca o áudio
+             * traduzido no Render.
+             */
+
+            outputThread =
+                Thread {
+
+                   buscarAudioTraduzido()
+
+                }.apply {
+
+                    name =
+                        "SI-TranslatedAudio"
+
+                    start()
+                }
+
 
         } catch (e: Exception) {
 
@@ -300,16 +352,20 @@ class AudioCaptureService : Service() {
         }
     }
 
+
     private fun capturarAudio() {
 
         val buffer =
-            ByteArray(9600)
+            ByteArray(
+                BUFFER_SIZE
+            )
 
-        while (isRecording) {
+
+        while (recording) {
 
             try {
 
-                val bytesRead =
+                val quantidade =
                     audioRecord?.read(
                         buffer,
                         0,
@@ -317,63 +373,75 @@ class AudioCaptureService : Service() {
                         AudioRecord.READ_BLOCKING
                     ) ?: 0
 
-                if (bytesRead > 0) {
 
-                    val audioData =
+                if (
+                    quantidade > 0
+                ) {
+
+                    val audio =
                         buffer.copyOf(
-                            bytesRead
+                            quantidade
                         )
 
-                    enviarAudioParaRender(
-                        audioData
+                    enviarParaRender(
+                        audio
                     )
                 }
 
-            } catch (e: Exception) {
+            } catch (
+                e: Exception
+            ) {
 
                 break
             }
         }
     }
 
-    private fun enviarAudioParaRender(
-        audioData: ByteArray
+
+    /*
+     * Envia o áudio capturado para o Render.
+     */
+
+    private fun enviarParaRender(
+        audio: ByteArray
     ) {
 
-        val jobId =
-            currentJobId ?: return
+        val currentJob =
+            jobId ?: return
+
 
         Thread {
 
             try {
 
-                val audioBase64 =
+                val base64 =
                     Base64.encodeToString(
-                        audioData,
+                        audio,
                         Base64.NO_WRAP
                     )
 
-                val body =
+
+                val json =
                     JSONObject()
 
-                body.put(
+                json.put(
                     "jobId",
-                    jobId
+                    currentJob
                 )
 
-                body.put(
+                json.put(
                     "audioBase64",
-                    audioBase64
+                    base64
                 )
 
-                val url =
+
+                val connection =
                     URL(
                         "$BACKEND_URL/api/audio/chunk"
                     )
-
-                val connection =
-                    url.openConnection()
+                        .openConnection()
                         as HttpURLConnection
+
 
                 connection.requestMethod =
                     "POST"
@@ -387,6 +455,7 @@ class AudioCaptureService : Service() {
                 connection.doOutput =
                     true
 
+
                 connection.setRequestProperty(
                     "Content-Type",
                     "application/json"
@@ -394,86 +463,400 @@ class AudioCaptureService : Service() {
 
                 connection.setRequestProperty(
                     "X-Job-Id",
-                    jobId
+                    currentJob
                 )
 
-                connection.setRequestProperty(
-                    "X-Client-Id",
-                    "android"
-                )
 
                 OutputStreamWriter(
                     connection.outputStream
                 ).use { writer ->
 
                     writer.write(
-                        body.toString()
+                        json.toString()
                     )
 
                     writer.flush()
                 }
 
-                val responseCode =
-                    connection.responseCode
 
-                if (
-                    responseCode !in 200..299
-                ) {
-
-                    // O servidor respondeu com erro.
-                    // O próximo pedaço de áudio continuará normalmente.
-                }
+                connection.responseCode
 
                 connection.disconnect()
 
-            } catch (_: Exception) {
 
-                // Falha de um pedaço não encerra
-                // a captura inteira.
+            } catch (
+                _: Exception
+            ) {
+
+                /*
+                 * Um chunk perdido não
+                 * encerra a captura.
+                 */
             }
 
         }.start()
     }
 
+
+    /*
+     * Busca continuamente o áudio traduzido.
+     */
+
+    private fun buscarAudioTraduzido() {
+
+        while (
+            recording &&
+            playingOutput
+        ) {
+
+            try {
+
+                val currentJob =
+                    jobId
+
+
+                if (
+                    currentJob.isNullOrEmpty()
+                ) {
+
+                    Thread.sleep(
+                        500
+                    )
+
+                    continue
+                }
+
+
+                val connection =
+                    URL(
+                        "$BACKEND_URL/api/audio/output/$currentJob"
+                    )
+                        .openConnection()
+                        as HttpURLConnection
+
+
+                connection.requestMethod =
+                    "GET"
+
+                connection.connectTimeout =
+                    5000
+
+                connection.readTimeout =
+                    10000
+
+
+                val code =
+                    connection.responseCode
+
+
+                if (
+                    code == 200
+                ) {
+
+                    val text =
+                        connection.inputStream
+                            .bufferedReader()
+                            .use {
+                                it.readText()
+                            }
+
+
+                    processarAudioTraduzido(
+                        text
+                    )
+                }
+
+
+                connection.disconnect()
+
+
+                /*
+                 * Pequeno intervalo para
+                 * não sobrecarregar o Render.
+                 */
+
+                Thread.sleep(
+                    150
+                )
+
+
+            } catch (
+                _: Exception
+            ) {
+
+                try {
+
+                    Thread.sleep(
+                        500
+                    )
+
+                } catch (
+                    _: Exception
+                ) {
+                }
+            }
+        }
+    }
+
+
+    /*
+     * Recebe o JSON do Render.
+     */
+
+    private fun processarAudioTraduzido(
+        text: String
+    ) {
+
+        try {
+
+            val json =
+                JSONObject(
+                    text
+                )
+
+
+            if (
+                !json.optBoolean(
+                    "ok",
+                    false
+                )
+            ) {
+
+                return
+            }
+
+
+            val audioArray =
+                json.optJSONArray(
+                    "audio"
+                )
+
+
+            if (
+                audioArray == null
+            ) {
+
+                return
+            }
+
+
+            for (
+                i in 0 until audioArray.length()
+            ) {
+
+                val base64 =
+                    audioArray.optString(
+                        i,
+                        ""
+                    )
+
+
+                if (
+                    base64.isEmpty()
+                ) {
+
+                    continue
+                }
+
+
+                val audioBytes =
+                    Base64.decode(
+                        base64,
+                        Base64.DEFAULT
+                    )
+
+
+                if (
+                    audioBytes.isNotEmpty()
+                ) {
+
+                    tocarAudio(
+                        audioBytes
+                    )
+                }
+            }
+
+
+        } catch (
+            _: Exception
+        ) {
+        }
+    }
+
+
+    /*
+     * Reproduz o PCM 16 kHz recebido.
+     */
+
+    private fun tocarAudio(
+        audioBytes: ByteArray
+    ) {
+
+        try {
+
+            if (
+                audioTrack == null
+            ) {
+
+                val minBuffer =
+                    AudioTrack.getMinBufferSize(
+                        16000,
+                        AudioFormat.CHANNEL_OUT_MONO,
+                        AudioFormat.ENCODING_PCM_16BIT
+                    )
+
+
+                audioTrack =
+                    AudioTrack.Builder()
+                        .setAudioAttributes(
+                            AudioAttributes.Builder()
+                                .setUsage(
+                                    AudioAttributes.USAGE_MEDIA
+                                )
+                                .setContentType(
+                                    AudioAttributes.CONTENT_TYPE_SPEECH
+                                )
+                                .build()
+                        )
+                        .setAudioFormat(
+                            AudioFormat.Builder()
+                                .setEncoding(
+                                    AudioFormat.ENCODING_PCM_16BIT
+                                )
+                                .setSampleRate(
+                                    16000
+                                )
+                                .setChannelMask(
+                                    AudioFormat.CHANNEL_OUT_MONO
+                                )
+                                .build()
+                        )
+                        .setBufferSizeInBytes(
+                            maxOf(
+                                minBuffer,
+                                4096
+                            )
+                        )
+                        .setTransferMode(
+                            AudioTrack.MODE_STREAM
+                        )
+                        .build()
+
+
+                audioTrack?.play()
+            }
+
+
+            audioTrack?.write(
+                audioBytes,
+                0,
+                audioBytes.size
+            )
+
+
+        } catch (
+            _: Exception
+        ) {
+        }
+    }
+
+
     private fun pararTudo() {
 
-        isRecording = false
+        recording =
+            false
+
+        playingOutput =
+            false
+
 
         try {
 
             audioRecord?.stop()
 
-        } catch (_: Exception) {
+        } catch (
+            _: Exception
+        ) {
         }
+
 
         try {
 
             audioRecord?.release()
 
-        } catch (_: Exception) {
+        } catch (
+            _: Exception
+        ) {
         }
 
-        audioRecord = null
+        audioRecord =
+            null
+
 
         try {
 
-            recordingThread?.interrupt()
+            captureThread?.interrupt()
 
-        } catch (_: Exception) {
+        } catch (
+            _: Exception
+        ) {
         }
 
-        recordingThread = null
+        captureThread =
+            null
+
+
+        try {
+
+            outputThread?.interrupt()
+
+        } catch (
+            _: Exception
+        ) {
+        }
+
+        outputThread =
+            null
+
+
+        try {
+
+            audioTrack?.stop()
+
+        } catch (
+            _: Exception
+        ) {
+        }
+
+
+        try {
+
+            audioTrack?.release()
+
+        } catch (
+            _: Exception
+        ) {
+        }
+
+        audioTrack =
+            null
+
 
         try {
 
             mediaProjection?.stop()
 
-        } catch (_: Exception) {
+        } catch (
+            _: Exception
+        ) {
         }
 
-        mediaProjection = null
+        mediaProjection =
+            null
 
-        currentJobId = null
+        jobId =
+            null
+
 
         try {
 
@@ -481,11 +864,14 @@ class AudioCaptureService : Service() {
                 STOP_FOREGROUND_REMOVE
             )
 
-        } catch (_: Exception) {
+        } catch (
+            _: Exception
+        ) {
         }
     }
 
-    private fun criarCanalNotificacao() {
+
+    private fun criarCanal() {
 
         if (
             Build.VERSION.SDK_INT >=
@@ -499,19 +885,23 @@ class AudioCaptureService : Service() {
                     NotificationManager.IMPORTANCE_LOW
                 )
 
+
             channel.description =
-                "Captura de áudio do vídeo"
+                "Tradução de áudio em tempo real"
+
 
             val manager =
                 getSystemService(
                     NotificationManager::class.java
                 )
 
+
             manager.createNotificationChannel(
                 channel
             )
         }
     }
+
 
     private fun iniciarForeground() {
 
@@ -524,13 +914,14 @@ class AudioCaptureService : Service() {
                     "SI Tradutor Live"
                 )
                 .setContentText(
-                    "Monitorando o áudio do vídeo..."
+                    "Traduzindo o áudio do vídeo..."
                 )
                 .setSmallIcon(
                     android.R.drawable.ic_btn_speak_now
                 )
                 .setOngoing(true)
                 .build()
+
 
         if (
             Build.VERSION.SDK_INT >=
@@ -552,12 +943,14 @@ class AudioCaptureService : Service() {
         }
     }
 
+
     override fun onDestroy() {
 
         pararTudo()
 
         super.onDestroy()
     }
+
 
     override fun onBind(
         intent: Intent?
