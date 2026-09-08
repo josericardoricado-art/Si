@@ -5,43 +5,61 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
-import android.os.Build
 import android.os.Bundle
-import android.widget.ArrayAdapter
-import android.widget.Button
-import android.widget.Spinner
-import android.widget.TextView
-import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
+import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.UUID
+import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
 
     companion object {
-        private const val BACKEND_URL =
-            "https://si-u2ul.onrender.com"
+        private const val BACKEND_URL = "https://si-u2ul.onrender.com"
+        private const val REQUEST_RECORD_AUDIO = 1001
+        private const val REQUEST_MEDIA_PROJECTION = 1002
+
+        const val EXTRA_JOB_ID = "jobId"
+        const val EXTRA_RESULT_CODE = "resultCode"
+        const val EXTRA_RESULT_DATA = "resultData"
     }
 
     private lateinit var statusText: TextView
     private lateinit var monitorButton: Button
     private lateinit var stopButton: Button
     private lateinit var languageSpinner: Spinner
-    private lateinit var dubbingButton: Button
-    private lateinit var translationButton: Button
-    private lateinit var registerButton: Button
-    private lateinit var plansButton: Button
 
-    private var mediaProjectionManager:
-            MediaProjectionManager? = null
+    private var mediaProjectionResultCode: Int = 0
+    private var mediaProjectionData: Intent? = null
 
-    private var dubbingEnabled = true
-    private var translationEnabled = true
+    private var jobId: String? = null
 
-    /*
-     * Idiomas disponíveis.
-     */
-    private val languages = arrayOf(
+    private val clientId: String by lazy {
+        val prefs = getSharedPreferences("si_config", MODE_PRIVATE)
+
+        var id = prefs.getString("client_id", null)
+
+        if (id == null) {
+            id = UUID.randomUUID().toString()
+
+            prefs.edit()
+                .putString("client_id", id)
+                .apply()
+        }
+
+        id
+    }
+
+    private val languageCodes = arrayOf(
+        "pt", "en", "es", "fr", "de", "it",
+        "ja", "ko", "zh", "ru", "ar", "hi",
+        "tr", "nl", "pl", "uk", "th", "id", "vi"
+    )
+
+    private val languageNames = arrayOf(
         "Português",
         "English",
         "Español",
@@ -63,363 +81,262 @@ class MainActivity : AppCompatActivity() {
         "Tiếng Việt"
     )
 
-    /*
-     * Permissão necessária para o sistema permitir
-     * AudioPlaybackCapture.
-     *
-     * A captura do áudio do vídeo NÃO será feita
-     * pelo microfone.
-     */
-    private val microphonePermissionLauncher =
-        registerForActivityResult(
-            ActivityResultContracts.RequestPermission()
-        ) { granted ->
-
-            if (granted) {
-                solicitarMonitoramento()
-            } else {
-
-                statusText.text =
-                    "Permissão de áudio não concedida."
-
-                Toast.makeText(
-                    this,
-                    "A permissão de áudio é necessária para monitorar a reprodução.",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-        }
-
-    /*
-     * Autorização oficial do Android para
-     * MediaProjection.
-     */
-    private val screenCaptureLauncher =
-        registerForActivityResult(
-            ActivityResultContracts.StartActivityForResult()
-        ) { result ->
-
-            if (
-                result.resultCode == Activity.RESULT_OK &&
-                result.data != null
-            ) {
-
-                iniciarCaptura(
-                    result.resultCode,
-                    result.data!!
-                )
-
-            } else {
-
-                statusText.text =
-                    "Monitoramento cancelado."
-
-                Toast.makeText(
-                    this,
-                    "A autorização de monitoramento foi cancelada.",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-        }
-
-    override fun onCreate(
-        savedInstanceState: Bundle?
-    ) {
+    override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        setContentView(
-            R.layout.activity_main
+        setContentView(R.layout.activity_main)
+
+        statusText = findViewById(R.id.statusText)
+        monitorButton = findViewById(R.id.monitorButton)
+        stopButton = findViewById(R.id.stopButton)
+        languageSpinner = findViewById(R.id.languageSpinner)
+
+        languageSpinner.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            languageNames
         )
 
-        mediaProjectionManager =
-            getSystemService(
-                MEDIA_PROJECTION_SERVICE
-            ) as MediaProjectionManager
+        stopButton.isEnabled = false
 
-        localizarElementos()
+        monitorButton.setOnClickListener {
+            iniciarMonitoramento()
+        }
 
-        configurarIdiomas()
-
-        configurarBotoes()
+        stopButton.setOnClickListener {
+            pararMonitoramento()
+        }
 
         verificarServidor()
     }
 
-    private fun localizarElementos() {
+    private fun iniciarMonitoramento() {
 
-        statusText =
-            findViewById(R.id.statusText)
-
-        monitorButton =
-            findViewById(R.id.monitorButton)
-
-        stopButton =
-            findViewById(R.id.stopButton)
-
-        languageSpinner =
-            findViewById(R.id.languageSpinner)
-
-        dubbingButton =
-            findViewById(R.id.dubbingButton)
-
-        translationButton =
-            findViewById(R.id.translationButton)
-
-        registerButton =
-            findViewById(R.id.registerButton)
-
-        plansButton =
-            findViewById(R.id.plansButton)
-    }
-
-    private fun configurarIdiomas() {
-
-        val adapter =
-            ArrayAdapter(
+        if (ContextCompat.checkSelfPermission(
                 this,
-                android.R.layout.simple_spinner_item,
-                languages
-            )
-
-        adapter.setDropDownViewResource(
-            android.R.layout.simple_spinner_dropdown_item
-        )
-
-        languageSpinner.adapter =
-            adapter
-
-        /*
-         * Português como idioma inicial.
-         */
-        languageSpinner.setSelection(0)
-    }
-
-    private fun configurarBotoes() {
-
-        /*
-         * MONITORAR TELA
-         */
-        monitorButton.setOnClickListener {
-
-            iniciarProcessoMonitoramento()
-        }
-
-        /*
-         * PARAR
-         */
-        stopButton.setOnClickListener {
-
-            pararMonitoramento()
-        }
-
-        /*
-         * DUBLAGEM
-         */
-        dubbingButton.setOnClickListener {
-
-            dubbingEnabled =
-                !dubbingEnabled
-
-            if (dubbingEnabled) {
-
-                dubbingButton.text =
-                    "🔊  DUBLAGEM ATIVADA"
-
-                statusText.text =
-                    "Dublagem ativada."
-
-            } else {
-
-                dubbingButton.text =
-                    "🔇  DUBLAGEM DESATIVADA"
-
-                statusText.text =
-                    "Dublagem desativada."
-            }
-        }
-
-        /*
-         * TRADUÇÃO
-         */
-        translationButton.setOnClickListener {
-
-            translationEnabled =
-                !translationEnabled
-
-            if (translationEnabled) {
-
-                translationButton.text =
-                    "🌐  TRADUÇÃO ATIVADA"
-
-                statusText.text =
-                    "Tradução ativada."
-
-            } else {
-
-                translationButton.text =
-                    "🌐  TRADUÇÃO DESATIVADA"
-
-                statusText.text =
-                    "Tradução desativada."
-            }
-        }
-
-        /*
-         * CADASTRO
-         */
-        registerButton.setOnClickListener {
-
-            mostrarCadastro()
-        }
-
-        /*
-         * PLANOS
-         */
-        plansButton.setOnClickListener {
-
-            mostrarPlanos()
-        }
-    }
-
-    private fun iniciarProcessoMonitoramento() {
-
-        if (Build.VERSION.SDK_INT <
-            Build.VERSION_CODES.Q
+                Manifest.permission.RECORD_AUDIO
+            ) != PackageManager.PERMISSION_GRANTED
         ) {
 
-            statusText.text =
-                "Android 10 ou superior necessário."
-
-            Toast.makeText(
+            ActivityCompat.requestPermissions(
                 this,
-                "A captura de áudio da reprodução exige Android 10+.",
-                Toast.LENGTH_LONG
-            ).show()
+                arrayOf(Manifest.permission.RECORD_AUDIO),
+                REQUEST_RECORD_AUDIO
+            )
 
             return
         }
 
-        statusText.text =
-            "Preparando monitoramento..."
+        statusText.text = "🔄 Criando sessão..."
 
-        /*
-         * Verifica RECORD_AUDIO.
-         *
-         * Não significa que vamos usar o microfone
-         * para capturar o vídeo.
-         */
-        val permission =
-            ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.RECORD_AUDIO
-            )
+        val selectedPosition = languageSpinner.selectedItemPosition
+        val targetLang = languageCodes[selectedPosition]
 
-        if (
-            permission !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
+        Thread {
 
-            statusText.text =
-                "Solicitando autorização de áudio..."
+            try {
 
-            microphonePermissionLauncher.launch(
-                Manifest.permission.RECORD_AUDIO
-            )
+                val url = URL("$BACKEND_URL/api/audio/start")
 
-        } else {
+                val connection =
+                    url.openConnection() as HttpURLConnection
 
-            solicitarMonitoramento()
-        }
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 15000
+                connection.readTimeout = 15000
+                connection.doOutput = true
+
+                connection.setRequestProperty(
+                    "Content-Type",
+                    "application/json"
+                )
+
+                connection.setRequestProperty(
+                    "X-Client-Id",
+                    clientId
+                )
+
+                val body = JSONObject()
+
+                body.put("clientId", clientId)
+                body.put("targetLang", targetLang)
+
+                connection.outputStream.use { output ->
+
+                    output.write(
+                        body.toString().toByteArray(Charsets.UTF_8)
+                    )
+                }
+
+                val responseCode = connection.responseCode
+
+                if (responseCode !in 200..299) {
+
+                    runOnUiThread {
+
+                        statusText.text =
+                            "❌ Erro ao criar sessão: HTTP $responseCode"
+                    }
+
+                    connection.disconnect()
+                    return@Thread
+                }
+
+                val responseText =
+                    connection.inputStream
+                        .bufferedReader()
+                        .use { it.readText() }
+
+                connection.disconnect()
+
+                val response =
+                    JSONObject(responseText)
+
+                val ok =
+                    response.optBoolean("ok", false)
+
+                if (!ok) {
+
+                    runOnUiThread {
+
+                        statusText.text =
+                            "❌ O servidor recusou a sessão."
+                    }
+
+                    return@Thread
+                }
+
+                jobId =
+                    response.optString("jobId", null)
+
+                if (jobId.isNullOrEmpty()) {
+
+                    runOnUiThread {
+
+                        statusText.text =
+                            "❌ Render não retornou o jobId."
+                    }
+
+                    return@Thread
+                }
+
+                runOnUiThread {
+
+                    statusText.text =
+                        "🎬 Preparando captura de áudio..."
+
+                    solicitarCapturaDeTela()
+                }
+
+            } catch (e: Exception) {
+
+                runOnUiThread {
+
+                    statusText.text =
+                        "❌ Erro de conexão com Render: ${e.message}"
+                }
+            }
+
+        }.start()
     }
 
-    private fun solicitarMonitoramento() {
+    private fun solicitarCapturaDeTela() {
 
-        statusText.text =
-            "Aguardando autorização do Android..."
+        val manager =
+            getSystemService(
+                MEDIA_PROJECTION_SERVICE
+            ) as MediaProjectionManager
 
-        val intent =
-            mediaProjectionManager
-                ?.createScreenCaptureIntent()
+        val captureIntent =
+            manager.createScreenCaptureIntent()
 
-        if (intent == null) {
-
-            statusText.text =
-                "Não foi possível iniciar o monitoramento."
-
-            return
-        }
-
-        /*
-         * O Android exibirá a confirmação oficial.
-         */
-        screenCaptureLauncher.launch(
-            intent
+        startActivityForResult(
+            captureIntent,
+            REQUEST_MEDIA_PROJECTION
         )
     }
 
-    private fun iniciarCaptura(
+    @Deprecated("Deprecated API usada para compatibilidade")
+    override fun onActivityResult(
+        requestCode: Int,
         resultCode: Int,
-        data: Intent
+        data: Intent?
     ) {
 
-        val idioma =
-            languageSpinner.selectedItem
-                ?.toString()
-                ?: "Português"
+        super.onActivityResult(
+            requestCode,
+            resultCode,
+            data
+        )
+
+        if (requestCode == REQUEST_MEDIA_PROJECTION) {
+
+            if (
+                resultCode == Activity.RESULT_OK &&
+                data != null &&
+                !jobId.isNullOrEmpty()
+            ) {
+
+                mediaProjectionResultCode =
+                    resultCode
+
+                mediaProjectionData =
+                    data
+
+                iniciarServicoDeAudio()
+
+            } else {
+
+                statusText.text =
+                    "❌ Captura de tela cancelada."
+
+                jobId = null
+            }
+        }
+    }
+
+    private fun iniciarServicoDeAudio() {
+
+        val currentJobId =
+            jobId ?: return
+
+        val data =
+            mediaProjectionData ?: return
 
         val serviceIntent =
             Intent(
                 this,
                 AudioCaptureService::class.java
-            ).apply {
-
-                action =
-                    AudioCaptureService.ACTION_START
-
-                putExtra(
-                    AudioCaptureService.EXTRA_RESULT_CODE,
-                    resultCode
-                )
-
-                putExtra(
-                    AudioCaptureService.EXTRA_RESULT_DATA,
-                    data
-                )
-            }
-
-        try {
-
-            ContextCompat.startForegroundService(
-                this,
-                serviceIntent
             )
 
-            monitorButton.isEnabled = false
-            stopButton.isEnabled = true
+        serviceIntent.action =
+            AudioCaptureService.ACTION_START
 
-            statusText.text =
-                "🎬 Monitorando • $idioma"
+        serviceIntent.putExtra(
+            AudioCaptureService.EXTRA_RESULT_CODE,
+            mediaProjectionResultCode
+        )
 
-            Toast.makeText(
-                this,
-                "Monitoramento iniciado.",
-                Toast.LENGTH_SHORT
-            ).show()
+        serviceIntent.putExtra(
+            AudioCaptureService.EXTRA_RESULT_DATA,
+            data
+        )
 
-        } catch (e: Exception) {
+        serviceIntent.putExtra(
+            AudioCaptureService.EXTRA_JOB_ID,
+            currentJobId
+        )
 
-            monitorButton.isEnabled = true
-            stopButton.isEnabled = false
+        ContextCompat.startForegroundService(
+            this,
+            serviceIntent
+        )
 
-            statusText.text =
-                "Erro ao iniciar monitoramento."
+        statusText.text =
+            "🟢 MONITORANDO ÁUDIO DO VÍDEO"
 
-            Toast.makeText(
-                this,
-                "Erro: ${e.message}",
-                Toast.LENGTH_LONG
-            ).show()
-        }
+        monitorButton.isEnabled = false
+        stopButton.isEnabled = true
     }
 
     private fun pararMonitoramento() {
@@ -428,94 +345,88 @@ class MainActivity : AppCompatActivity() {
             Intent(
                 this,
                 AudioCaptureService::class.java
-            ).apply {
+            )
 
-                action =
-                    AudioCaptureService.ACTION_STOP
-            }
+        serviceIntent.action =
+            AudioCaptureService.ACTION_STOP
 
-        try {
-            startService(serviceIntent)
-        } catch (_: Exception) {
+        startService(serviceIntent)
+
+        stopService(
+            Intent(
+                this,
+                AudioCaptureService::class.java
+            )
+        )
+
+        val currentJobId =
+            jobId
+
+        if (!currentJobId.isNullOrEmpty()) {
+
+            Thread {
+
+                try {
+
+                    val url =
+                        URL("$BACKEND_URL/api/audio/stop")
+
+                    val connection =
+                        url.openConnection()
+                            as HttpURLConnection
+
+                    connection.requestMethod =
+                        "POST"
+
+                    connection.connectTimeout =
+                        10000
+
+                    connection.readTimeout =
+                        10000
+
+                    connection.doOutput =
+                        true
+
+                    connection.setRequestProperty(
+                        "Content-Type",
+                        "application/json"
+                    )
+
+                    val body =
+                        JSONObject()
+
+                    body.put(
+                        "jobId",
+                        currentJobId
+                    )
+
+                    connection.outputStream.use { output ->
+
+                        output.write(
+                            body.toString()
+                                .toByteArray(Charsets.UTF_8)
+                        )
+                    }
+
+                    connection.responseCode
+
+                    connection.disconnect()
+
+                } catch (_: Exception) {
+                    // Não impede o encerramento local.
+                }
+
+            }.start()
         }
 
-        try {
-            stopService(serviceIntent)
-        } catch (_: Exception) {
-        }
+        jobId = null
+        mediaProjectionData = null
+
+        statusText.text =
+            "⏹ Monitoramento parado."
 
         monitorButton.isEnabled = true
         stopButton.isEnabled = false
-
-        statusText.text =
-            "Monitoramento parado."
-
-        Toast.makeText(
-            this,
-            "Monitoramento encerrado.",
-            Toast.LENGTH_SHORT
-        ).show()
-    }
-
-    private fun mostrarCadastro() {
-
-        val mensagem =
-            """
-            👤 CADASTRO
-
-            O sistema de cadastro será conectado
-            ao servidor nas próximas etapas.
-
-            Aqui vamos colocar:
-
-            • Criar conta
-            • Entrar
-            • E-mail
-            • Senha
-            • Área do usuário
-            """.trimIndent()
-
-        android.app.AlertDialog.Builder(this)
-            .setTitle("SI Tradutor Live")
-            .setMessage(mensagem)
-            .setPositiveButton(
-                "OK",
-                null
-            )
-            .show()
-    }
-
-    private fun mostrarPlanos() {
-
-        val mensagem =
-            """
-            💳 PLANOS SI TRADUTOR LIVE
-
-            GRATUITO
-            • Teste do monitoramento
-
-            PRO
-            • Tradução em tempo real
-            • Dublagem
-            • Mais recursos
-
-            PREMIUM
-            • Tradução e dublagem avançadas
-            • Mais tempo de uso
-            • Recursos completos
-
-            O pagamento será conectado
-            ao Mercado Pago na próxima etapa.
-            """.trimIndent()
-
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Planos")
-            .setMessage(mensagem)
-            .setPositiveButton(
-                "OK",
-                null
-            )
-            .show()
     }
 
     private fun verificarServidor() {
@@ -525,13 +436,11 @@ class MainActivity : AppCompatActivity() {
             try {
 
                 val url =
-                    java.net.URL(
-                        "$BACKEND_URL/api/health"
-                    )
+                    URL("$BACKEND_URL/api/health")
 
                 val connection =
                     url.openConnection()
-                        as java.net.HttpURLConnection
+                        as HttpURLConnection
 
                 connection.requestMethod =
                     "GET"
@@ -542,43 +451,65 @@ class MainActivity : AppCompatActivity() {
                 connection.readTimeout =
                     10000
 
-                val responseCode =
+                val code =
                     connection.responseCode
 
                 connection.disconnect()
 
                 runOnUiThread {
 
-                    if (responseCode == 200) {
+                    if (code in 200..299) {
 
                         statusText.text =
-                            "🟢 Servidor online • Pronto para monitorar"
-
+                            "🟢 Servidor conectado"
                     } else {
 
                         statusText.text =
-                            "🟠 Servidor respondeu com erro."
+                            "🟡 Servidor respondeu HTTP $code"
                     }
                 }
 
-            } catch (_: Exception) {
+            } catch (e: Exception) {
 
                 runOnUiThread {
 
                     statusText.text =
-                        "🔴 Sem conexão com o servidor."
+                        "🔴 Servidor offline"
                 }
             }
 
         }.start()
     }
 
-    override fun onDestroy() {
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
 
-        /*
-         * O serviço pode continuar funcionando
-         * mesmo quando esta tela é fechada.
-         */
-        super.onDestroy()
+        super.onRequestPermissionsResult(
+            requestCode,
+            permissions,
+            grantResults
+        )
+
+        if (
+            requestCode == REQUEST_RECORD_AUDIO
+        ) {
+
+            if (
+                grantResults.isNotEmpty() &&
+                grantResults[0] ==
+                PackageManager.PERMISSION_GRANTED
+            ) {
+
+                iniciarMonitoramento()
+
+            } else {
+
+                statusText.text =
+                    "❌ Permissão de áudio necessária."
+            }
+        }
     }
 }
