@@ -1,20 +1,16 @@
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
-const path = require("path");
 const fs = require("fs");
-const crypto = require("crypto");
-const { WebSocket } = require("ws");
+const path = require("path");
+const { v4: uuidv4 } = require("uuid");
+const WebSocket = require("ws");
 
 const app = express();
 
 const PORT = process.env.PORT || 10000;
 
-const BACKEND_URL = "https://si-u2ul.onrender.com";
-
-const ELEVENLABS_API_KEY =
-  process.env.ELEVENLABS_API_KEY || "";
-
+const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || "";
 const ELEVENLABS_AGENT_ID =
   process.env.ELEVENLABS_AGENT_ID ||
   "agent_1601m1q929bhf2zvts65479fyzdw";
@@ -23,2077 +19,872 @@ const ELEVENLABS_VOICE_ID =
   process.env.ELEVENLABS_VOICE_ID ||
   "cjVigY5qzO86Huf0OWal";
 
-const ADMIN_PASSWORD =
-  process.env.ADMIN_PASSWORD ||
-  "troque-esta-senha";
+const BACKEND_URL =
+  process.env.BACKEND_URL ||
+  "https://si-u2ul.onrender.com";
 
+const UPLOAD_DIR = path.join(__dirname, "uploads");
 
-/* ============================================================
-   APP
-============================================================ */
+if (!fs.existsSync(UPLOAD_DIR)) {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
 
 app.use(
   cors({
     origin: "*",
-    methods: [
-      "GET",
-      "POST",
-      "PUT",
-      "DELETE",
-      "OPTIONS"
-    ],
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-      "X-Admin-Password",
-      "X-Client-Id",
-      "X-Job-Id"
-    ]
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
-app.use(
-  express.json({
-    limit: "20mb"
-  })
-);
+app.use(express.json({ limit: "20mb" }));
+app.use(express.urlencoded({ extended: true }));
 
-app.use(
-  express.urlencoded({
-    extended: true,
-    limit: "20mb"
-  })
-);
+app.use("/uploads", express.static(UPLOAD_DIR));
 
+/* =========================================================
+   SESSÕES DE ÁUDIO
+========================================================= */
 
-/* ============================================================
-   UPLOADS
-============================================================ */
+const audioSessions = new Map();
 
-const uploadFolder =
-  path.join(__dirname, "uploads");
+/* =========================================================
+   FUNÇÕES AUXILIARES
+========================================================= */
 
-if (!fs.existsSync(uploadFolder)) {
-  fs.mkdirSync(
-    uploadFolder,
-    {
-      recursive: true
-    }
-  );
+function now() {
+  return Date.now();
 }
 
+function parseSampleRate(format) {
+  if (!format) return null;
 
-const storage =
-  multer.diskStorage({
+  const match = String(format).match(/(\d{4,6})/);
 
-    destination: function(
-      req,
-      file,
-      cb
-    ) {
+  if (!match) return null;
 
-      cb(
-        null,
-        uploadFolder
-      );
-    },
-
-    filename: function(
-      req,
-      file,
-      cb
-    ) {
-
-      const extension =
-        path.extname(
-          file.originalname
-        ) || ".mp4";
-
-      const name =
-        "video-" +
-        Date.now() +
-        "-" +
-        Math.random()
-          .toString(36)
-          .substring(2, 10) +
-        extension;
-
-      cb(
-        null,
-        name
-      );
-    }
-  });
-
-
-const upload =
-  multer({
-
-    storage,
-
-    limits: {
-      fileSize:
-        500 * 1024 * 1024
-    },
-
-    fileFilter:
-      function(
-        req,
-        file,
-        cb
-      ) {
-
-        if (
-          file.mimetype &&
-          file.mimetype.startsWith(
-            "video/"
-          )
-        ) {
-
-          cb(
-            null,
-            true
-          );
-
-        } else {
-
-          cb(
-            new Error(
-              "Envie somente arquivos de vídeo."
-            )
-          );
-        }
-      }
-  });
-
-
-/* ============================================================
-   UTILIDADES
-============================================================ */
-
-function generateId() {
-
-  return (
-    Date.now() +
-    "-" +
-    crypto
-      .randomBytes(8)
-      .toString("hex")
-  );
+  return Number(match[1]);
 }
-
-
-function sleep(ms) {
-
-  return new Promise(
-    resolve =>
-      setTimeout(
-        resolve,
-        ms
-      )
-  );
-}
-
-
-/* ============================================================
-   IDIOMAS
-============================================================ */
-
-const ALLOWED_LANGUAGES = [
-  "pt",
-  "en",
-  "es",
-  "fr",
-  "de",
-  "it",
-  "ja",
-  "ko",
-  "zh",
-  "ru",
-  "ar",
-  "hi",
-  "tr",
-  "nl",
-  "pl",
-  "uk",
-  "th",
-  "id",
-  "vi"
-];
-
-
-function validLanguage(
-  language
-) {
-
-  return ALLOWED_LANGUAGES.includes(
-    language
-  );
-}
-
-
-/* ============================================================
-   SESSÕES
-============================================================ */
-
-const audioSessions =
-  new Map();
-
 
 /*
-  Cada sessão:
-
-  {
-    jobId,
-    clientId,
-    targetLang,
-    createdAt,
-
-    status,
-
-    chunks,
-    bytesReceived,
-
-    outputQueue,
-    outputBytes,
-
-    elevenSocket,
-    elevenConnected,
-
-    inputSampleRate,
-    outputSampleRate,
-
-    conversationId,
-
-    lastError,
-
-    sendChain
-  }
-*/
-
-
-/* ============================================================
-   RESAMPLE PCM 16 BITS MONO
-============================================================ */
-
-/*
-  Conversão simples de PCM16 mono.
-
-  O Android envia 48 kHz.
-
-  A ElevenLabs normalmente espera 16 kHz.
-*/
-
-function resamplePcm16(
-  buffer,
-  inputRate,
-  outputRate
-) {
-
-  if (
-    !Buffer.isBuffer(buffer)
-  ) {
-
+ * Converte PCM16 mono de uma frequência para outra.
+ * Exemplo:
+ * 48000 -> 16000
+ * 44100 -> 16000
+ * 24000 -> 16000
+ */
+function resamplePcm16(buffer, inputRate, outputRate) {
+  if (!buffer || buffer.length === 0) {
     return Buffer.alloc(0);
   }
 
-
-  if (
-    inputRate === outputRate
-  ) {
-
+  if (!inputRate || !outputRate || inputRate === outputRate) {
     return buffer;
   }
 
+  const sampleCount = Math.floor(buffer.length / 2);
 
-  if (
-    inputRate <= 0 ||
-    outputRate <= 0
-  ) {
-
+  if (sampleCount <= 0) {
     return Buffer.alloc(0);
   }
 
+  const ratio = inputRate / outputRate;
 
-  const bytesPerSample = 2;
+  const outputCount = Math.max(
+    1,
+    Math.floor(sampleCount / ratio)
+  );
 
-  const inputSamples =
-    Math.floor(
-      buffer.length /
-      bytesPerSample
+  const output = Buffer.alloc(outputCount * 2);
+
+  for (let i = 0; i < outputCount; i++) {
+    const sourceIndex = Math.min(
+      sampleCount - 1,
+      Math.floor(i * ratio)
     );
 
+    const sample = buffer.readInt16LE(sourceIndex * 2);
 
-  if (
-    inputSamples < 2
-  ) {
-
-    return Buffer.alloc(0);
+    output.writeInt16LE(sample, i * 2);
   }
-
-
-  const outputSamples =
-    Math.floor(
-      inputSamples *
-      outputRate /
-      inputRate
-    );
-
-
-  if (
-    outputSamples <= 0
-  ) {
-
-    return Buffer.alloc(0);
-  }
-
-
-  const output =
-    Buffer.alloc(
-      outputSamples *
-      bytesPerSample
-    );
-
-
-  const ratio =
-    inputRate /
-    outputRate;
-
-
-  for (
-    let i = 0;
-    i < outputSamples;
-    i++
-  ) {
-
-    const sourcePosition =
-      i * ratio;
-
-    const index =
-      Math.floor(
-        sourcePosition
-      );
-
-    const nextIndex =
-      Math.min(
-        index + 1,
-        inputSamples - 1
-      );
-
-    const fraction =
-      sourcePosition -
-      index;
-
-
-    const sample1 =
-      buffer.readInt16LE(
-        index * 2
-      );
-
-    const sample2 =
-      buffer.readInt16LE(
-        nextIndex * 2
-      );
-
-
-    const sample =
-      Math.round(
-        sample1 +
-        (
-          sample2 -
-          sample1
-        ) *
-        fraction
-      );
-
-
-    output.writeInt16LE(
-      sample,
-      i * 2
-    );
-  }
-
 
   return output;
 }
 
-
-/* ============================================================
-   CONVERTER SAÍDA DA ELEVENLABS PARA 16 KHZ
-============================================================ */
-
-function convertOutputTo16k(
-  buffer,
-  sampleRate
-) {
-
-  if (
-    !Buffer.isBuffer(buffer)
-  ) {
-
-    return Buffer.alloc(0);
-  }
-
-
-  if (
-    !sampleRate ||
-    sampleRate === 16000
-  ) {
-
-    return buffer;
-  }
-
-
+function convertOutputTo16k(buffer, inputRate) {
   return resamplePcm16(
     buffer,
-    sampleRate,
+    inputRate,
     16000
   );
 }
 
+/* =========================================================
+   HEALTH
+========================================================= */
 
-/* ============================================================
-   SIGNED URL ELEVENLABS
-============================================================ */
+app.get("/api/health", (req, res) => {
+  res.json({
+    ok: true,
+    service: "LinguaLive",
+    message: "Servidor online",
+    audioCapture: true,
+    elevenlabs: Boolean(ELEVENLABS_API_KEY),
+    elevenlabsWebSocket: true,
+    agentId: ELEVENLABS_AGENT_ID,
+    time: new Date().toISOString(),
+  });
+});
+
+/* =========================================================
+   CONFIGURAÇÃO
+========================================================= */
+
+app.get("/api/audio/config", (req, res) => {
+  res.json({
+    ok: true,
+    backendUrl: BACKEND_URL,
+    audioCapture: true,
+    elevenlabs: Boolean(ELEVENLABS_API_KEY),
+    agentId: ELEVENLABS_AGENT_ID,
+    sampleRate: 16000,
+    channels: 1,
+    format: "pcm_s16le",
+  });
+});
+
+/* =========================================================
+   ASSINAR URL ELEVENLABS
+========================================================= */
 
 async function getElevenLabsSignedUrl() {
-
-  if (
-    !ELEVENLABS_API_KEY
-  ) {
-
+  if (!ELEVENLABS_API_KEY) {
     throw new Error(
       "ELEVENLABS_API_KEY não configurada no Render."
     );
   }
 
-
   const url =
     "https://api.elevenlabs.io/v1/convai/conversation/get-signed-url" +
     "?agent_id=" +
-    encodeURIComponent(
-      ELEVENLABS_AGENT_ID
-    );
+    encodeURIComponent(ELEVENLABS_AGENT_ID);
 
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      "xi-api-key": ELEVENLABS_API_KEY,
+    },
+  });
 
-  const response =
-    await fetch(
-      url,
-      {
-        method: "GET",
+  const text = await response.text();
 
-        headers: {
-          "xi-api-key":
-            ELEVENLABS_API_KEY
-        }
-      }
-    );
-
-
-  const text =
-    await response.text();
-
-
-  if (
-    !response.ok
-  ) {
-
+  if (!response.ok) {
     throw new Error(
-      "ElevenLabs signed URL HTTP " +
-      response.status +
-      ": " +
-      text
+      `ElevenLabs signed URL ${response.status}: ${text}`
     );
   }
-
 
   let data;
 
-
   try {
-
-    data =
-      JSON.parse(
-        text
-      );
-
-  } catch (_) {
-
+    data = JSON.parse(text);
+  } catch {
     throw new Error(
-      "Resposta inválida ao obter signed URL da ElevenLabs."
+      "ElevenLabs retornou resposta inválida ao gerar signed URL."
     );
   }
 
-
-  if (
-    !data.signed_url
-  ) {
-
+  if (!data.signed_url) {
     throw new Error(
       "ElevenLabs não retornou signed_url."
     );
   }
 
-
   return data.signed_url;
 }
 
-
-/* ============================================================
-   CONECTAR ELEVENLABS
-============================================================ */
-
-async function connectElevenLabs(
-  session
-) {
-
-  const signedUrl =
-    await getElevenLabsSignedUrl();
-
-
-  console.log(
-    "[ELEVENLABS] Abrindo WebSocket:",
-    session.jobId
-  );
-
-
-  const socket =
-    new WebSocket(
-      signedUrl
-    );
-
-
-  session.elevenSocket =
-    socket;
-
-
-  return new Promise(
-    (
-      resolve,
-      reject
-    ) => {
-
-      let opened =
-        false;
-
-      let settled =
-        false;
-
-
-      const timeout =
-        setTimeout(
-          () => {
-
-            if (
-              !opened &&
-              !settled
-            ) {
-
-              settled =
-                true;
-
-              session.lastError =
-                "Timeout conectando na ElevenLabs.";
-
-              try {
-
-                socket.close();
-
-              } catch (_) {
-              }
-
-              reject(
-                new Error(
-                  session.lastError
-                )
-              );
-            }
-
-          },
-          20000
-        );
-
-
-      /* --------------------------------------------------------
-         OPEN
-      -------------------------------------------------------- */
-
-      socket.on(
-        "open",
-        () => {
-
-          opened =
-            true;
-
-
-          session.elevenConnected =
-            true;
-
-          session.status =
-            "active";
-
-
-          console.log(
-            "[ELEVENLABS] WebSocket conectado:",
-            session.jobId
-          );
-
-
-          /*
-            Envia configuração inicial.
-
-            A ElevenLabs documenta esse evento
-            como conversation_initiation_client_data.
-          */
-
-          const target =
-            session.targetLang;
-
-
-          const initiation = {
-
-            type:
-              "conversation_initiation_client_data",
-
-
-            conversation_config_override: {
-
-              agent: {
-
-                prompt: {
-
-                  prompt:
-                    "Você é um tradutor de áudio em tempo real. " +
-                    "Receba a fala do vídeo e traduza imediatamente " +
-                    "para o idioma de destino: " +
-                    target +
-                    ". " +
-                    "Não converse. " +
-                    "Não explique. " +
-                    "Não responda perguntas. " +
-                    "Apenas traduza a fala recebida. " +
-                    "A tradução deve ser natural, curta e rápida. " +
-                    "Preserve nomes próprios e números quando possível."
-                }
-              },
-
-
-              tts: {
-
-                voice_id:
-                  ELEVENLABS_VOICE_ID
-              }
-            },
-
-
-            dynamic_variables: {
-
-              target_language:
-                target
-            }
-          };
-
-
-          try {
-
-            socket.send(
-              JSON.stringify(
-                initiation
-              )
-            );
-
-
-            console.log(
-              "[ELEVENLABS] Configuração inicial enviada:",
-              session.jobId
-            );
-
-
-          } catch (error) {
-
-            session.lastError =
-              "Erro enviando configuração: " +
-              error.message;
-
-            console.error(
-              "[ELEVENLABS]",
-              session.lastError
-            );
-          }
-
-
-          if (
-            !settled
-          ) {
-
-            settled =
-              true;
-
-            clearTimeout(
-              timeout
-            );
-
-            resolve();
-          }
-        }
-      );
-
-
-      /* --------------------------------------------------------
-         MESSAGE
-      -------------------------------------------------------- */
-
-      socket.on(
-        "message",
-        data => {
-
-          try {
-
-            const message =
-              JSON.parse(
-                data.toString()
-              );
-
-
-            /* ==================================================
-               METADATA DA CONVERSA
-            ================================================== */
-
-            if (
-              message.type ===
-              "conversation_initiation_metadata"
-            ) {
-
-              const metadata =
-                message
-                  .conversation_initiation_metadata_event;
-
-
-              if (
-                metadata
-              ) {
-
-                session.conversationId =
-                  metadata.conversation_id ||
-                  null;
-
-
-                session.inputSampleRate =
-                  parseSampleRate(
-                    metadata.user_input_audio_format
-                  );
-
-
-                session.outputSampleRate =
-                  parseSampleRate(
-                    metadata.agent_output_audio_format
-                  );
-
-
-                console.log(
-                  "[ELEVENLABS] Formato de entrada:",
-                  metadata.user_input_audio_format
-                );
-
-
-                console.log(
-                  "[ELEVENLABS] Formato de saída:",
-                  metadata.agent_output_audio_format
-                );
-
-
-                console.log(
-                  "[ELEVENLABS] Conversation:",
-                  session.conversationId
-                );
-              }
-
-
-              return;
-            }
-
-
-            /* ==================================================
-               ÁUDIO
-            ================================================== */
-
-            if (
-              message.type ===
-                "audio" &&
-              message.audio_event &&
-              message.audio_event.audio_base_64
-            ) {
-
-              const audioBase64 =
-                message
-                  .audio_event
-                  .audio_base_64;
-
-
-              let audioBuffer;
-
-
-              try {
-
-                audioBuffer =
-                  Buffer.from(
-                    audioBase64,
-                    "base64"
-                  );
-
-              } catch (_) {
-
-                return;
-              }
-
-
-              /*
-                O Android espera PCM16 mono 16 kHz.
-
-                Se a ElevenLabs estiver usando outro
-                sample rate PCM, convertemos aqui.
-              */
-
-              if (
-                session.outputSampleRate &&
-                session.outputSampleRate !==
-                16000
-              ) {
-
-                audioBuffer =
-                  convertOutputTo16k(
-                    audioBuffer,
-                    session.outputSampleRate
-                  );
-              }
-
-
-              if (
-                audioBuffer.length > 0
-              ) {
-
-                const finalBase64 =
-                  audioBuffer.toString(
-                    "base64"
-                  );
-
-
-                session.outputQueue.push(
-                  finalBase64
-                );
-
-
-                session.outputBytes +=
-                  audioBuffer.length;
-
-
-                console.log(
-                  "[ELEVENLABS] Áudio recebido:",
-                  audioBuffer.length,
-                  "bytes"
-                );
-              }
-
-
-              return;
-            }
-
-
-            /* ==================================================
-               TRANSCRIÇÃO
-            ================================================== */
-
-            if (
-              message.type ===
-              "user_transcript"
-            ) {
-
-              const transcript =
-                message
-                  .user_transcription_event
-                  ?.user_transcript;
-
-
-              if (
-                transcript
-              ) {
-
-                console.log(
-                  "[ELEVENLABS] Transcrição:",
-                  transcript
-                );
-              }
-
-
-              return;
-            }
-
-
-            /* ==================================================
-               RESPOSTA DO AGENTE
-            ================================================== */
-
-            if (
-              message.type ===
-              "agent_response"
-            ) {
-
-              const response =
-                message
-                  .agent_response_event
-                  ?.agent_response;
-
-
-              if (
-                response
-              ) {
-
-                console.log(
-                  "[ELEVENLABS] Resposta:",
-                  response
-                );
-              }
-
-
-              return;
-            }
-
-
-            /* ==================================================
-               RESPOSTA COMPLETA
-            ================================================== */
-
-            if (
-              message.type ===
-              "agent_response_correction"
-            ) {
-
-              console.log(
-                "[ELEVENLABS] Correção de resposta recebida."
-              );
-
-              return;
-            }
-
-
-            /* ==================================================
-               ERRO DO CLIENTE
-            ================================================== */
-
-            if (
-              message.type ===
-              "client_error"
-            ) {
-
-              const errorText =
-                JSON.stringify(
-                  message
-                );
-
-
-              session.lastError =
-                errorText;
-
-
-              session.status =
-                "error";
-
-
-              console.error(
-                "[ELEVENLABS] CLIENT ERROR:",
-                errorText
-              );
-
-
-              return;
-            }
-
-
-            /* ==================================================
-               ERRO GENÉRICO
-            ================================================== */
-
-            if (
-              message.type ===
-              "error"
-            ) {
-
-              const errorText =
-                JSON.stringify(
-                  message
-                );
-
-
-              session.lastError =
-                errorText;
-
-
-              session.status =
-                "error";
-
-
-              console.error(
-                "[ELEVENLABS] ERROR:",
-                errorText
-              );
-
-
-              return;
-            }
-
-
-            /* ==================================================
-               PING
-            ================================================== */
-
-            if (
-              message.type ===
-              "ping"
-            ) {
-
-              const eventId =
-                message
-                  .ping_event
-                  ?.event_id;
-
-
-              try {
-
-                socket.send(
-                  JSON.stringify({
-
-                    type:
-                      "pong",
-
-                    event_id:
-                      eventId
-                  })
-                );
-
-
-              } catch (
-                error
-              ) {
-
-                session.lastError =
-                  error.message;
-              }
-
-
-              return;
-            }
-
-          } catch (
-            error
-          ) {
-
-            console.error(
-              "[ELEVENLABS] Erro processando mensagem:",
-              error.message
-            );
-          }
-        }
-      );
-
-
-      /* --------------------------------------------------------
-         ERROR
-      -------------------------------------------------------- */
-
-      socket.on(
-        "error",
-        error => {
-
-          const errorText =
-            error?.message ||
-            String(error);
-
-
-          session.lastError =
-            errorText;
-
-
-          session.elevenConnected =
-            false;
-
-
-          session.status =
-            "error";
-
-
-          console.error(
-            "[ELEVENLABS] WebSocket error:",
-            errorText
-          );
-
-
-          if (
-            !settled
-          ) {
-
-            settled =
-              true;
-
-            clearTimeout(
-              timeout
-            );
-
-            reject(
-              error
-            );
-          }
-        }
-      );
-
-
-      /* --------------------------------------------------------
-         CLOSE
-      -------------------------------------------------------- */
-
-      socket.on(
-        "close",
-        (
-          code,
-          reason
-        ) => {
-
-          const reasonText =
-            reason
-              ? reason.toString()
-              : "";
-
-
-          session.elevenConnected =
-            false;
-
-
-          console.error(
-            "[ELEVENLABS] WebSocket fechado:",
-            session.jobId,
-            "code:",
-            code,
-            "reason:",
-            reasonText
-          );
-
-
-          if (
-            session.status !==
-            "stopped"
-          ) {
-
-            session.status =
-              "disconnected";
-
-
-            if (
-              !session.lastError
-            ) {
-
-              session.lastError =
-                "WebSocket ElevenLabs fechado. code=" +
-                code +
-                " reason=" +
-                reasonText;
-            }
-          }
-        }
-      );
-    }
-  );
-}
-
-
-/* ============================================================
-   SAMPLE RATE
-============================================================ */
-
-function parseSampleRate(
-  format
-) {
-
-  if (
-    !format
-  ) {
-
-    return 16000;
-  }
-
-
-  const text =
-    String(
-      format
-    ).toLowerCase();
-
-
-  if (
-    text.includes(
-      "16000"
-    )
-  ) {
-
-    return 16000;
-  }
-
-
-  if (
-    text.includes(
-      "22050"
-    )
-  ) {
-
-    return 22050;
-  }
-
-
-  if (
-    text.includes(
-      "24000"
-    )
-  ) {
-
-    return 24000;
-  }
-
-
-  if (
-    text.includes(
-      "44100"
-    )
-  ) {
-
-    return 44100;
-  }
-
-
-  if (
-    text.includes(
-      "48000"
-    )
-  ) {
-
-    return 48000;
-  }
-
-
-  return 16000;
-}
-
-
-/* ============================================================
-   ENVIAR ÁUDIO PARA ELEVENLABS
-============================================================ */
-
-/*
-  Mantemos uma fila sequencial.
-
-  Isso evita que vários chunks enviados
-  simultaneamente troquem de ordem.
-*/
-
-function sendAudioToElevenLabs(
-  session,
-  pcmBuffer
-) {
-
-  if (
-    !session ||
-    !session.elevenSocket
-  ) {
-
-    return false;
-  }
-
-
-  const socket =
-    session.elevenSocket;
-
-
-  if (
-    socket.readyState !==
-    WebSocket.OPEN
-  ) {
-
-    return false;
-  }
-
-
-  /*
-    Android envia 48 kHz.
-
-    ElevenLabs normalmente trabalha
-    com PCM16 16 kHz.
-  */
-
-  const inputRate =
-    48000;
-
-
-  const targetRate =
-    session.inputSampleRate ||
-    16000;
-
-
-  const pcm16 =
-    resamplePcm16(
-      pcmBuffer,
-      inputRate,
-      targetRate
-    );
-
-
-  if (
-    pcm16.length === 0
-  ) {
-
-    return false;
-  }
-
-
-  const audioBase64 =
-    pcm16.toString(
-      "base64"
-    );
-
-
-  const message = {
-
-    user_audio_chunk:
-      audioBase64
-  };
-
-
-  try {
-
-    /*
-      Fila sequencial de envio.
-    */
-
-    session.sendChain =
-      session.sendChain
-        .then(
-          () =>
-            new Promise(
-              resolve => {
-
-                try {
-
-                  if (
-                    socket.readyState ===
-                    WebSocket.OPEN
-                  ) {
-
-                    socket.send(
-                      JSON.stringify(
-                        message
-                      )
-                    );
-                  }
-
-                } catch (
-                  error
-                ) {
-
-                  session.lastError =
-                    error.message;
-                }
-
-
-                resolve();
-              }
-            )
-        )
-        .catch(
-          error => {
-
-            session.lastError =
-              error.message;
-          }
-        );
-
-
-    return true;
-
-  } catch (
-    error
-  ) {
-
-    session.lastError =
-      error.message;
-
-    return false;
-  }
-}
-
-
-/* ============================================================
-   HEALTH
-============================================================ */
-
-app.get(
-  "/api/health",
-  function(
-    req,
-    res
-  ) {
-
-    res.json({
-
-      ok: true,
-
-      service:
-        "LinguaLive",
-
-      message:
-        "Servidor online",
-
-      audioCapture:
-        true,
-
-      elevenlabs:
-        Boolean(
-          ELEVENLABS_API_KEY
-        ),
-
-      elevenlabsWebSocket:
-        true,
-
-      agentId:
-        ELEVENLABS_AGENT_ID,
-
-      time:
-        new Date()
-          .toISOString()
-    });
-  }
-);
-
-
-/* ============================================================
-   CONFIG ÁUDIO
-============================================================ */
-
-app.get(
-  "/api/audio/config",
-  function(
-    req,
-    res
-  ) {
-
-    res.json({
-
-      ok: true,
-
-      input: {
-
-        sampleRate:
-          48000,
-
-        channels:
-          1,
-
-        encoding:
-          "pcm_s16le"
-      },
-
-      outputAndroid: {
-
-        sampleRate:
-          16000,
-
-        channels:
-          1,
-
-        encoding:
-          "pcm_s16le"
-      },
-
-      elevenlabsAgent:
-        ELEVENLABS_AGENT_ID,
-
-      architecture:
-        "Android AudioPlaybackCapture -> Render -> ElevenLabs -> Render -> Android"
-    });
-  }
-);
-
-
-/* ============================================================
-   INICIAR SESSÃO
-============================================================ */
-
-app.post(
-  "/api/audio/start",
-  async function(
-    req,
-    res
-  ) {
+/* =========================================================
+   CONECTAR AO ELEVENLABS
+========================================================= */
+
+function connectElevenLabs(session) {
+  return new Promise(async (resolve, reject) => {
+    let signedUrl;
 
     try {
+      signedUrl = await getElevenLabsSignedUrl();
+    } catch (error) {
+      session.error = error.message;
+      session.status = "error";
 
-      const clientId =
-        String(
-          req.body.clientId ||
-          req.headers["x-client-id"] ||
-          ""
-        ).trim();
+      reject(error);
+      return;
+    }
 
+    const ws = new WebSocket(signedUrl);
 
-      const targetLang =
-        String(
-          req.body.targetLang ||
-          "pt"
-        ).trim();
+    session.ws = ws;
+    session.elevenlabs = false;
 
+    let opened = false;
+    let settled = false;
 
-      if (
-        !clientId
-      ) {
+    const connectionTimeout = setTimeout(() => {
+      if (!opened) {
+        try {
+          ws.close();
+        } catch {}
 
-        return res
-          .status(400)
-          .json({
+        const error =
+          "Timeout conectando ao WebSocket do ElevenLabs.";
 
-            ok: false,
+        session.error = error;
+        session.status = "error";
 
-            error:
-              "clientId é obrigatório."
-          });
+        if (!settled) {
+          settled = true;
+          reject(new Error(error));
+        }
       }
+    }, 15000);
 
+    ws.on("open", () => {
+      opened = true;
 
-      if (
-        !validLanguage(
-          targetLang
-        )
-      ) {
+      clearTimeout(connectionTimeout);
 
-        return res
-          .status(400)
-          .json({
+      console.log(
+        `[ELEVENLABS] WebSocket conectado: ${session.jobId}`
+      );
 
-            ok: false,
+      /*
+       * IMPORTANTE:
+       *
+       * NÃO estamos enviando prompt.
+       *
+       * O erro anterior era:
+       *
+       * Override for field 'prompt' is not allowed by config.
+       *
+       * Portanto, o Agent usa a configuração que está
+       * salva diretamente no ElevenLabs.
+       */
 
-            error:
-              "Idioma de destino inválido."
-          });
-      }
-
-
-      const jobId =
-        generateId();
-
-
-      const session = {
-
-        jobId,
-
-        clientId,
-
-        targetLang,
-
-        createdAt:
-          Date.now(),
-
-        status:
-          "connecting",
-
-        chunks:
-          0,
-
-        bytesReceived:
-          0,
-
-        outputQueue:
-          [],
-
-        outputBytes:
-          0,
-
-        elevenSocket:
-          null,
-
-        elevenConnected:
-          false,
-
-        inputSampleRate:
-          16000,
-
-        outputSampleRate:
-          16000,
-
-        conversationId:
-          null,
-
-        lastError:
-          null,
-
-        sendChain:
-          Promise.resolve()
+      const initiationMessage = {
+        type: "conversation_initiation_client_data",
       };
 
+      /*
+       * Não fazemos override de prompt.
+       *
+       * Também não fazemos override de voz neste momento.
+       * Assim reduzimos ao mínimo a possibilidade de
+       * outro erro de segurança do Agent.
+       */
 
-      audioSessions.set(
-        jobId,
-        session
+      ws.send(
+        JSON.stringify(initiationMessage)
       );
 
+      if (!settled) {
+        settled = true;
 
-      console.log(
-        "========================================"
-      );
+        session.elevenlabs = true;
+        session.status = "active";
 
-      console.log(
-        "[AUDIO] NOVA SESSÃO"
-      );
+        resolve();
+      }
+    });
 
-      console.log(
-        "[AUDIO] Job:",
-        jobId
-      );
-
-      console.log(
-        "[AUDIO] Cliente:",
-        clientId
-      );
-
-      console.log(
-        "[AUDIO] Idioma:",
-        targetLang
-      );
-
-      console.log(
-        "========================================"
-      );
-
-
+    ws.on("message", (data) => {
       try {
-
-        await connectElevenLabs(
-          session
+        const message = JSON.parse(
+          data.toString()
         );
-
 
         /*
-          Importante:
+         * METADADOS DA CONVERSA
+         */
 
-          O WebSocket abriu.
-          A sessão agora está ativa.
+        if (
+          message.type ===
+          "conversation_initiation_metadata"
+        ) {
+          const metadata =
+            message.conversation_initiation_metadata_event ||
+            {};
 
-          Se depois fechar, o status será
-          atualizado para disconnected/error.
-        */
+          session.conversationId =
+            metadata.conversation_id || null;
 
-        session.status =
-          "active";
+          session.inputSampleRate =
+            parseSampleRate(
+              metadata.user_input_audio_format
+            );
 
+          session.outputSampleRate =
+            parseSampleRate(
+              metadata.agent_output_audio_format
+            );
 
-      } catch (
-        error
-      ) {
+          console.log(
+            `[ELEVENLABS] metadata ${session.jobId}`,
+            {
+              conversationId:
+                session.conversationId,
+              input:
+                metadata.user_input_audio_format,
+              output:
+                metadata.agent_output_audio_format,
+            }
+          );
 
+          return;
+        }
+
+        /*
+         * ÁUDIO GERADO PELO AGENT
+         */
+
+        if (
+          message.type === "audio" &&
+          message.audio_event &&
+          message.audio_event.audio_base_64
+        ) {
+          let audioBuffer =
+            Buffer.from(
+              message.audio_event.audio_base_64,
+              "base64"
+            );
+
+          const outputRate =
+            session.outputSampleRate || 16000;
+
+          if (outputRate !== 16000) {
+            audioBuffer =
+              convertOutputTo16k(
+                audioBuffer,
+                outputRate
+              );
+          }
+
+          if (audioBuffer.length > 0) {
+            session.outputQueue.push(
+              audioBuffer.toString("base64")
+            );
+
+            session.outputBytes +=
+              audioBuffer.length;
+          }
+
+          return;
+        }
+
+        /*
+         * TRANSCRIÇÃO RECEBIDA
+         */
+
+        if (
+          message.type === "user_transcript"
+        ) {
+          const transcript =
+            message.user_transcription_event
+              ?.user_transcript ||
+            "";
+
+          if (transcript) {
+            session.lastTranscript =
+              transcript;
+
+            console.log(
+              `[ELEVENLABS] transcript ${session.jobId}: ${transcript}`
+            );
+          }
+
+          return;
+        }
+
+        /*
+         * RESPOSTA DO AGENT
+         */
+
+        if (
+          message.type === "agent_response"
+        ) {
+          const response =
+            message.agent_response_event
+              ?.agent_response ||
+            "";
+
+          if (response) {
+            session.lastAgentResponse =
+              response;
+
+            console.log(
+              `[ELEVENLABS] agent response ${session.jobId}: ${response}`
+            );
+          }
+
+          return;
+        }
+
+        /*
+         * PING
+         */
+
+        if (
+          message.type === "ping"
+        ) {
+          try {
+            ws.send(
+              JSON.stringify({
+                type: "pong",
+                event_id:
+                  message.ping_event
+                    ?.event_id,
+              })
+            );
+          } catch {}
+
+          return;
+        }
+
+        /*
+         * ERRO DO ELEVENLABS
+         */
+
+        if (
+          message.type === "error" ||
+          message.type === "client_error" ||
+          message.is_error === true
+        ) {
+          const errorText =
+            message.message ||
+            message.error ||
+            message.reason ||
+            message.type ||
+            "Erro desconhecido do ElevenLabs.";
+
+          session.error =
+            String(errorText);
+
+          console.error(
+            `[ELEVENLABS ERROR] ${session.jobId}:`,
+            message
+          );
+
+          return;
+        }
+      } catch (error) {
         console.error(
-          "[AUDIO] Falha ElevenLabs:",
+          "[ELEVENLABS MESSAGE ERROR]",
           error.message
         );
-
-
-        session.status =
-          "error";
-
-
-        session.elevenConnected =
-          false;
-
-
-        session.lastError =
-          error.message;
       }
+    });
 
-
-      res.json({
-
-        ok: true,
-
-        jobId,
-
-        targetLang,
-
-        status:
-          session.status,
-
-        elevenlabs:
-          session.elevenConnected,
-
-        error:
-          session.lastError,
-
-        message:
-          session.elevenConnected
-            ? "Sessão ElevenLabs conectada."
-            : "Sessão criada, mas ElevenLabs não está conectada."
-      });
-
-
-    } catch (
-      error
-    ) {
-
+    ws.on("error", (error) => {
       console.error(
-        "Erro /api/audio/start:",
-        error
+        `[ELEVENLABS WS ERROR] ${session.jobId}:`,
+        error.message
       );
 
+      session.error =
+        "WebSocket ElevenLabs: " +
+        error.message;
 
-      res
-        .status(500)
-        .json({
+      session.elevenlabs = false;
 
-          ok: false,
+      if (!opened && !settled) {
+        settled = true;
+        clearTimeout(connectionTimeout);
+        reject(error);
+      }
+    });
 
-          error:
-            "Erro ao iniciar sessão."
-        });
+    ws.on("close", (code, reasonBuffer) => {
+      const reason =
+        reasonBuffer
+          ? reasonBuffer.toString()
+          : "";
+
+      console.log(
+        `[ELEVENLABS] WebSocket fechado ${session.jobId} code=${code} reason=${reason}`
+      );
+
+      session.elevenlabs = false;
+
+      if (code !== 1000) {
+        session.error =
+          `WebSocket ElevenLabs fechado. code=${code} reason=${reason}`;
+      }
+
+      if (
+        session.status !== "stopped" &&
+        session.status !== "error"
+      ) {
+        session.status =
+          "disconnected";
+      }
+    });
+  });
+}
+
+/* =========================================================
+   INICIAR ÁUDIO
+========================================================= */
+
+app.post("/api/audio/start", async (req, res) => {
+  try {
+    const clientId =
+      req.body?.clientId ||
+      uuidv4();
+
+    const targetLang =
+      req.body?.targetLang ||
+      "pt";
+
+    const jobId =
+      `${Date.now()}-${uuidv4().replace(/-/g, "").slice(0, 16)}`;
+
+    const session = {
+      jobId,
+      clientId,
+      targetLang,
+
+      status: "connecting",
+
+      createdAt: now(),
+
+      chunks: 0,
+      bytesReceived: 0,
+
+      outputQueue: [],
+      outputBytes: 0,
+
+      elevenlabs: false,
+
+      ws: null,
+
+      sendChain: Promise.resolve(),
+
+      inputSampleRate: 16000,
+      outputSampleRate: 16000,
+
+      conversationId: null,
+
+      lastTranscript: "",
+      lastAgentResponse: "",
+
+      error: null,
+    };
+
+    audioSessions.set(
+      jobId,
+      session
+    );
+
+    console.log(
+      `[AUDIO START] ${jobId} client=${clientId} lang=${targetLang}`
+    );
+
+    /*
+     * Conecta ao ElevenLabs antes de aceitar
+     * os chunks do Android.
+     */
+
+    try {
+      await connectElevenLabs(session);
+    } catch (error) {
+      session.status = "error";
+      session.error =
+        error.message;
+
+      return res.status(500).json({
+        ok: false,
+        jobId,
+        error: error.message,
+      });
     }
+
+    res.json({
+      ok: true,
+      jobId,
+      clientId,
+      targetLang,
+      status: session.status,
+      elevenlabs: session.elevenlabs,
+    });
+  } catch (error) {
+    console.error(
+      "[AUDIO START ERROR]",
+      error
+    );
+
+    res.status(500).json({
+      ok: false,
+      error: error.message,
+    });
   }
-);
+});
 
-
-/* ============================================================
-   RECEBER CHUNK
-============================================================ */
+/* =========================================================
+   RECEBER CHUNK DO ANDROID
+========================================================= */
 
 app.post(
   "/api/audio/chunk",
-  function(
-    req,
-    res
-  ) {
-
+  express.json({
+    limit: "5mb",
+  }),
+  async (req, res) => {
     try {
-
       const jobId =
-        String(
-          req.headers["x-job-id"] ||
-          req.body.jobId ||
-          ""
-        ).trim();
+        req.body?.jobId;
 
+      const audio =
+        req.body?.audio;
 
-      if (
-        !jobId
-      ) {
-
-        return res
-          .status(400)
-          .json({
-
-            ok: false,
-
-            error:
-              "jobId é obrigatório."
-          });
+      if (!jobId) {
+        return res.status(400).json({
+          ok: false,
+          error: "jobId obrigatório.",
+        });
       }
 
+      if (!audio) {
+        return res.status(400).json({
+          ok: false,
+          error: "audio obrigatório.",
+        });
+      }
 
       const session =
-        audioSessions.get(
-          jobId
-        );
+        audioSessions.get(jobId);
 
-
-      if (
-        !session
-      ) {
-
-        return res
-          .status(404)
-          .json({
-
-            ok: false,
-
-            error:
-              "Sessão não encontrada."
-          });
+      if (!session) {
+        return res.status(404).json({
+          ok: false,
+          error: "Sessão não encontrada.",
+        });
       }
 
-
-      const base64 =
-        String(
-          req.body.audioBase64 ||
-          req.body.audio ||
-          ""
-        );
-
-
       if (
-        !base64
+        !session.ws ||
+        session.ws.readyState !== WebSocket.OPEN
       ) {
-
-        return res
-          .status(400)
-          .json({
-
-            ok: false,
-
-            error:
-              "audioBase64 é obrigatório."
-          });
+        return res.status(409).json({
+          ok: false,
+          error:
+            "WebSocket ElevenLabs não está conectado.",
+          elevenlabs:
+            session.elevenlabs,
+          sessionError:
+            session.error,
+        });
       }
 
+      let audioBuffer;
 
-      const audioBuffer =
-        Buffer.from(
-          base64,
-          "base64"
-        );
-
-
-      if (
-        audioBuffer.length ===
-        0
-      ) {
-
-        return res
-          .status(400)
-          .json({
-
-            ok: false,
-
-            error:
-              "Áudio vazio."
-          });
+      try {
+        audioBuffer =
+          Buffer.from(
+            audio,
+            "base64"
+          );
+      } catch {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Áudio Base64 inválido.",
+        });
       }
 
-
-      if (
-        audioBuffer.length >
-        1024 * 1024
-      ) {
-
-        return res
-          .status(413)
-          .json({
-
-            ok: false,
-
-            error:
-              "Chunk muito grande."
-          });
+      if (!audioBuffer.length) {
+        return res.json({
+          ok: true,
+          ignored: true,
+        });
       }
 
-
-      session.chunks +=
-        1;
-
+      session.chunks += 1;
 
       session.bytesReceived +=
         audioBuffer.length;
 
+      /*
+       * O Android atualmente envia 16 kHz.
+       *
+       * O ElevenLabs também informou anteriormente
+       * pcm_16000.
+       *
+       * Portanto enviamos diretamente.
+       */
 
-      const sent =
-        sendAudioToElevenLabs(
-          session,
-          audioBuffer
+      const base64Audio =
+        audioBuffer.toString(
+          "base64"
         );
 
+      /*
+       * IMPORTANTE:
+       *
+       * Mantemos os envios em sequência para evitar
+       * que vários requests sejam enviados fora de ordem.
+       */
+
+      session.sendChain =
+        session.sendChain
+          .then(() => {
+            return new Promise(
+              (resolve, reject) => {
+                if (
+                  !session.ws ||
+                  session.ws.readyState !==
+                    WebSocket.OPEN
+                ) {
+                  reject(
+                    new Error(
+                      "WebSocket fechado."
+                    )
+                  );
+                  return;
+                }
+
+                try {
+                  session.ws.send(
+                    JSON.stringify({
+                      user_audio_chunk:
+                        base64Audio,
+                    }),
+                    (error) => {
+                      if (error) {
+                        reject(error);
+                      } else {
+                        resolve();
+                      }
+                    }
+                  );
+                } catch (error) {
+                  reject(error);
+                }
+              }
+            );
+          })
+          .catch((error) => {
+            session.error =
+              "Erro enviando áudio ao ElevenLabs: " +
+              error.message;
+
+            console.error(
+              `[AUDIO SEND ERROR] ${jobId}:`,
+              error.message
+            );
+          });
 
       res.json({
-
         ok: true,
-
         jobId,
-
-        received:
-          audioBuffer.length,
-
-        chunks:
-          session.chunks,
-
+        chunks: session.chunks,
         bytesReceived:
           session.bytesReceived,
-
         elevenlabs:
-          session.elevenConnected,
-
-        sentToElevenLabs:
-          sent,
-
-        inputSampleRate:
-          session.inputSampleRate,
-
-        outputSampleRate:
-          session.outputSampleRate,
-
-        error:
-          session.lastError
+          session.elevenlabs,
       });
-
-
-    } catch (
-      error
-    ) {
-
+    } catch (error) {
       console.error(
-        "Erro /api/audio/chunk:",
+        "[AUDIO CHUNK ERROR]",
         error
       );
 
-
-      res
-        .status(500)
-        .json({
-
-          ok: false,
-
-          error:
-            "Erro ao processar áudio."
-        });
+      res.status(500).json({
+        ok: false,
+        error: error.message,
+      });
     }
   }
 );
 
-
-/* ============================================================
-   ÁUDIO DE SAÍDA
-============================================================ */
+/* =========================================================
+   PEGAR ÁUDIO DE SAÍDA
+========================================================= */
 
 app.get(
   "/api/audio/output/:jobId",
-  function(
-    req,
-    res
-  ) {
-
+  (req, res) => {
     try {
-
       const jobId =
         req.params.jobId;
 
-
       const session =
-        audioSessions.get(
-          jobId
-        );
+        audioSessions.get(jobId);
 
-
-      if (
-        !session
-      ) {
-
-        return res
-          .status(404)
-          .json({
-
-            ok: false,
-
-            error:
-              "Sessão não encontrada."
-          });
+      if (!session) {
+        return res.status(404).json({
+          ok: false,
+          error:
+            "Sessão não encontrada.",
+        });
       }
 
-
-      const output =
-        session.outputQueue.splice(
-          0,
-          session.outputQueue.length
-        );
-
+      const audio =
+        session.outputQueue.shift() ||
+        null;
 
       res.json({
-
         ok: true,
-
         jobId,
 
-        audio:
-          output,
+        audio,
 
-        chunks:
-          output.length,
+        hasAudio:
+          Boolean(audio),
 
-        elevenlabs:
-          session.elevenConnected,
-
-        status:
-          session.status,
-
-        inputSampleRate:
-          session.inputSampleRate,
-
-        outputSampleRate:
-          session.outputSampleRate,
-
-        conversationId:
-          session.conversationId,
+        outputQueue:
+          session.outputQueue.length,
 
         outputBytes:
           session.outputBytes,
 
+        elevenlabs:
+          session.elevenlabs,
+
+        status:
+          session.status,
+
         error:
-          session.lastError
+          session.error,
       });
-
-
-    } catch (
-      error
-    ) {
-
-      console.error(
-        "Erro /api/audio/output:",
-        error
-      );
-
-
-      res
-        .status(500)
-        .json({
-
-          ok: false,
-
-          error:
-            "Erro ao obter áudio."
-        });
+    } catch (error) {
+      res.status(500).json({
+        ok: false,
+        error: error.message,
+      });
     }
   }
 );
 
-
-/* ============================================================
+/* =========================================================
    STATUS
-============================================================ */
+========================================================= */
 
 app.get(
   "/api/audio/status/:jobId",
-  function(
-    req,
-    res
-  ) {
-
+  (req, res) => {
     const session =
       audioSessions.get(
         req.params.jobId
       );
 
-
-    if (
-      !session
-    ) {
-
-      return res
-        .status(404)
-        .json({
-
-          ok: false,
-
-          error:
-            "Sessão não encontrada."
-        });
+    if (!session) {
+      return res.status(404).json({
+        ok: false,
+        error:
+          "Sessão não encontrada.",
+      });
     }
 
-
     res.json({
-
       ok: true,
 
       jobId:
@@ -2121,7 +912,7 @@ app.get(
         session.outputBytes,
 
       elevenlabs:
-        session.elevenConnected,
+        session.elevenlabs,
 
       inputSampleRate:
         session.inputSampleRate,
@@ -2132,256 +923,228 @@ app.get(
       conversationId:
         session.conversationId,
 
+      lastTranscript:
+        session.lastTranscript,
+
+      lastAgentResponse:
+        session.lastAgentResponse,
+
       error:
-        session.lastError
+        session.error,
+
+      createdAt:
+        session.createdAt,
     });
   }
 );
 
+/* =========================================================
+   LISTAR SESSÕES
+========================================================= */
 
-/* ============================================================
-   PARAR
-============================================================ */
+app.get(
+  "/api/audio/sessions",
+  (req, res) => {
+    const sessions =
+      Array.from(
+        audioSessions.values()
+      ).map((session) => ({
+        jobId:
+          session.jobId,
+
+        clientId:
+          session.clientId,
+
+        targetLang:
+          session.targetLang,
+
+        status:
+          session.status,
+
+        chunks:
+          session.chunks,
+
+        bytesReceived:
+          session.bytesReceived,
+
+        outputQueue:
+          session.outputQueue.length,
+
+        outputBytes:
+          session.outputBytes,
+
+        elevenlabs:
+          session.elevenlabs,
+
+        inputSampleRate:
+          session.inputSampleRate,
+
+        outputSampleRate:
+          session.outputSampleRate,
+
+        conversationId:
+          session.conversationId,
+
+        lastTranscript:
+          session.lastTranscript,
+
+        lastAgentResponse:
+          session.lastAgentResponse,
+
+        error:
+          session.error,
+
+        createdAt:
+          session.createdAt,
+      }));
+
+    res.json({
+      ok: true,
+      count:
+        sessions.length,
+      sessions,
+    });
+  }
+);
+
+/* =========================================================
+   PARAR ÁUDIO
+========================================================= */
 
 app.post(
   "/api/audio/stop",
-  function(
-    req,
-    res
-  ) {
-
+  (req, res) => {
     try {
-
       const jobId =
-        String(
-          req.body.jobId ||
-          req.headers["x-job-id"] ||
-          ""
-        ).trim();
+        req.body?.jobId;
 
-
-      if (
-        !jobId
-      ) {
-
-        return res
-          .status(400)
-          .json({
-
-            ok: false,
-
-            error:
-              "jobId é obrigatório."
-          });
-      }
-
-
-      const session =
-        audioSessions.get(
-          jobId
-        );
-
-
-      if (
-        !session
-      ) {
-
-        return res.json({
-
-          ok: true,
-
-          message:
-            "Sessão já encerrada."
+      if (!jobId) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "jobId obrigatório.",
         });
       }
 
+      const session =
+        audioSessions.get(jobId);
+
+      if (!session) {
+        return res.status(404).json({
+          ok: false,
+          error:
+            "Sessão não encontrada.",
+        });
+      }
 
       session.status =
         "stopped";
 
-
-      session.elevenConnected =
+      session.elevenlabs =
         false;
 
-
-      if (
-        session.elevenSocket
-      ) {
-
+      if (session.ws) {
         try {
-
-          session.elevenSocket.close();
-
-        } catch (_) {
-        }
+          session.ws.close(
+            1000,
+            "Sessão encerrada pelo usuário"
+          );
+        } catch {}
       }
 
-
-      session.elevenSocket =
-        null;
-
-
       res.json({
-
         ok: true,
-
         jobId,
-
-        status:
-          "stopped"
+        status: "stopped",
       });
 
+      /*
+       * Remove depois de alguns segundos para
+       * permitir diagnóstico.
+       */
 
-      setTimeout(
-        () => {
-
-          audioSessions.delete(
-            jobId
-          );
-
-        },
-        5 * 60 * 1000
-      );
-
-
-    } catch (
-      error
-    ) {
-
-      console.error(
-        "Erro /api/audio/stop:",
-        error
-      );
-
-
-      res
-        .status(500)
-        .json({
-
-          ok: false,
-
-          error:
-            "Erro ao parar sessão."
-        });
+      setTimeout(() => {
+        audioSessions.delete(
+          jobId
+        );
+      }, 30000);
+    } catch (error) {
+      res.status(500).json({
+        ok: false,
+        error: error.message,
+      });
     }
   }
 );
 
+/* =========================================================
+   UPLOAD DE VÍDEO
+========================================================= */
 
-/* ============================================================
-   LISTAR SESSÕES
-============================================================ */
-
-app.get(
-  "/api/audio/sessions",
-  function(
-    req,
-    res
-  ) {
-
-    const sessions =
-      Array.from(
-        audioSessions.values()
-      ).map(
-        session => ({
-
-          jobId:
-            session.jobId,
-
-          clientId:
-            session.clientId,
-
-          targetLang:
-            session.targetLang,
-
-          status:
-            session.status,
-
-          chunks:
-            session.chunks,
-
-          bytesReceived:
-            session.bytesReceived,
-
-          outputQueue:
-            session.outputQueue.length,
-
-          outputBytes:
-            session.outputBytes,
-
-          elevenlabs:
-            session.elevenConnected,
-
-          inputSampleRate:
-            session.inputSampleRate,
-
-          outputSampleRate:
-            session.outputSampleRate,
-
-          conversationId:
-            session.conversationId,
-
-          error:
-            session.lastError,
-
-          createdAt:
-            session.createdAt
-        })
+const storage =
+  multer.diskStorage({
+    destination: (
+      req,
+      file,
+      cb
+    ) => {
+      cb(
+        null,
+        UPLOAD_DIR
       );
+    },
 
+    filename: (
+      req,
+      file,
+      cb
+    ) => {
+      const extension =
+        path.extname(
+          file.originalname
+        ) || ".mp4";
 
-    res.json({
+      cb(
+        null,
+        `${Date.now()}-${uuidv4()}${extension}`
+      );
+    },
+  });
 
-      ok: true,
+const upload =
+  multer({
+    storage,
 
-      count:
-        sessions.length,
+    limits: {
+      fileSize:
+        500 * 1024 * 1024,
+    },
+  });
 
-      sessions
-    });
-  }
-);
-
-
-/* ============================================================
-   UPLOAD
-============================================================ */
+/* =========================================================
+   TEST UPLOAD
+========================================================= */
 
 app.post(
   "/api/test-upload",
   upload.single("video"),
-  function(
-    req,
-    res
-  ) {
-
+  (req, res) => {
     try {
-
-      if (
-        !req.file
-      ) {
-
-        return res
-          .status(400)
-          .json({
-
-            ok: false,
-
-            error:
-              "Nenhum vídeo foi enviado."
-          });
+      if (!req.file) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Nenhum vídeo enviado.",
+        });
       }
 
-
-      const jobId =
-        generateId();
-
+      const videoUrl =
+        `${BACKEND_URL}/uploads/${encodeURIComponent(
+          req.file.filename
+        )}`;
 
       res.json({
-
         ok: true,
-
-        jobId,
 
         message:
           "Vídeo recebido com sucesso.",
@@ -2389,468 +1152,315 @@ app.post(
         filename:
           req.file.filename,
 
-        targetLang:
-          req.body.targetLang ||
-          "pt"
+        size:
+          req.file.size,
+
+        url:
+          videoUrl,
       });
-
-
-    } catch (
-      error
-    ) {
-
+    } catch (error) {
       console.error(
-        "Erro upload:",
+        "[UPLOAD ERROR]",
         error
       );
 
-
-      res
-        .status(500)
-        .json({
-
-          ok: false,
-
-          error:
-            "Erro ao receber vídeo."
-        });
+      res.status(500).json({
+        ok: false,
+        error:
+          error.message,
+      });
     }
   }
 );
 
-
-/* ============================================================
+/* =========================================================
    DUB URL
-============================================================ */
+========================================================= */
 
 app.post(
   "/api/dub-url",
-  function(
-    req,
-    res
-  ) {
-
+  async (req, res) => {
     try {
-
-      const videoUrl =
-        String(
-          req.body.url ||
-          ""
-        ).trim();
-
+      const url =
+        req.body?.url;
 
       const targetLang =
-        String(
-          req.body.targetLang ||
-          "pt"
-        ).trim();
+        req.body?.targetLang ||
+        "pt";
 
-
-      if (
-        !videoUrl
-      ) {
-
-        return res
-          .status(400)
-          .json({
-
-            ok: false,
-
-            error:
-              "O link do vídeo é obrigatório."
-          });
+      if (!url) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "URL obrigatória.",
+        });
       }
 
-
-      if (
-        !videoUrl.startsWith(
-          "http://"
-        ) &&
-        !videoUrl.startsWith(
-          "https://"
-        )
-      ) {
-
-        return res
-          .status(400)
-          .json({
-
-            ok: false,
-
-            error:
-              "Link inválido."
-          });
-      }
-
-
-      const jobId =
-        generateId();
-
+      /*
+       * Endpoint mantido para compatibilidade
+       * com o frontend.
+       */
 
       res.json({
-
         ok: true,
 
-        jobId,
-
         message:
-          "Link recebido.",
+          "Solicitação recebida.",
 
-        url:
-          videoUrl,
+        url,
 
         targetLang,
 
         status:
-          "aguardando_audio"
+          "pending",
       });
-
-
-    } catch (
-      error
-    ) {
-
-      console.error(
-        "Erro /api/dub-url:",
-        error
-      );
-
-
-      res
-        .status(500)
-        .json({
-
-          ok: false,
-
-          error:
-            "Erro ao processar link."
-        });
+    } catch (error) {
+      res.status(500).json({
+        ok: false,
+        error:
+          error.message,
+      });
     }
   }
 );
 
-
-/* ============================================================
+/* =========================================================
    CHAT
-============================================================ */
+========================================================= */
 
-const messages = [];
-
+const chatMessages =
+  new Map();
 
 app.post(
   "/api/chat/send",
-  function(
-    req,
-    res
-  ) {
-
+  (req, res) => {
     try {
-
       const clientId =
-        String(
-          req.body.clientId ||
-          ""
-        ).trim();
-
+        req.body?.clientId;
 
       const message =
-        String(
-          req.body.message ||
-          ""
-        ).trim();
+        req.body?.message;
 
-
-      if (
-        !clientId
-      ) {
-
-        return res
-          .status(400)
-          .json({
-
-            ok: false,
-
-            error:
-              "clientId é obrigatório."
-          });
+      if (!clientId) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "clientId obrigatório.",
+        });
       }
 
-
-      if (
-        !message
-      ) {
-
-        return res
-          .status(400)
-          .json({
-
-            ok: false,
-
-            error:
-              "A mensagem está vazia."
-          });
+      if (!message) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "message obrigatório.",
+        });
       }
 
+      if (
+        !chatMessages.has(clientId)
+      ) {
+        chatMessages.set(
+          clientId,
+          []
+        );
+      }
 
-      const item = {
-
-        id:
-          generateId(),
-
-        clientId,
-
-        sender:
-          "client",
-
-        message,
-
-        date:
-          new Date()
-            .toISOString()
-      };
-
-
-      messages.push(
-        item
-      );
-
+      chatMessages
+        .get(clientId)
+        .push({
+          id: uuidv4(),
+          clientId,
+          message,
+          createdAt:
+            new Date().toISOString(),
+        });
 
       res.json({
-
         ok: true,
-
-        message:
-          item
       });
-
-
-    } catch (
-      error
-    ) {
-
-      res
-        .status(500)
-        .json({
-
-          ok: false,
-
-          error:
-            "Erro ao enviar mensagem."
-        });
+    } catch (error) {
+      res.status(500).json({
+        ok: false,
+        error:
+          error.message,
+      });
     }
   }
 );
-
 
 app.get(
   "/api/chat/messages/:clientId",
-  function(
-    req,
-    res
-  ) {
-
-    const clientId =
-      req.params.clientId;
-
+  (req, res) => {
+    const messages =
+      chatMessages.get(
+        req.params.clientId
+      ) || [];
 
     res.json({
-
       ok: true,
-
-      messages:
-        messages.filter(
-          item =>
-            item.clientId ===
-            clientId
-        )
+      messages,
     });
   }
 );
 
-
-/* ============================================================
-   ADMIN
-============================================================ */
+/* =========================================================
+   ADMIN MESSAGES
+========================================================= */
 
 app.get(
   "/api/admin/messages",
-  function(
-    req,
-    res
-  ) {
+  (req, res) => {
+    const allMessages = [];
 
-    const password =
-      req.headers[
-        "x-admin-password"
-      ];
-
-
-    if (
-      password !==
-      ADMIN_PASSWORD
+    for (
+      const [
+        clientId,
+        messages,
+      ] of chatMessages.entries()
     ) {
-
-      return res
-        .status(401)
-        .json({
-
-          ok: false,
-
-          error:
-            "Senha de administrador inválida."
+      for (
+        const message of messages
+      ) {
+        allMessages.push({
+          ...message,
+          clientId,
         });
+      }
     }
 
-
     res.json({
-
       ok: true,
-
-      messages
+      count:
+        allMessages.length,
+      messages:
+        allMessages,
     });
   }
 );
 
+/* =========================================================
+   LIMPEZA AUTOMÁTICA
+========================================================= */
 
-/* ============================================================
-   UPLOADS STATIC
-============================================================ */
+setInterval(() => {
+  const expiration =
+    30 * 60 * 1000;
 
-app.use(
-  "/uploads",
-  express.static(
-    uploadFolder
-  )
-);
+  const cutoff =
+    now() - expiration;
 
-
-/* ============================================================
-   404
-============================================================ */
-
-app.use(
-  function(
-    req,
-    res
+  for (
+    const [
+      jobId,
+      session,
+    ] of audioSessions.entries()
   ) {
+    if (
+      session.createdAt <
+      cutoff
+    ) {
+      try {
+        if (session.ws) {
+          session.ws.close(
+            1000,
+            "Sessão expirada"
+          );
+        }
+      } catch {}
 
-    res
-      .status(404)
-      .json({
+      audioSessions.delete(
+        jobId
+      );
 
-        ok: false,
+      console.log(
+        `[CLEANUP] Sessão removida: ${jobId}`
+      );
+    }
+  }
+}, 5 * 60 * 1000);
 
-        error:
-          "Endpoint não encontrado."
-      });
+/* =========================================================
+   404
+========================================================= */
+
+app.use(
+  (req, res) => {
+    res.status(404).json({
+      ok: false,
+      error:
+        "Endpoint not found",
+      path:
+        req.originalUrl,
+    });
   }
 );
 
-
-/* ============================================================
+/* =========================================================
    ERROS
-============================================================ */
+========================================================= */
 
 app.use(
-  function(
+  (
     error,
     req,
     res,
     next
-  ) {
-
+  ) => {
     console.error(
-      "ERRO:",
+      "[SERVER ERROR]",
       error
     );
 
-
-    if (
-      error instanceof
-      multer.MulterError
-    ) {
-
-      return res
-        .status(400)
-        .json({
-
-          ok: false,
-
-          error:
-            "Erro no upload: " +
-            error.message
-        });
-    }
-
-
-    if (
-      error
-    ) {
-
-      return res
-        .status(400)
-        .json({
-
-          ok: false,
-
-          error:
-            error.message ||
-            "Erro no servidor."
-        });
-    }
-
-
-    next();
+    res.status(
+      error.status || 500
+    ).json({
+      ok: false,
+      error:
+        error.message ||
+        "Erro interno do servidor.",
+    });
   }
 );
 
-
-/* ============================================================
+/* =========================================================
    INICIAR SERVIDOR
-============================================================ */
+========================================================= */
 
 app.listen(
   PORT,
   "0.0.0.0",
-  function() {
-
+  () => {
     console.log(
       "========================================"
     );
 
     console.log(
-      "SI TRADUTOR LIVE"
+      "SI Tradutor Live"
     );
 
     console.log(
-      "BACKEND ONLINE"
+      `Servidor rodando na porta ${PORT}`
     );
 
     console.log(
-      "Porta:",
-      PORT
+      `Backend: ${BACKEND_URL}`
     );
 
     console.log(
-      "ElevenLabs API:",
-      ELEVENLABS_API_KEY
-        ? "CONFIGURADA"
-        : "NÃO CONFIGURADA"
+      `ElevenLabs Agent: ${ELEVENLABS_AGENT_ID}`
     );
 
     console.log(
-      "Agent ID:",
-      ELEVENLABS_AGENT_ID
+      `ElevenLabs Voice: ${ELEVENLABS_VOICE_ID}`
     );
 
     console.log(
-      "Voice ID:",
-      ELEVENLABS_VOICE_ID
-    );
-
-    console.log(
-      "WebSocket:",
-      "ATIVADO"
+      `ElevenLabs API Key: ${
+        ELEVENLABS_API_KEY
+          ? "CONFIGURADA"
+          : "NÃO CONFIGURADA"
+      }`
     );
 
     console.log(
