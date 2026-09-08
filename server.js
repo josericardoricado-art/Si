@@ -67,7 +67,7 @@ app.use(
 
 
 /* ============================================================
-   PASTAS
+   UPLOADS
 ============================================================ */
 
 const uploadFolder =
@@ -82,10 +82,6 @@ if (!fs.existsSync(uploadFolder)) {
   );
 }
 
-
-/* ============================================================
-   UPLOAD
-============================================================ */
 
 const storage =
   multer.diskStorage({
@@ -127,14 +123,13 @@ const storage =
         name
       );
     }
-
   });
 
 
 const upload =
   multer({
 
-    storage: storage,
+    storage,
 
     limits: {
       fileSize:
@@ -173,7 +168,7 @@ const upload =
 
 
 /* ============================================================
-   UTILITÁRIOS
+   UTILIDADES
 ============================================================ */
 
 function generateId() {
@@ -238,7 +233,7 @@ function validLanguage(
 
 
 /* ============================================================
-   SESSÕES DE ÁUDIO
+   SESSÕES
 ============================================================ */
 
 const audioSessions =
@@ -246,7 +241,7 @@ const audioSessions =
 
 
 /*
-  Estrutura:
+  Cada sessão:
 
   {
     jobId,
@@ -259,37 +254,40 @@ const audioSessions =
     chunks,
     bytesReceived,
 
-    elevenSocket,
-
     outputQueue,
-
     outputBytes,
 
+    elevenSocket,
     elevenConnected,
 
-    lastError
+    inputSampleRate,
+    outputSampleRate,
+
+    conversationId,
+
+    lastError,
+
+    sendChain
   }
 */
 
 
 /* ============================================================
-   CONVERTER PCM 48KHZ -> PCM 16KHZ
+   RESAMPLE PCM 16 BITS MONO
 ============================================================ */
 
 /*
-  O Android atual captura 48 kHz.
+  Conversão simples de PCM16 mono.
 
-  A ElevenLabs Agent trabalha com PCM 16 kHz.
+  O Android envia 48 kHz.
 
-  Aqui fazemos uma redução simples de 48 kHz
-  para 16 kHz.
-
-  Cada 3 amostras de entrada gera 1 amostra
-  de saída.
+  A ElevenLabs normalmente espera 16 kHz.
 */
 
-function resample48kTo16k(
-  buffer
+function resamplePcm16(
+  buffer,
+  inputRate,
+  outputRate
 ) {
 
   if (
@@ -299,6 +297,24 @@ function resample48kTo16k(
     return Buffer.alloc(0);
   }
 
+
+  if (
+    inputRate === outputRate
+  ) {
+
+    return buffer;
+  }
+
+
+  if (
+    inputRate <= 0 ||
+    outputRate <= 0
+  ) {
+
+    return Buffer.alloc(0);
+  }
+
+
   const bytesPerSample = 2;
 
   const inputSamples =
@@ -307,17 +323,30 @@ function resample48kTo16k(
       bytesPerSample
     );
 
+
   if (
-    inputSamples < 3
+    inputSamples < 2
   ) {
 
     return Buffer.alloc(0);
   }
 
+
   const outputSamples =
     Math.floor(
-      inputSamples / 3
+      inputSamples *
+      outputRate /
+      inputRate
     );
+
+
+  if (
+    outputSamples <= 0
+  ) {
+
+    return Buffer.alloc(0);
+  }
+
 
   const output =
     Buffer.alloc(
@@ -325,19 +354,58 @@ function resample48kTo16k(
       bytesPerSample
     );
 
+
+  const ratio =
+    inputRate /
+    outputRate;
+
+
   for (
     let i = 0;
     i < outputSamples;
     i++
   ) {
 
-    const inputIndex =
-      i * 3 * 2;
+    const sourcePosition =
+      i * ratio;
+
+    const index =
+      Math.floor(
+        sourcePosition
+      );
+
+    const nextIndex =
+      Math.min(
+        index + 1,
+        inputSamples - 1
+      );
+
+    const fraction =
+      sourcePosition -
+      index;
+
+
+    const sample1 =
+      buffer.readInt16LE(
+        index * 2
+      );
+
+    const sample2 =
+      buffer.readInt16LE(
+        nextIndex * 2
+      );
+
 
     const sample =
-      buffer.readInt16LE(
-        inputIndex
+      Math.round(
+        sample1 +
+        (
+          sample2 -
+          sample1
+        ) *
+        fraction
       );
+
 
     output.writeInt16LE(
       sample,
@@ -345,12 +413,47 @@ function resample48kTo16k(
     );
   }
 
+
   return output;
 }
 
 
 /* ============================================================
-   OBTER SIGNED URL DA ELEVENLABS
+   CONVERTER SAÍDA DA ELEVENLABS PARA 16 KHZ
+============================================================ */
+
+function convertOutputTo16k(
+  buffer,
+  sampleRate
+) {
+
+  if (
+    !Buffer.isBuffer(buffer)
+  ) {
+
+    return Buffer.alloc(0);
+  }
+
+
+  if (
+    !sampleRate ||
+    sampleRate === 16000
+  ) {
+
+    return buffer;
+  }
+
+
+  return resamplePcm16(
+    buffer,
+    sampleRate,
+    16000
+  );
+}
+
+
+/* ============================================================
+   SIGNED URL ELEVENLABS
 ============================================================ */
 
 async function getElevenLabsSignedUrl() {
@@ -364,12 +467,14 @@ async function getElevenLabsSignedUrl() {
     );
   }
 
+
   const url =
     "https://api.elevenlabs.io/v1/convai/conversation/get-signed-url" +
     "?agent_id=" +
     encodeURIComponent(
       ELEVENLABS_AGENT_ID
     );
+
 
   const response =
     await fetch(
@@ -384,8 +489,10 @@ async function getElevenLabsSignedUrl() {
       }
     );
 
+
   const text =
     await response.text();
+
 
   if (
     !response.ok
@@ -399,7 +506,9 @@ async function getElevenLabsSignedUrl() {
     );
   }
 
+
   let data;
+
 
   try {
 
@@ -408,12 +517,13 @@ async function getElevenLabsSignedUrl() {
         text
       );
 
-  } catch (error) {
+  } catch (_) {
 
     throw new Error(
-      "Resposta inválida da ElevenLabs."
+      "Resposta inválida ao obter signed URL da ElevenLabs."
     );
   }
+
 
   if (
     !data.signed_url
@@ -424,42 +534,38 @@ async function getElevenLabsSignedUrl() {
     );
   }
 
+
   return data.signed_url;
 }
 
 
 /* ============================================================
-   INICIAR ELEVENLABS
+   CONECTAR ELEVENLABS
 ============================================================ */
 
 async function connectElevenLabs(
   session
 ) {
 
-  if (
-    !ELEVENLABS_API_KEY
-  ) {
-
-    throw new Error(
-      "ELEVENLABS_API_KEY não configurada."
-    );
-  }
-
   const signedUrl =
     await getElevenLabsSignedUrl();
 
+
   console.log(
-    "[ELEVENLABS] Abrindo WebSocket para:",
+    "[ELEVENLABS] Abrindo WebSocket:",
     session.jobId
   );
+
 
   const socket =
     new WebSocket(
       signedUrl
     );
 
+
   session.elevenSocket =
     socket;
+
 
   return new Promise(
     (
@@ -467,24 +573,38 @@ async function connectElevenLabs(
       reject
     ) => {
 
+      let opened =
+        false;
+
       let settled =
         false;
+
 
       const timeout =
         setTimeout(
           () => {
 
-            if (!settled) {
+            if (
+              !opened &&
+              !settled
+            ) {
 
-              settled = true;
+              settled =
+                true;
+
+              session.lastError =
+                "Timeout conectando na ElevenLabs.";
 
               try {
+
                 socket.close();
-              } catch (_) {}
+
+              } catch (_) {
+              }
 
               reject(
                 new Error(
-                  "Timeout conectando na ElevenLabs."
+                  session.lastError
                 )
               );
             }
@@ -494,32 +614,47 @@ async function connectElevenLabs(
         );
 
 
+      /* --------------------------------------------------------
+         OPEN
+      -------------------------------------------------------- */
+
       socket.on(
         "open",
         () => {
+
+          opened =
+            true;
+
+
+          session.elevenConnected =
+            true;
+
+          session.status =
+            "active";
+
 
           console.log(
             "[ELEVENLABS] WebSocket conectado:",
             session.jobId
           );
 
-          session.elevenConnected =
-            true;
 
           /*
-            Configuração inicial.
+            Envia configuração inicial.
 
-            O prompt instrui o Agent a funcionar
-            como tradutor em tempo real.
+            A ElevenLabs documenta esse evento
+            como conversation_initiation_client_data.
           */
 
           const target =
             session.targetLang;
 
+
           const initiation = {
 
             type:
               "conversation_initiation_client_data",
+
 
             conversation_config_override: {
 
@@ -529,17 +664,19 @@ async function connectElevenLabs(
 
                   prompt:
                     "Você é um tradutor de áudio em tempo real. " +
-                    "Receba fala em qualquer idioma que conseguir reconhecer " +
-                    "e traduza para o idioma de destino: " +
+                    "Receba a fala do vídeo e traduza imediatamente " +
+                    "para o idioma de destino: " +
                     target +
                     ". " +
-                    "Não converse com o usuário. " +
-                    "Não explique o que está fazendo. " +
-                    "Apenas produza a tradução falada, de forma natural, " +
-                    "curta e rápida. " +
+                    "Não converse. " +
+                    "Não explique. " +
+                    "Não responda perguntas. " +
+                    "Apenas traduza a fala recebida. " +
+                    "A tradução deve ser natural, curta e rápida. " +
                     "Preserve nomes próprios e números quando possível."
                 }
               },
+
 
               tts: {
 
@@ -547,6 +684,7 @@ async function connectElevenLabs(
                   ELEVENLABS_VOICE_ID
               }
             },
+
 
             dynamic_variables: {
 
@@ -564,18 +702,32 @@ async function connectElevenLabs(
               )
             );
 
+
+            console.log(
+              "[ELEVENLABS] Configuração inicial enviada:",
+              session.jobId
+            );
+
+
           } catch (error) {
 
+            session.lastError =
+              "Erro enviando configuração: " +
+              error.message;
+
             console.error(
-              "[ELEVENLABS] Erro ao enviar configuração:",
-              error
+              "[ELEVENLABS]",
+              session.lastError
             );
           }
 
 
-          if (!settled) {
+          if (
+            !settled
+          ) {
 
-            settled = true;
+            settled =
+              true;
 
             clearTimeout(
               timeout
@@ -587,9 +739,13 @@ async function connectElevenLabs(
       );
 
 
+      /* --------------------------------------------------------
+         MESSAGE
+      -------------------------------------------------------- */
+
       socket.on(
         "message",
-        (data) => {
+        data => {
 
           try {
 
@@ -599,9 +755,67 @@ async function connectElevenLabs(
               );
 
 
-            /*
-              ÁUDIO DEVOLVIDO PELA ELEVENLABS
-            */
+            /* ==================================================
+               METADATA DA CONVERSA
+            ================================================== */
+
+            if (
+              message.type ===
+              "conversation_initiation_metadata"
+            ) {
+
+              const metadata =
+                message
+                  .conversation_initiation_metadata_event;
+
+
+              if (
+                metadata
+              ) {
+
+                session.conversationId =
+                  metadata.conversation_id ||
+                  null;
+
+
+                session.inputSampleRate =
+                  parseSampleRate(
+                    metadata.user_input_audio_format
+                  );
+
+
+                session.outputSampleRate =
+                  parseSampleRate(
+                    metadata.agent_output_audio_format
+                  );
+
+
+                console.log(
+                  "[ELEVENLABS] Formato de entrada:",
+                  metadata.user_input_audio_format
+                );
+
+
+                console.log(
+                  "[ELEVENLABS] Formato de saída:",
+                  metadata.agent_output_audio_format
+                );
+
+
+                console.log(
+                  "[ELEVENLABS] Conversation:",
+                  session.conversationId
+                );
+              }
+
+
+              return;
+            }
+
+
+            /* ==================================================
+               ÁUDIO
+            ================================================== */
 
             if (
               message.type ===
@@ -615,27 +829,83 @@ async function connectElevenLabs(
                   .audio_event
                   .audio_base_64;
 
-              session.outputQueue.push(
-                audioBase64
-              );
 
-              session.outputBytes +=
-                Buffer.from(
-                  audioBase64,
-                  "base64"
-                ).length;
+              let audioBuffer;
+
+
+              try {
+
+                audioBuffer =
+                  Buffer.from(
+                    audioBase64,
+                    "base64"
+                  );
+
+              } catch (_) {
+
+                return;
+              }
+
+
+              /*
+                O Android espera PCM16 mono 16 kHz.
+
+                Se a ElevenLabs estiver usando outro
+                sample rate PCM, convertemos aqui.
+              */
+
+              if (
+                session.outputSampleRate &&
+                session.outputSampleRate !==
+                16000
+              ) {
+
+                audioBuffer =
+                  convertOutputTo16k(
+                    audioBuffer,
+                    session.outputSampleRate
+                  );
+              }
+
+
+              if (
+                audioBuffer.length > 0
+              ) {
+
+                const finalBase64 =
+                  audioBuffer.toString(
+                    "base64"
+                  );
+
+
+                session.outputQueue.push(
+                  finalBase64
+                );
+
+
+                session.outputBytes +=
+                  audioBuffer.length;
+
+
+                console.log(
+                  "[ELEVENLABS] Áudio recebido:",
+                  audioBuffer.length,
+                  "bytes"
+                );
+              }
+
 
               return;
             }
 
 
-            /*
-              TRANSCRIÇÃO RECEBIDA
-            */
+            /* ==================================================
+               TRANSCRIÇÃO
+            ================================================== */
 
             if (
               message.type ===
-                "user_transcript"
+              "user_transcript"
             ) {
 
               const transcript =
@@ -643,7 +913,10 @@ async function connectElevenLabs(
                   .user_transcription_event
                   ?.user_transcript;
 
-              if (transcript) {
+
+              if (
+                transcript
+              ) {
 
                 console.log(
                   "[ELEVENLABS] Transcrição:",
@@ -651,17 +924,18 @@ async function connectElevenLabs(
                 );
               }
 
+
               return;
             }
 
 
-            /*
-              RESPOSTA DO AGENTE
-            */
+            /* ==================================================
+               RESPOSTA DO AGENTE
+            ================================================== */
 
             if (
               message.type ===
-                "agent_response"
+              "agent_response"
             ) {
 
               const response =
@@ -669,7 +943,10 @@ async function connectElevenLabs(
                   .agent_response_event
                   ?.agent_response;
 
-              if (response) {
+
+              if (
+                response
+              ) {
 
                 console.log(
                   "[ELEVENLABS] Resposta:",
@@ -677,42 +954,101 @@ async function connectElevenLabs(
                 );
               }
 
+
               return;
             }
 
 
-            /*
-              ERRO
-            */
+            /* ==================================================
+               RESPOSTA COMPLETA
+            ================================================== */
 
             if (
               message.type ===
-                "error"
+              "agent_response_correction"
             ) {
 
-              console.error(
-                "[ELEVENLABS] Erro:",
-                message
+              console.log(
+                "[ELEVENLABS] Correção de resposta recebida."
               );
 
-              session.lastError =
+              return;
+            }
+
+
+            /* ==================================================
+               ERRO DO CLIENTE
+            ================================================== */
+
+            if (
+              message.type ===
+              "client_error"
+            ) {
+
+              const errorText =
                 JSON.stringify(
                   message
                 );
 
+
+              session.lastError =
+                errorText;
+
+
+              session.status =
+                "error";
+
+
+              console.error(
+                "[ELEVENLABS] CLIENT ERROR:",
+                errorText
+              );
+
+
               return;
             }
 
 
-            /*
-              PING
-
-              A API pode enviar ping.
-            */
+            /* ==================================================
+               ERRO GENÉRICO
+            ================================================== */
 
             if (
               message.type ===
-                "ping"
+              "error"
+            ) {
+
+              const errorText =
+                JSON.stringify(
+                  message
+                );
+
+
+              session.lastError =
+                errorText;
+
+
+              session.status =
+                "error";
+
+
+              console.error(
+                "[ELEVENLABS] ERROR:",
+                errorText
+              );
+
+
+              return;
+            }
+
+
+            /* ==================================================
+               PING
+            ================================================== */
+
+            if (
+              message.type ===
+              "ping"
             ) {
 
               const eventId =
@@ -720,24 +1056,39 @@ async function connectElevenLabs(
                   .ping_event
                   ?.event_id;
 
+
               try {
 
                 socket.send(
                   JSON.stringify({
+
                     type:
                       "pong",
+
                     event_id:
                       eventId
                   })
                 );
 
-              } catch (_) {}
+
+              } catch (
+                error
+              ) {
+
+                session.lastError =
+                  error.message;
+              }
+
+
+              return;
             }
 
-          } catch (error) {
+          } catch (
+            error
+          ) {
 
             console.error(
-              "[ELEVENLABS] Mensagem inválida:",
+              "[ELEVENLABS] Erro processando mensagem:",
               error.message
             );
           }
@@ -745,21 +1096,43 @@ async function connectElevenLabs(
       );
 
 
+      /* --------------------------------------------------------
+         ERROR
+      -------------------------------------------------------- */
+
       socket.on(
         "error",
-        (error) => {
+        error => {
+
+          const errorText =
+            error?.message ||
+            String(error);
+
+
+          session.lastError =
+            errorText;
+
+
+          session.elevenConnected =
+            false;
+
+
+          session.status =
+            "error";
+
 
           console.error(
             "[ELEVENLABS] WebSocket error:",
-            error.message
+            errorText
           );
 
-          session.lastError =
-            error.message;
 
-          if (!settled) {
+          if (
+            !settled
+          ) {
 
-            settled = true;
+            settled =
+              true;
 
             clearTimeout(
               timeout
@@ -773,6 +1146,10 @@ async function connectElevenLabs(
       );
 
 
+      /* --------------------------------------------------------
+         CLOSE
+      -------------------------------------------------------- */
+
       socket.on(
         "close",
         (
@@ -780,17 +1157,46 @@ async function connectElevenLabs(
           reason
         ) => {
 
-          console.log(
-            "[ELEVENLABS] WebSocket fechado:",
-            session.jobId,
-            code,
+          const reasonText =
             reason
               ? reason.toString()
-              : ""
-          );
+              : "";
+
 
           session.elevenConnected =
             false;
+
+
+          console.error(
+            "[ELEVENLABS] WebSocket fechado:",
+            session.jobId,
+            "code:",
+            code,
+            "reason:",
+            reasonText
+          );
+
+
+          if (
+            session.status !==
+            "stopped"
+          ) {
+
+            session.status =
+              "disconnected";
+
+
+            if (
+              !session.lastError
+            ) {
+
+              session.lastError =
+                "WebSocket ElevenLabs fechado. code=" +
+                code +
+                " reason=" +
+                reasonText;
+            }
+          }
         }
       );
     }
@@ -799,8 +1205,91 @@ async function connectElevenLabs(
 
 
 /* ============================================================
+   SAMPLE RATE
+============================================================ */
+
+function parseSampleRate(
+  format
+) {
+
+  if (
+    !format
+  ) {
+
+    return 16000;
+  }
+
+
+  const text =
+    String(
+      format
+    ).toLowerCase();
+
+
+  if (
+    text.includes(
+      "16000"
+    )
+  ) {
+
+    return 16000;
+  }
+
+
+  if (
+    text.includes(
+      "22050"
+    )
+  ) {
+
+    return 22050;
+  }
+
+
+  if (
+    text.includes(
+      "24000"
+    )
+  ) {
+
+    return 24000;
+  }
+
+
+  if (
+    text.includes(
+      "44100"
+    )
+  ) {
+
+    return 44100;
+  }
+
+
+  if (
+    text.includes(
+      "48000"
+    )
+  ) {
+
+    return 48000;
+  }
+
+
+  return 16000;
+}
+
+
+/* ============================================================
    ENVIAR ÁUDIO PARA ELEVENLABS
 ============================================================ */
+
+/*
+  Mantemos uma fila sequencial.
+
+  Isso evita que vários chunks enviados
+  simultaneamente troquem de ordem.
+*/
 
 function sendAudioToElevenLabs(
   session,
@@ -815,8 +1304,10 @@ function sendAudioToElevenLabs(
     return false;
   }
 
+
   const socket =
     session.elevenSocket;
+
 
   if (
     socket.readyState !==
@@ -826,10 +1317,30 @@ function sendAudioToElevenLabs(
     return false;
   }
 
+
+  /*
+    Android envia 48 kHz.
+
+    ElevenLabs normalmente trabalha
+    com PCM16 16 kHz.
+  */
+
+  const inputRate =
+    48000;
+
+
+  const targetRate =
+    session.inputSampleRate ||
+    16000;
+
+
   const pcm16 =
-    resample48kTo16k(
-      pcmBuffer
+    resamplePcm16(
+      pcmBuffer,
+      inputRate,
+      targetRate
     );
+
 
   if (
     pcm16.length === 0
@@ -838,10 +1349,12 @@ function sendAudioToElevenLabs(
     return false;
   }
 
+
   const audioBase64 =
     pcm16.toString(
       "base64"
     );
+
 
   const message = {
 
@@ -849,17 +1362,61 @@ function sendAudioToElevenLabs(
       audioBase64
   };
 
+
   try {
 
-    socket.send(
-      JSON.stringify(
-        message
-      )
-    );
+    /*
+      Fila sequencial de envio.
+    */
+
+    session.sendChain =
+      session.sendChain
+        .then(
+          () =>
+            new Promise(
+              resolve => {
+
+                try {
+
+                  if (
+                    socket.readyState ===
+                    WebSocket.OPEN
+                  ) {
+
+                    socket.send(
+                      JSON.stringify(
+                        message
+                      )
+                    );
+                  }
+
+                } catch (
+                  error
+                ) {
+
+                  session.lastError =
+                    error.message;
+                }
+
+
+                resolve();
+              }
+            )
+        )
+        .catch(
+          error => {
+
+            session.lastError =
+              error.message;
+          }
+        );
+
 
     return true;
 
-  } catch (error) {
+  } catch (
+    error
+  ) {
 
     session.lastError =
       error.message;
@@ -901,6 +1458,9 @@ app.get(
       elevenlabsWebSocket:
         true,
 
+      agentId:
+        ELEVENLABS_AGENT_ID,
+
       time:
         new Date()
           .toISOString()
@@ -910,7 +1470,7 @@ app.get(
 
 
 /* ============================================================
-   CONFIGURAÇÃO DO ÁUDIO
+   CONFIG ÁUDIO
 ============================================================ */
 
 app.get(
@@ -936,7 +1496,7 @@ app.get(
           "pcm_s16le"
       },
 
-      elevenlabs: {
+      outputAndroid: {
 
         sampleRate:
           16000,
@@ -948,15 +1508,18 @@ app.get(
           "pcm_s16le"
       },
 
+      elevenlabsAgent:
+        ELEVENLABS_AGENT_ID,
+
       architecture:
-        "Android AudioPlaybackCapture -> Render -> ElevenLabs -> Android"
+        "Android AudioPlaybackCapture -> Render -> ElevenLabs -> Render -> Android"
     });
   }
 );
 
 
 /* ============================================================
-   INICIAR SESSÃO DE ÁUDIO
+   INICIAR SESSÃO
 ============================================================ */
 
 app.post(
@@ -975,6 +1538,7 @@ app.post(
           ""
         ).trim();
 
+
       const targetLang =
         String(
           req.body.targetLang ||
@@ -982,7 +1546,9 @@ app.post(
         ).trim();
 
 
-      if (!clientId) {
+      if (
+        !clientId
+      ) {
 
         return res
           .status(400)
@@ -1050,8 +1616,20 @@ app.post(
         elevenConnected:
           false,
 
+        inputSampleRate:
+          16000,
+
+        outputSampleRate:
+          16000,
+
+        conversationId:
+          null,
+
         lastError:
-          null
+          null,
+
+        sendChain:
+          Promise.resolve()
       };
 
 
@@ -1062,11 +1640,15 @@ app.post(
 
 
       console.log(
-        "================================"
+        "========================================"
       );
 
       console.log(
-        "[AUDIO] Nova sessão:",
+        "[AUDIO] NOVA SESSÃO"
+      );
+
+      console.log(
+        "[AUDIO] Job:",
         jobId
       );
 
@@ -1081,7 +1663,7 @@ app.post(
       );
 
       console.log(
-        "================================"
+        "========================================"
       );
 
 
@@ -1091,18 +1673,38 @@ app.post(
           session
         );
 
+
+        /*
+          Importante:
+
+          O WebSocket abriu.
+          A sessão agora está ativa.
+
+          Se depois fechar, o status será
+          atualizado para disconnected/error.
+        */
+
         session.status =
           "active";
 
-      } catch (error) {
+
+      } catch (
+        error
+      ) {
 
         console.error(
           "[AUDIO] Falha ElevenLabs:",
           error.message
         );
 
+
         session.status =
           "error";
+
+
+        session.elevenConnected =
+          false;
+
 
         session.lastError =
           error.message;
@@ -1123,19 +1725,25 @@ app.post(
         elevenlabs:
           session.elevenConnected,
 
+        error:
+          session.lastError,
+
         message:
           session.elevenConnected
-            ? "Sessão de tradução iniciada."
-            : "Sessão criada, mas a conexão com a ElevenLabs falhou."
+            ? "Sessão ElevenLabs conectada."
+            : "Sessão criada, mas ElevenLabs não está conectada."
       });
 
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
 
       console.error(
         "Erro /api/audio/start:",
         error
       );
+
 
       res
         .status(500)
@@ -1144,7 +1752,7 @@ app.post(
           ok: false,
 
           error:
-            "Erro ao iniciar sessão de áudio."
+            "Erro ao iniciar sessão."
         });
     }
   }
@@ -1152,7 +1760,7 @@ app.post(
 
 
 /* ============================================================
-   RECEBER CHUNK DE ÁUDIO
+   RECEBER CHUNK
 ============================================================ */
 
 app.post(
@@ -1172,7 +1780,9 @@ app.post(
         ).trim();
 
 
-      if (!jobId) {
+      if (
+        !jobId
+      ) {
 
         return res
           .status(400)
@@ -1192,7 +1802,9 @@ app.post(
         );
 
 
-      if (!session) {
+      if (
+        !session
+      ) {
 
         return res
           .status(404)
@@ -1214,7 +1826,9 @@ app.post(
         );
 
 
-      if (!base64) {
+      if (
+        !base64
+      ) {
 
         return res
           .status(400)
@@ -1236,7 +1850,8 @@ app.post(
 
 
       if (
-        audioBuffer.length === 0
+        audioBuffer.length ===
+        0
       ) {
 
         return res
@@ -1263,12 +1878,14 @@ app.post(
             ok: false,
 
             error:
-              "Chunk de áudio muito grande."
+              "Chunk muito grande."
           });
       }
 
 
-      session.chunks += 1;
+      session.chunks +=
+        1;
+
 
       session.bytesReceived +=
         audioBuffer.length;
@@ -1300,16 +1917,28 @@ app.post(
           session.elevenConnected,
 
         sentToElevenLabs:
-          sent
+          sent,
+
+        inputSampleRate:
+          session.inputSampleRate,
+
+        outputSampleRate:
+          session.outputSampleRate,
+
+        error:
+          session.lastError
       });
 
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
 
       console.error(
         "Erro /api/audio/chunk:",
         error
       );
+
 
       res
         .status(500)
@@ -1326,7 +1955,7 @@ app.post(
 
 
 /* ============================================================
-   PEGAR ÁUDIO TRADUZIDO
+   ÁUDIO DE SAÍDA
 ============================================================ */
 
 app.get(
@@ -1341,13 +1970,16 @@ app.get(
       const jobId =
         req.params.jobId;
 
+
       const session =
         audioSessions.get(
           jobId
         );
 
 
-      if (!session) {
+      if (
+        !session
+      ) {
 
         return res
           .status(404)
@@ -1360,14 +1992,6 @@ app.get(
           });
       }
 
-
-      /*
-        Entrega os áudios acumulados
-        para o Android.
-
-        O Android pode chamar esta rota
-        repetidamente.
-      */
 
       const output =
         session.outputQueue.splice(
@@ -1382,7 +2006,8 @@ app.get(
 
         jobId,
 
-        audio: output,
+        audio:
+          output,
 
         chunks:
           output.length,
@@ -1393,17 +2018,32 @@ app.get(
         status:
           session.status,
 
+        inputSampleRate:
+          session.inputSampleRate,
+
+        outputSampleRate:
+          session.outputSampleRate,
+
+        conversationId:
+          session.conversationId,
+
+        outputBytes:
+          session.outputBytes,
+
         error:
           session.lastError
       });
 
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
 
       console.error(
         "Erro /api/audio/output:",
         error
       );
+
 
       res
         .status(500)
@@ -1412,7 +2052,7 @@ app.get(
           ok: false,
 
           error:
-            "Erro ao obter áudio traduzido."
+            "Erro ao obter áudio."
         });
     }
   }
@@ -1420,7 +2060,7 @@ app.get(
 
 
 /* ============================================================
-   STATUS DA SESSÃO
+   STATUS
 ============================================================ */
 
 app.get(
@@ -1436,7 +2076,9 @@ app.get(
       );
 
 
-    if (!session) {
+    if (
+      !session
+    ) {
 
       return res
         .status(404)
@@ -1475,8 +2117,20 @@ app.get(
       outputQueue:
         session.outputQueue.length,
 
+      outputBytes:
+        session.outputBytes,
+
       elevenlabs:
         session.elevenConnected,
+
+      inputSampleRate:
+        session.inputSampleRate,
+
+      outputSampleRate:
+        session.outputSampleRate,
+
+      conversationId:
+        session.conversationId,
 
       error:
         session.lastError
@@ -1486,7 +2140,7 @@ app.get(
 
 
 /* ============================================================
-   PARAR SESSÃO
+   PARAR
 ============================================================ */
 
 app.post(
@@ -1506,7 +2160,9 @@ app.post(
         ).trim();
 
 
-      if (!jobId) {
+      if (
+        !jobId
+      ) {
 
         return res
           .status(400)
@@ -1526,7 +2182,9 @@ app.post(
         );
 
 
-      if (!session) {
+      if (
+        !session
+      ) {
 
         return res.json({
 
@@ -1542,6 +2200,10 @@ app.post(
         "stopped";
 
 
+      session.elevenConnected =
+        false;
+
+
       if (
         session.elevenSocket
       ) {
@@ -1550,32 +2212,13 @@ app.post(
 
           session.elevenSocket.close();
 
-        } catch (_) {}
+        } catch (_) {
+        }
       }
 
 
       session.elevenSocket =
         null;
-
-      session.elevenConnected =
-        false;
-
-
-      /*
-        Mantemos a sessão por alguns minutos
-        para permitir diagnóstico.
-      */
-
-      setTimeout(
-        () => {
-
-          audioSessions.delete(
-            jobId
-          );
-
-        },
-        5 * 60 * 1000
-      );
 
 
       res.json({
@@ -1589,12 +2232,27 @@ app.post(
       });
 
 
-    } catch (error) {
+      setTimeout(
+        () => {
+
+          audioSessions.delete(
+            jobId
+          );
+
+        },
+        5 * 60 * 1000
+      );
+
+
+    } catch (
+      error
+    ) {
 
       console.error(
         "Erro /api/audio/stop:",
         error
       );
+
 
       res
         .status(500)
@@ -1648,8 +2306,23 @@ app.get(
           outputQueue:
             session.outputQueue.length,
 
+          outputBytes:
+            session.outputBytes,
+
           elevenlabs:
             session.elevenConnected,
+
+          inputSampleRate:
+            session.inputSampleRate,
+
+          outputSampleRate:
+            session.outputSampleRate,
+
+          conversationId:
+            session.conversationId,
+
+          error:
+            session.lastError,
 
           createdAt:
             session.createdAt
@@ -1671,7 +2344,7 @@ app.get(
 
 
 /* ============================================================
-   UPLOAD DE VÍDEO
+   UPLOAD
 ============================================================ */
 
 app.post(
@@ -1684,7 +2357,9 @@ app.post(
 
     try {
 
-      if (!req.file) {
+      if (
+        !req.file
+      ) {
 
         return res
           .status(400)
@@ -1720,12 +2395,15 @@ app.post(
       });
 
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
 
       console.error(
         "Erro upload:",
         error
       );
+
 
       res
         .status(500)
@@ -1734,7 +2412,7 @@ app.post(
           ok: false,
 
           error:
-            "Erro ao receber o vídeo."
+            "Erro ao receber vídeo."
         });
     }
   }
@@ -1742,7 +2420,7 @@ app.post(
 
 
 /* ============================================================
-   DUBLAGEM POR LINK
+   DUB URL
 ============================================================ */
 
 app.post(
@@ -1760,6 +2438,7 @@ app.post(
           ""
         ).trim();
 
+
       const targetLang =
         String(
           req.body.targetLang ||
@@ -1767,7 +2446,9 @@ app.post(
         ).trim();
 
 
-      if (!videoUrl) {
+      if (
+        !videoUrl
+      ) {
 
         return res
           .status(400)
@@ -1821,19 +2502,19 @@ app.post(
         targetLang,
 
         status:
-          "aguardando_audio",
-
-        architecture:
-          "Android Audio Capture -> Render -> ElevenLabs"
+          "aguardando_audio"
       });
 
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
 
       console.error(
         "Erro /api/dub-url:",
         error
       );
+
 
       res
         .status(500)
@@ -1842,7 +2523,7 @@ app.post(
           ok: false,
 
           error:
-            "Erro ao processar o link."
+            "Erro ao processar link."
         });
     }
   }
@@ -1871,6 +2552,7 @@ app.post(
           ""
         ).trim();
 
+
       const message =
         String(
           req.body.message ||
@@ -1878,7 +2560,9 @@ app.post(
         ).trim();
 
 
-      if (!clientId) {
+      if (
+        !clientId
+      ) {
 
         return res
           .status(400)
@@ -1892,7 +2576,9 @@ app.post(
       }
 
 
-      if (!message) {
+      if (
+        !message
+      ) {
 
         return res
           .status(400)
@@ -1938,7 +2624,9 @@ app.post(
       });
 
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
 
       res
         .status(500)
@@ -2025,7 +2713,7 @@ app.get(
 
 
 /* ============================================================
-   ARQUIVOS
+   UPLOADS STATIC
 ============================================================ */
 
 app.use(
@@ -2095,7 +2783,9 @@ app.use(
     }
 
 
-    if (error) {
+    if (
+      error
+    ) {
 
       return res
         .status(400)
@@ -2116,7 +2806,7 @@ app.use(
 
 
 /* ============================================================
-   INICIAR
+   INICIAR SERVIDOR
 ============================================================ */
 
 app.listen(
@@ -2125,11 +2815,15 @@ app.listen(
   function() {
 
     console.log(
-      "======================================"
+      "========================================"
     );
 
     console.log(
-      "SI TRADUTOR LIVE - BACKEND ONLINE"
+      "SI TRADUTOR LIVE"
+    );
+
+    console.log(
+      "BACKEND ONLINE"
     );
 
     console.log(
@@ -2138,15 +2832,20 @@ app.listen(
     );
 
     console.log(
-      "ElevenLabs:",
+      "ElevenLabs API:",
       ELEVENLABS_API_KEY
         ? "CONFIGURADA"
         : "NÃO CONFIGURADA"
     );
 
     console.log(
-      "Agent:",
+      "Agent ID:",
       ELEVENLABS_AGENT_ID
+    );
+
+    console.log(
+      "Voice ID:",
+      ELEVENLABS_VOICE_ID
     );
 
     console.log(
@@ -2155,7 +2854,7 @@ app.listen(
     );
 
     console.log(
-      "======================================"
+      "========================================"
     );
   }
 );
