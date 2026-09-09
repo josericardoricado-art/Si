@@ -6,19 +6,25 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
-import android.widget.*
+import android.widget.ArrayAdapter
+import android.widget.Button
+import android.widget.Spinner
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
-import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val BACKEND_URL = "https://si-u2ul.onrender.com"
+
         private const val REQUEST_RECORD_AUDIO = 1001
         private const val REQUEST_MEDIA_PROJECTION = 1002
 
@@ -35,18 +41,30 @@ class MainActivity : AppCompatActivity() {
     private var mediaProjectionResultCode: Int = 0
     private var mediaProjectionData: Intent? = null
 
+    @Volatile
     private var jobId: String? = null
 
     private val clientId: String by lazy {
-        val prefs = getSharedPreferences("si_config", MODE_PRIVATE)
 
-        var id = prefs.getString("client_id", null)
+        val prefs = getSharedPreferences(
+            "si_config",
+            MODE_PRIVATE
+        )
 
-        if (id == null) {
+        var id = prefs.getString(
+            "client_id",
+            null
+        )
+
+        if (id.isNullOrEmpty()) {
+
             id = UUID.randomUUID().toString()
 
             prefs.edit()
-                .putString("client_id", id)
+                .putString(
+                    "client_id",
+                    id
+                )
                 .apply()
         }
 
@@ -54,9 +72,25 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val languageCodes = arrayOf(
-        "pt", "en", "es", "fr", "de", "it",
-        "ja", "ko", "zh", "ru", "ar", "hi",
-        "tr", "nl", "pl", "uk", "th", "id", "vi"
+        "pt",
+        "en",
+        "es",
+        "fr",
+        "de",
+        "it",
+        "ja",
+        "ko",
+        "zh",
+        "ru",
+        "ar",
+        "hi",
+        "tr",
+        "nl",
+        "pl",
+        "uk",
+        "th",
+        "id",
+        "vi"
     )
 
     private val languageNames = arrayOf(
@@ -81,29 +115,54 @@ class MainActivity : AppCompatActivity() {
         "Tiếng Việt"
     )
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+    override fun onCreate(
+        savedInstanceState: Bundle?
+    ) {
 
-        setContentView(R.layout.activity_main)
-
-        statusText = findViewById(R.id.statusText)
-        monitorButton = findViewById(R.id.monitorButton)
-        stopButton = findViewById(R.id.stopButton)
-        languageSpinner = findViewById(R.id.languageSpinner)
-
-        languageSpinner.adapter = ArrayAdapter(
-            this,
-            android.R.layout.simple_spinner_dropdown_item,
-            languageNames
+        super.onCreate(
+            savedInstanceState
         )
+
+        setContentView(
+            R.layout.activity_main
+        )
+
+        statusText =
+            findViewById(
+                R.id.statusText
+            )
+
+        monitorButton =
+            findViewById(
+                R.id.monitorButton
+            )
+
+        stopButton =
+            findViewById(
+                R.id.stopButton
+            )
+
+        languageSpinner =
+            findViewById(
+                R.id.languageSpinner
+            )
+
+        languageSpinner.adapter =
+            ArrayAdapter(
+                this,
+                android.R.layout.simple_spinner_dropdown_item,
+                languageNames
+            )
 
         stopButton.isEnabled = false
 
         monitorButton.setOnClickListener {
+
             iniciarMonitoramento()
         }
 
         stopButton.setOnClickListener {
+
             pararMonitoramento()
         }
 
@@ -112,7 +171,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun iniciarMonitoramento() {
 
-        if (ContextCompat.checkSelfPermission(
+        if (
+            ContextCompat.checkSelfPermission(
                 this,
                 Manifest.permission.RECORD_AUDIO
             ) != PackageManager.PERMISSION_GRANTED
@@ -120,35 +180,70 @@ class MainActivity : AppCompatActivity() {
 
             ActivityCompat.requestPermissions(
                 this,
-                arrayOf(Manifest.permission.RECORD_AUDIO),
+                arrayOf(
+                    Manifest.permission.RECORD_AUDIO
+                ),
                 REQUEST_RECORD_AUDIO
             )
 
             return
         }
 
-        statusText.text = "🔄 Criando sessão..."
+        statusText.text =
+            "🔄 Conectando ao servidor..."
 
-        val selectedPosition = languageSpinner.selectedItemPosition
-        val targetLang = languageCodes[selectedPosition]
+        monitorButton.isEnabled = false
+
+        val selectedPosition =
+            languageSpinner.selectedItemPosition
+
+        val targetLang =
+            languageCodes[selectedPosition]
 
         Thread {
 
+            var connection:
+                HttpURLConnection? = null
+
             try {
 
-                val url = URL("$BACKEND_URL/api/audio/start")
+                val url =
+                    URL(
+                        "$BACKEND_URL/api/audio/start"
+                    )
 
-                val connection =
-                    url.openConnection() as HttpURLConnection
+                connection =
+                    url.openConnection()
+                        as HttpURLConnection
 
-                connection.requestMethod = "POST"
-                connection.connectTimeout = 15000
-                connection.readTimeout = 15000
-                connection.doOutput = true
+                connection.requestMethod =
+                    "POST"
+
+                connection.connectTimeout =
+                    8000
+
+                connection.readTimeout =
+                    12000
+
+                connection.doOutput =
+                    true
+
+                connection.useCaches =
+                    false
 
                 connection.setRequestProperty(
                     "Content-Type",
+                    "application/json; charset=UTF-8"
+                )
+
+                connection.setRequestProperty(
+                    "Accept",
                     "application/json"
+                )
+
+                connection.setRequestProperty(
+                    "Connection",
+                    "close"
                 )
 
                 connection.setRequestProperty(
@@ -156,69 +251,152 @@ class MainActivity : AppCompatActivity() {
                     clientId
                 )
 
-                val body = JSONObject()
+                val body =
+                    JSONObject()
 
-                body.put("clientId", clientId)
-                body.put("targetLang", targetLang)
+                body.put(
+                    "clientId",
+                    clientId
+                )
+
+                body.put(
+                    "targetLang",
+                    targetLang
+                )
 
                 connection.outputStream.use { output ->
 
                     output.write(
-                        body.toString().toByteArray(Charsets.UTF_8)
+                        body.toString()
+                            .toByteArray(
+                                Charsets.UTF_8
+                            )
                     )
+
+                    output.flush()
                 }
 
-                val responseCode = connection.responseCode
+                val responseCode =
+                    connection.responseCode
 
-                if (responseCode !in 200..299) {
+                val responseText =
+                    if (
+                        responseCode in 200..299
+                    ) {
+
+                        connection.inputStream
+                            .bufferedReader()
+                            .use {
+                                it.readText()
+                            }
+
+                    } else {
+
+                        val errorStream =
+                            connection.errorStream
+
+                        if (
+                            errorStream != null
+                        ) {
+
+                            BufferedReader(
+                                InputStreamReader(
+                                    errorStream
+                                )
+                            ).use {
+                                it.readText()
+                            }
+
+                        } else {
+
+                            ""
+                        }
+                    }
+
+                connection.disconnect()
+                connection = null
+
+                if (
+                    responseCode !in 200..299
+                ) {
 
                     runOnUiThread {
 
                         statusText.text =
-                            "❌ Erro ao criar sessão: HTTP $responseCode"
+                            "❌ Render respondeu HTTP $responseCode"
+
+                        monitorButton.isEnabled =
+                            true
                     }
 
-                    connection.disconnect()
                     return@Thread
                 }
 
-                val responseText =
-                    connection.inputStream
-                        .bufferedReader()
-                        .use { it.readText() }
+                if (
+                    responseText.isEmpty()
+                ) {
 
-                connection.disconnect()
+                    runOnUiThread {
+
+                        statusText.text =
+                            "❌ Render enviou resposta vazia."
+
+                        monitorButton.isEnabled =
+                            true
+                    }
+
+                    return@Thread
+                }
 
                 val response =
-                    JSONObject(responseText)
+                    JSONObject(
+                        responseText
+                    )
 
                 val ok =
-                    response.optBoolean("ok", false)
+                    response.optBoolean(
+                        "ok",
+                        false
+                    )
 
                 if (!ok) {
 
                     runOnUiThread {
 
                         statusText.text =
-                            "❌ O servidor recusou a sessão."
+                            "❌ Servidor recusou a sessão."
+
+                        monitorButton.isEnabled =
+                            true
+                    }
+
+                    return@Thread
+                }
+
+                val newJobId =
+                    response.optString(
+                        "jobId",
+                        ""
+                    )
+
+                if (
+                    newJobId.isEmpty()
+                ) {
+
+                    runOnUiThread {
+
+                        statusText.text =
+                            "❌ Render não retornou jobId."
+
+                        monitorButton.isEnabled =
+                            true
                     }
 
                     return@Thread
                 }
 
                 jobId =
-                    response.optString("jobId", null)
-
-                if (jobId.isNullOrEmpty()) {
-
-                    runOnUiThread {
-
-                        statusText.text =
-                            "❌ Render não retornou o jobId."
-                    }
-
-                    return@Thread
-                }
+                    newJobId
 
                 runOnUiThread {
 
@@ -228,12 +406,25 @@ class MainActivity : AppCompatActivity() {
                     solicitarCapturaDeTela()
                 }
 
-            } catch (e: Exception) {
+            } catch (
+                e: Exception
+            ) {
+
+                try {
+                    connection?.disconnect()
+                } catch (_: Exception) {
+                }
 
                 runOnUiThread {
 
+                    val mensagem =
+                        e.message ?: "erro desconhecido"
+
                     statusText.text =
-                        "❌ Erro de conexão com Render: ${e.message}"
+                        "❌ Falha ao conectar: $mensagem"
+
+                    monitorButton.isEnabled =
+                        true
                 }
             }
 
@@ -242,21 +433,38 @@ class MainActivity : AppCompatActivity() {
 
     private fun solicitarCapturaDeTela() {
 
-        val manager =
-            getSystemService(
-                MEDIA_PROJECTION_SERVICE
-            ) as MediaProjectionManager
+        try {
 
-        val captureIntent =
-            manager.createScreenCaptureIntent()
+            val manager =
+                getSystemService(
+                    MEDIA_PROJECTION_SERVICE
+                ) as MediaProjectionManager
 
-        startActivityForResult(
-            captureIntent,
-            REQUEST_MEDIA_PROJECTION
-        )
+            val captureIntent =
+                manager.createScreenCaptureIntent()
+
+            startActivityForResult(
+                captureIntent,
+                REQUEST_MEDIA_PROJECTION
+            )
+
+        } catch (
+            e: Exception
+        ) {
+
+            statusText.text =
+                "❌ Não foi possível iniciar captura."
+
+            monitorButton.isEnabled =
+                true
+
+            jobId = null
+        }
     }
 
-    @Deprecated("Deprecated API usada para compatibilidade")
+    @Deprecated(
+        "Compatibilidade com Android"
+    )
     override fun onActivityResult(
         requestCode: Int,
         resultCode: Int,
@@ -269,29 +477,43 @@ class MainActivity : AppCompatActivity() {
             data
         )
 
-        if (requestCode == REQUEST_MEDIA_PROJECTION) {
+        if (
+            requestCode !=
+            REQUEST_MEDIA_PROJECTION
+        ) {
+            return
+        }
 
-            if (
-                resultCode == Activity.RESULT_OK &&
-                data != null &&
-                !jobId.isNullOrEmpty()
-            ) {
+        if (
+            resultCode ==
+            Activity.RESULT_OK &&
+            data != null &&
+            !jobId.isNullOrEmpty()
+        ) {
 
-                mediaProjectionResultCode =
-                    resultCode
+            mediaProjectionResultCode =
+                resultCode
 
-                mediaProjectionData =
-                    data
+            mediaProjectionData =
+                data
 
-                iniciarServicoDeAudio()
+            iniciarServicoDeAudio()
 
-            } else {
+        } else {
 
-                statusText.text =
-                    "❌ Captura de tela cancelada."
+            statusText.text =
+                "❌ Captura de tela cancelada."
 
-                jobId = null
-            }
+            monitorButton.isEnabled =
+                true
+
+            stopButton.isEnabled =
+                false
+
+            jobId = null
+
+            mediaProjectionData =
+                null
         }
     }
 
@@ -301,42 +523,62 @@ class MainActivity : AppCompatActivity() {
             jobId ?: return
 
         val data =
-            mediaProjectionData ?: return
+            mediaProjectionData
+                ?: return
 
-        val serviceIntent =
-            Intent(
-                this,
-                AudioCaptureService::class.java
+        try {
+
+            val serviceIntent =
+                Intent(
+                    this,
+                    AudioCaptureService::class.java
+                )
+
+            serviceIntent.action =
+                AudioCaptureService.ACTION_START
+
+            serviceIntent.putExtra(
+                AudioCaptureService.EXTRA_RESULT_CODE,
+                mediaProjectionResultCode
             )
 
-        serviceIntent.action =
-            AudioCaptureService.ACTION_START
+            serviceIntent.putExtra(
+                AudioCaptureService.EXTRA_RESULT_DATA,
+                data
+            )
 
-        serviceIntent.putExtra(
-            AudioCaptureService.EXTRA_RESULT_CODE,
-            mediaProjectionResultCode
-        )
+            serviceIntent.putExtra(
+                AudioCaptureService.EXTRA_JOB_ID,
+                currentJobId
+            )
 
-        serviceIntent.putExtra(
-            AudioCaptureService.EXTRA_RESULT_DATA,
-            data
-        )
+            ContextCompat.startForegroundService(
+                this,
+                serviceIntent
+            )
 
-        serviceIntent.putExtra(
-            AudioCaptureService.EXTRA_JOB_ID,
-            currentJobId
-        )
+            statusText.text =
+                "🟢 MONITORANDO ÁUDIO DO VÍDEO"
 
-        ContextCompat.startForegroundService(
-            this,
-            serviceIntent
-        )
+            monitorButton.isEnabled =
+                false
 
-        statusText.text =
-            "🟢 MONITORANDO ÁUDIO DO VÍDEO"
+            stopButton.isEnabled =
+                true
 
-        monitorButton.isEnabled = false
-        stopButton.isEnabled = true
+        } catch (
+            e: Exception
+        ) {
+
+            statusText.text =
+                "❌ Erro ao iniciar captura."
+
+            monitorButton.isEnabled =
+                true
+
+            stopButton.isEnabled =
+                false
+        }
     }
 
     private fun pararMonitoramento() {
@@ -350,28 +592,47 @@ class MainActivity : AppCompatActivity() {
         serviceIntent.action =
             AudioCaptureService.ACTION_STOP
 
-        startService(serviceIntent)
+        try {
 
-        stopService(
-            Intent(
-                this,
-                AudioCaptureService::class.java
+            startService(
+                serviceIntent
             )
-        )
+
+        } catch (_: Exception) {
+        }
+
+        try {
+
+            stopService(
+                Intent(
+                    this,
+                    AudioCaptureService::class.java
+                )
+            )
+
+        } catch (_: Exception) {
+        }
 
         val currentJobId =
             jobId
 
-        if (!currentJobId.isNullOrEmpty()) {
+        if (
+            !currentJobId.isNullOrEmpty()
+        ) {
 
             Thread {
+
+                var connection:
+                    HttpURLConnection? = null
 
                 try {
 
                     val url =
-                        URL("$BACKEND_URL/api/audio/stop")
+                        URL(
+                            "$BACKEND_URL/api/audio/stop"
+                        )
 
-                    val connection =
+                    connection =
                         url.openConnection()
                             as HttpURLConnection
 
@@ -379,17 +640,20 @@ class MainActivity : AppCompatActivity() {
                         "POST"
 
                     connection.connectTimeout =
-                        10000
+                        5000
 
                     connection.readTimeout =
-                        10000
+                        5000
 
                     connection.doOutput =
                         true
 
+                    connection.useCaches =
+                        false
+
                     connection.setRequestProperty(
                         "Content-Type",
-                        "application/json"
+                        "application/json; charset=UTF-8"
                     )
 
                     val body =
@@ -400,45 +664,64 @@ class MainActivity : AppCompatActivity() {
                         currentJobId
                     )
 
-                    connection.outputStream.use { output ->
+                    connection.outputStream.use {
+                        output ->
 
                         output.write(
                             body.toString()
-                                .toByteArray(Charsets.UTF_8)
+                                .toByteArray(
+                                    Charsets.UTF_8
+                                )
                         )
+
+                        output.flush()
                     }
 
                     connection.responseCode
 
-                    connection.disconnect()
-
                 } catch (_: Exception) {
-                    // Não impede o encerramento local.
+
+                } finally {
+
+                    try {
+                        connection?.disconnect()
+                    } catch (_: Exception) {
+                    }
                 }
 
             }.start()
         }
 
         jobId = null
-        mediaProjectionData = null
+
+        mediaProjectionData =
+            null
 
         statusText.text =
             "⏹ Monitoramento parado."
 
-        monitorButton.isEnabled = true
-        stopButton.isEnabled = false
+        monitorButton.isEnabled =
+            true
+
+        stopButton.isEnabled =
+            false
     }
 
     private fun verificarServidor() {
 
         Thread {
 
+            var connection:
+                HttpURLConnection? = null
+
             try {
 
                 val url =
-                    URL("$BACKEND_URL/api/health")
+                    URL(
+                        "$BACKEND_URL/api/health"
+                    )
 
-                val connection =
+                connection =
                     url.openConnection()
                         as HttpURLConnection
 
@@ -446,35 +729,59 @@ class MainActivity : AppCompatActivity() {
                     "GET"
 
                 connection.connectTimeout =
-                    10000
+                    8000
 
                 connection.readTimeout =
-                    10000
+                    8000
+
+                connection.useCaches =
+                    false
+
+                connection.setRequestProperty(
+                    "Accept",
+                    "application/json"
+                )
+
+                connection.setRequestProperty(
+                    "Connection",
+                    "close"
+                )
 
                 val code =
                     connection.responseCode
 
                 connection.disconnect()
+                connection = null
 
                 runOnUiThread {
 
-                    if (code in 200..299) {
+                    if (
+                        code in 200..299
+                    ) {
 
                         statusText.text =
                             "🟢 Servidor conectado"
+
                     } else {
 
                         statusText.text =
-                            "🟡 Servidor respondeu HTTP $code"
+                            "🟡 Servidor HTTP $code"
                     }
                 }
 
-            } catch (e: Exception) {
+            } catch (
+                e: Exception
+            ) {
+
+                try {
+                    connection?.disconnect()
+                } catch (_: Exception) {
+                }
 
                 runOnUiThread {
 
                     statusText.text =
-                        "🔴 Servidor offline"
+                        "🔴 Servidor indisponível"
                 }
             }
 
@@ -494,7 +801,8 @@ class MainActivity : AppCompatActivity() {
         )
 
         if (
-            requestCode == REQUEST_RECORD_AUDIO
+            requestCode ==
+            REQUEST_RECORD_AUDIO
         ) {
 
             if (
@@ -509,6 +817,9 @@ class MainActivity : AppCompatActivity() {
 
                 statusText.text =
                     "❌ Permissão de áudio necessária."
+
+                monitorButton.isEnabled =
+                    true
             }
         }
     }
