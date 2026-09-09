@@ -10,7 +10,24 @@ const app = express();
 
 const PORT = process.env.PORT || 10000;
 
-const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || "";
+/* =========================================================
+   GEMINI
+========================================================= */
+
+const GEMINI_API_KEY =
+  process.env.GEMINI_API_KEY || "";
+
+const GEMINI_MODEL =
+  "gemini-3.5-live-translate-preview";
+
+/* =========================================================
+   ELEVENLABS
+   Mantido apenas para compatibilidade.
+========================================================= */
+
+const ELEVENLABS_API_KEY =
+  process.env.ELEVENLABS_API_KEY || "";
+
 const ELEVENLABS_AGENT_ID =
   process.env.ELEVENLABS_AGENT_ID ||
   "agent_1601m1q929bhf2zvts65479fyzdw";
@@ -19,34 +36,86 @@ const ELEVENLABS_VOICE_ID =
   process.env.ELEVENLABS_VOICE_ID ||
   "cjVigY5qzO86Huf0OWal";
 
+/* =========================================================
+   BACKEND
+========================================================= */
+
 const BACKEND_URL =
   process.env.BACKEND_URL ||
   "https://si-u2ul.onrender.com";
 
-const UPLOAD_DIR = path.join(__dirname, "uploads");
+const UPLOAD_DIR =
+  path.join(__dirname, "uploads");
 
 if (!fs.existsSync(UPLOAD_DIR)) {
-  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  fs.mkdirSync(UPLOAD_DIR, {
+    recursive: true,
+  });
 }
+
+/* =========================================================
+   EXPRESS
+========================================================= */
 
 app.use(
   cors({
     origin: "*",
     methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+    ],
   })
 );
 
-app.use(express.json({ limit: "20mb" }));
-app.use(express.urlencoded({ extended: true }));
+app.use(
+  express.json({
+    limit: "20mb",
+  })
+);
 
-app.use("/uploads", express.static(UPLOAD_DIR));
+app.use(
+  express.urlencoded({
+    extended: true,
+  })
+);
+
+app.use(
+  "/uploads",
+  express.static(UPLOAD_DIR)
+);
 
 /* =========================================================
    SESSÕES DE ÁUDIO
 ========================================================= */
 
 const audioSessions = new Map();
+
+/* =========================================================
+   IDIOMAS
+========================================================= */
+
+const TARGET_LANGUAGES = {
+  pt: "pt-BR",
+  en: "en",
+  es: "es",
+  fr: "fr",
+  de: "de",
+  it: "it",
+  ja: "ja",
+  ko: "ko",
+  zh: "zh-Hans",
+  ru: "ru",
+  ar: "ar",
+  hi: "hi",
+  tr: "tr",
+  nl: "nl",
+  pl: "pl",
+  uk: "uk",
+  th: "th",
+  id: "id",
+  vi: "vi",
+};
 
 /* =========================================================
    FUNÇÕES AUXILIARES
@@ -57,576 +126,875 @@ function now() {
 }
 
 function parseSampleRate(format) {
-  if (!format) return null;
+  if (!format) {
+    return null;
+  }
 
-  const match = String(format).match(/(\d{4,6})/);
+  const match =
+    String(format).match(
+      /(\d{4,6})/
+    );
 
-  if (!match) return null;
+  if (!match) {
+    return null;
+  }
 
   return Number(match[1]);
 }
 
 /*
- * Converte PCM16 mono de uma frequência para outra.
+ * Resample simples de PCM16 mono.
+ *
  * Exemplo:
- * 48000 -> 16000
- * 44100 -> 16000
  * 24000 -> 16000
  */
-function resamplePcm16(buffer, inputRate, outputRate) {
-  if (!buffer || buffer.length === 0) {
+function resamplePcm16(
+  buffer,
+  inputRate,
+  outputRate
+) {
+  if (
+    !buffer ||
+    buffer.length === 0
+  ) {
     return Buffer.alloc(0);
   }
 
-  if (!inputRate || !outputRate || inputRate === outputRate) {
+  if (
+    !inputRate ||
+    !outputRate ||
+    inputRate === outputRate
+  ) {
     return buffer;
   }
 
-  const sampleCount = Math.floor(buffer.length / 2);
+  const sampleCount =
+    Math.floor(
+      buffer.length / 2
+    );
 
   if (sampleCount <= 0) {
     return Buffer.alloc(0);
   }
 
-  const ratio = inputRate / outputRate;
+  const ratio =
+    inputRate / outputRate;
 
-  const outputCount = Math.max(
-    1,
-    Math.floor(sampleCount / ratio)
-  );
-
-  const output = Buffer.alloc(outputCount * 2);
-
-  for (let i = 0; i < outputCount; i++) {
-    const sourceIndex = Math.min(
-      sampleCount - 1,
-      Math.floor(i * ratio)
+  const outputCount =
+    Math.max(
+      1,
+      Math.floor(
+        sampleCount / ratio
+      )
     );
 
-    const sample = buffer.readInt16LE(sourceIndex * 2);
+  const output =
+    Buffer.alloc(
+      outputCount * 2
+    );
 
-    output.writeInt16LE(sample, i * 2);
+  for (
+    let i = 0;
+    i < outputCount;
+    i++
+  ) {
+    const sourceIndex =
+      Math.min(
+        sampleCount - 1,
+        Math.floor(
+          i * ratio
+        )
+      );
+
+    const sample =
+      buffer.readInt16LE(
+        sourceIndex * 2
+      );
+
+    output.writeInt16LE(
+      sample,
+      i * 2
+    );
   }
 
   return output;
-}
-
-function convertOutputTo16k(buffer, inputRate) {
-  return resamplePcm16(
-    buffer,
-    inputRate,
-    16000
-  );
 }
 
 /* =========================================================
    HEALTH
 ========================================================= */
 
-app.get("/api/health", (req, res) => {
-  res.json({
-    ok: true,
-    service: "LinguaLive",
-    message: "Servidor online",
-    audioCapture: true,
-    elevenlabs: Boolean(ELEVENLABS_API_KEY),
-    elevenlabsWebSocket: true,
-    agentId: ELEVENLABS_AGENT_ID,
-    time: new Date().toISOString(),
-  });
-});
+app.get(
+  "/api/health",
+  (req, res) => {
+    res.json({
+      ok: true,
 
-/* =========================================================
-   CONFIGURAÇÃO
-========================================================= */
+      service:
+        "SI Tradutor Live",
 
-app.get("/api/audio/config", (req, res) => {
-  res.json({
-    ok: true,
-    backendUrl: BACKEND_URL,
-    audioCapture: true,
-    elevenlabs: Boolean(ELEVENLABS_API_KEY),
-    agentId: ELEVENLABS_AGENT_ID,
-    sampleRate: 16000,
-    channels: 1,
-    format: "pcm_s16le",
-  });
-});
+      message:
+        "Servidor online",
 
-/* =========================================================
-   ASSINAR URL ELEVENLABS
-========================================================= */
+      audioCapture:
+        true,
 
-async function getElevenLabsSignedUrl() {
-  if (!ELEVENLABS_API_KEY) {
-    throw new Error(
-      "ELEVENLABS_API_KEY não configurada no Render."
-    );
-  }
+      gemini:
+        Boolean(
+          GEMINI_API_KEY
+        ),
 
-  const url =
-    "https://api.elevenlabs.io/v1/convai/conversation/get-signed-url" +
-    "?agent_id=" +
-    encodeURIComponent(ELEVENLABS_AGENT_ID);
+      geminiModel:
+        GEMINI_MODEL,
 
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      "xi-api-key": ELEVENLABS_API_KEY,
-    },
-  });
+      elevenlabs:
+        Boolean(
+          ELEVENLABS_API_KEY
+        ),
 
-  const text = await response.text();
-
-  if (!response.ok) {
-    throw new Error(
-      `ElevenLabs signed URL ${response.status}: ${text}`
-    );
-  }
-
-  let data;
-
-  try {
-    data = JSON.parse(text);
-  } catch {
-    throw new Error(
-      "ElevenLabs retornou resposta inválida ao gerar signed URL."
-    );
-  }
-
-  if (!data.signed_url) {
-    throw new Error(
-      "ElevenLabs não retornou signed_url."
-    );
-  }
-
-  return data.signed_url;
-}
-
-/* =========================================================
-   CONECTAR AO ELEVENLABS
-========================================================= */
-
-function connectElevenLabs(session) {
-  return new Promise(async (resolve, reject) => {
-    let signedUrl;
-
-    try {
-      signedUrl = await getElevenLabsSignedUrl();
-    } catch (error) {
-      session.error = error.message;
-      session.status = "error";
-
-      reject(error);
-      return;
-    }
-
-    const ws = new WebSocket(signedUrl);
-
-    session.ws = ws;
-    session.elevenlabs = false;
-
-    let opened = false;
-    let settled = false;
-
-    const connectionTimeout = setTimeout(() => {
-      if (!opened) {
-        try {
-          ws.close();
-        } catch {}
-
-        const error =
-          "Timeout conectando ao WebSocket do ElevenLabs.";
-
-        session.error = error;
-        session.status = "error";
-
-        if (!settled) {
-          settled = true;
-          reject(new Error(error));
-        }
-      }
-    }, 15000);
-
-    ws.on("open", () => {
-      opened = true;
-
-      clearTimeout(connectionTimeout);
-
-      console.log(
-        `[ELEVENLABS] WebSocket conectado: ${session.jobId}`
-      );
-
-      /*
-       * IMPORTANTE:
-       *
-       * NÃO estamos enviando prompt.
-       *
-       * O erro anterior era:
-       *
-       * Override for field 'prompt' is not allowed by config.
-       *
-       * Portanto, o Agent usa a configuração que está
-       * salva diretamente no ElevenLabs.
-       */
-
-      const initiationMessage = {
-        type: "conversation_initiation_client_data",
-      };
-
-      /*
-       * Não fazemos override de prompt.
-       *
-       * Também não fazemos override de voz neste momento.
-       * Assim reduzimos ao mínimo a possibilidade de
-       * outro erro de segurança do Agent.
-       */
-
-      ws.send(
-        JSON.stringify(initiationMessage)
-      );
-
-      if (!settled) {
-        settled = true;
-
-        session.elevenlabs = true;
-        session.status = "active";
-
-        resolve();
-      }
+      time:
+        new Date().toISOString(),
     });
+  }
+);
 
-    ws.on("message", (data) => {
-      try {
-        const message = JSON.parse(
-          data.toString()
+/* =========================================================
+   CONFIGURAÇÃO DE ÁUDIO
+========================================================= */
+
+app.get(
+  "/api/audio/config",
+  (req, res) => {
+    res.json({
+      ok: true,
+
+      backendUrl:
+        BACKEND_URL,
+
+      audioCapture:
+        true,
+
+      gemini:
+        Boolean(
+          GEMINI_API_KEY
+        ),
+
+      model:
+        GEMINI_MODEL,
+
+      sampleRate:
+        16000,
+
+      outputSampleRate:
+        16000,
+
+      channels:
+        1,
+
+      format:
+        "pcm_s16le",
+
+      languages:
+        TARGET_LANGUAGES,
+    });
+  }
+);
+
+/* =========================================================
+   CONECTAR GEMINI LIVE TRANSLATION
+========================================================= */
+
+function connectGemini(session) {
+  return new Promise(
+    (resolve, reject) => {
+      if (!GEMINI_API_KEY) {
+        const error =
+          "GEMINI_API_KEY não configurada no Render.";
+
+        session.error =
+          error;
+
+        session.status =
+          "error";
+
+        reject(
+          new Error(error)
         );
 
-        /*
-         * METADADOS DA CONVERSA
-         */
+        return;
+      }
 
-        if (
-          message.type ===
-          "conversation_initiation_metadata"
-        ) {
-          const metadata =
-            message.conversation_initiation_metadata_event ||
-            {};
+      const targetLanguage =
+        TARGET_LANGUAGES[
+          session.targetLang
+        ] ||
+        session.targetLang ||
+        "pt-BR";
 
-          session.conversationId =
-            metadata.conversation_id || null;
+      const wsUrl =
+        "wss://generativelanguage.googleapis.com/ws/" +
+        "google.ai.generativelanguage.v1beta." +
+        "GenerativeService.BidiGenerateContent" +
+        "?key=" +
+        encodeURIComponent(
+          GEMINI_API_KEY
+        );
 
-          session.inputSampleRate =
-            parseSampleRate(
-              metadata.user_input_audio_format
-            );
+      console.log(
+        `[GEMINI] Conectando ${session.jobId}`
+      );
 
-          session.outputSampleRate =
-            parseSampleRate(
-              metadata.agent_output_audio_format
-            );
+      console.log(
+        `[GEMINI] Modelo: ${GEMINI_MODEL}`
+      );
+
+      console.log(
+        `[GEMINI] Idioma destino: ${targetLanguage}`
+      );
+
+      const ws =
+        new WebSocket(
+          wsUrl
+        );
+
+      session.ws =
+        ws;
+
+      session.gemini =
+        false;
+
+      let opened =
+        false;
+
+      let settled =
+        false;
+
+      const timeout =
+        setTimeout(
+          () => {
+            if (!opened) {
+              try {
+                ws.close();
+              } catch {}
+
+              const error =
+                "Timeout conectando ao Gemini Live.";
+
+              session.error =
+                error;
+
+              session.status =
+                "error";
+
+              if (!settled) {
+                settled =
+                  true;
+
+                reject(
+                  new Error(
+                    error
+                  )
+                );
+              }
+            }
+          },
+          20000
+        );
+
+      /* =====================================================
+         OPEN
+      ===================================================== */
+
+      ws.on(
+        "open",
+        () => {
+          opened =
+            true;
+
+          clearTimeout(
+            timeout
+          );
 
           console.log(
-            `[ELEVENLABS] metadata ${session.jobId}`,
-            {
-              conversationId:
-                session.conversationId,
-              input:
-                metadata.user_input_audio_format,
-              output:
-                metadata.agent_output_audio_format,
-            }
+            `[GEMINI] WebSocket conectado: ${session.jobId}`
           );
 
-          return;
-        }
+          /*
+           * Configuração oficial do Live Translation.
+           *
+           * O modelo é especializado em tradução
+           * voz-para-voz.
+           */
 
-        /*
-         * ÁUDIO GERADO PELO AGENT
-         */
+          const setupMessage = {
+            setup: {
+              model:
+                `models/${GEMINI_MODEL}`,
 
-        if (
-          message.type === "audio" &&
-          message.audio_event &&
-          message.audio_event.audio_base_64
-        ) {
-          let audioBuffer =
-            Buffer.from(
-              message.audio_event.audio_base_64,
-              "base64"
-            );
+              generationConfig: {
+                responseModalities: [
+                  "AUDIO",
+                ],
 
-          const outputRate =
-            session.outputSampleRate || 16000;
+                inputAudioTranscription:
+                  {},
 
-          if (outputRate !== 16000) {
-            audioBuffer =
-              convertOutputTo16k(
-                audioBuffer,
-                outputRate
-              );
-          }
+                outputAudioTranscription:
+                  {},
 
-          if (audioBuffer.length > 0) {
-            session.outputQueue.push(
-              audioBuffer.toString("base64")
-            );
+                translationConfig: {
+                  targetLanguageCode:
+                    targetLanguage,
 
-            session.outputBytes +=
-              audioBuffer.length;
-          }
+                  /*
+                   * false =
+                   * se o áudio já estiver no idioma
+                   * escolhido, não repete o áudio.
+                   */
+                  echoTargetLanguage:
+                    false,
+                },
+              },
+            },
+          };
 
-          return;
-        }
-
-        /*
-         * TRANSCRIÇÃO RECEBIDA
-         */
-
-        if (
-          message.type === "user_transcript"
-        ) {
-          const transcript =
-            message.user_transcription_event
-              ?.user_transcript ||
-            "";
-
-          if (transcript) {
-            session.lastTranscript =
-              transcript;
-
-            console.log(
-              `[ELEVENLABS] transcript ${session.jobId}: ${transcript}`
-            );
-          }
-
-          return;
-        }
-
-        /*
-         * RESPOSTA DO AGENT
-         */
-
-        if (
-          message.type === "agent_response"
-        ) {
-          const response =
-            message.agent_response_event
-              ?.agent_response ||
-            "";
-
-          if (response) {
-            session.lastAgentResponse =
-              response;
-
-            console.log(
-              `[ELEVENLABS] agent response ${session.jobId}: ${response}`
-            );
-          }
-
-          return;
-        }
-
-        /*
-         * PING
-         */
-
-        if (
-          message.type === "ping"
-        ) {
           try {
             ws.send(
-              JSON.stringify({
-                type: "pong",
-                event_id:
-                  message.ping_event
-                    ?.event_id,
-              })
+              JSON.stringify(
+                setupMessage
+              )
             );
-          } catch {}
 
-          return;
+            console.log(
+              `[GEMINI] Setup enviado: ${session.jobId}`
+            );
+          } catch (error) {
+            session.error =
+              "Erro enviando setup Gemini: " +
+              error.message;
+
+            session.status =
+              "error";
+
+            if (!settled) {
+              settled =
+                true;
+
+              reject(error);
+            }
+          }
         }
+      );
 
-        /*
-         * ERRO DO ELEVENLABS
-         */
+      /* =====================================================
+         MESSAGE
+      ===================================================== */
 
-        if (
-          message.type === "error" ||
-          message.type === "client_error" ||
-          message.is_error === true
-        ) {
-          const errorText =
-            message.message ||
-            message.error ||
-            message.reason ||
-            message.type ||
-            "Erro desconhecido do ElevenLabs.";
+      ws.on(
+        "message",
+        (data) => {
+          try {
+            const message =
+              JSON.parse(
+                data.toString()
+              );
 
-          session.error =
-            String(errorText);
+            /* ===============================================
+               SETUP COMPLETO
+            =============================================== */
 
+            if (
+              message.setupComplete
+            ) {
+              session.gemini =
+                true;
+
+              session.status =
+                "active";
+
+              console.log(
+                `[GEMINI] Setup completo: ${session.jobId}`
+              );
+
+              if (!settled) {
+                settled =
+                  true;
+
+                resolve();
+              }
+
+              return;
+            }
+
+            /* ===============================================
+               ERRO
+            =============================================== */
+
+            if (
+              message.error
+            ) {
+              const errorText =
+                message.error.message ||
+                message.error.status ||
+                JSON.stringify(
+                  message.error
+                );
+
+              session.error =
+                `Gemini: ${errorText}`;
+
+              console.error(
+                `[GEMINI ERROR] ${session.jobId}:`,
+                message.error
+              );
+
+              if (
+                !opened &&
+                !settled
+              ) {
+                settled =
+                  true;
+
+                reject(
+                  new Error(
+                    errorText
+                  )
+                );
+              }
+
+              return;
+            }
+
+            /* ===============================================
+               SERVER CONTENT
+            =============================================== */
+
+            const content =
+              message.serverContent;
+
+            if (!content) {
+              return;
+            }
+
+            /* ===============================================
+               TRANSCRIÇÃO DO ÁUDIO ORIGINAL
+            =============================================== */
+
+            if (
+              content.inputTranscription
+            ) {
+              const text =
+                content
+                  .inputTranscription
+                  .text ||
+                "";
+
+              if (text) {
+                session.lastTranscript =
+                  text;
+
+                console.log(
+                  `[GEMINI INPUT] ${session.jobId}: ${text}`
+                );
+              }
+            }
+
+            /* ===============================================
+               TRANSCRIÇÃO DA TRADUÇÃO
+            =============================================== */
+
+            if (
+              content.outputTranscription
+            ) {
+              const text =
+                content
+                  .outputTranscription
+                  .text ||
+                "";
+
+              if (text) {
+                session.lastAgentResponse =
+                  text;
+
+                console.log(
+                  `[GEMINI OUTPUT] ${session.jobId}: ${text}`
+                );
+              }
+            }
+
+            /* ===============================================
+               ÁUDIO TRADUZIDO
+            =============================================== */
+
+            if (
+              content.modelTurn &&
+              Array.isArray(
+                content.modelTurn.parts
+              )
+            ) {
+              for (
+                const part of
+                  content
+                    .modelTurn
+                    .parts
+              ) {
+                if (
+                  !part.inlineData ||
+                  !part.inlineData.data
+                ) {
+                  continue;
+                }
+
+                let audioBuffer;
+
+                try {
+                  audioBuffer =
+                    Buffer.from(
+                      part
+                        .inlineData
+                        .data,
+                      "base64"
+                    );
+                } catch (
+                  error
+                ) {
+                  console.error(
+                    "[GEMINI AUDIO DECODE]",
+                    error.message
+                  );
+
+                  continue;
+                }
+
+                if (
+                  !audioBuffer.length
+                ) {
+                  continue;
+                }
+
+                /*
+                 * Gemini Live entrega áudio
+                 * PCM16 mono 24 kHz.
+                 *
+                 * Android está esperando
+                 * PCM16 mono 16 kHz.
+                 */
+
+                audioBuffer =
+                  resamplePcm16(
+                    audioBuffer,
+                    24000,
+                    16000
+                  );
+
+                if (
+                  !audioBuffer.length
+                ) {
+                  continue;
+                }
+
+                /*
+                 * Limite de segurança da fila.
+                 *
+                 * Evita memória crescer
+                 * indefinidamente se o Android
+                 * estiver temporariamente lento.
+                 */
+
+                if (
+                  session
+                    .outputQueue
+                    .length >= 100
+                ) {
+                  session
+                    .outputQueue
+                    .shift();
+                }
+
+                session
+                  .outputQueue
+                  .push(
+                    audioBuffer.toString(
+                      "base64"
+                    )
+                  );
+
+                session.outputBytes +=
+                  audioBuffer.length;
+              }
+            }
+
+            /* ===============================================
+               GO AWAY
+            =============================================== */
+
+            if (
+              content.goAway
+            ) {
+              console.log(
+                `[GEMINI] GoAway recebido: ${session.jobId}`,
+                content.goAway
+              );
+            }
+
+            /* ===============================================
+               TURN COMPLETE
+            =============================================== */
+
+            if (
+              content.turnComplete
+            ) {
+              session.lastTurnAt =
+                now();
+            }
+          } catch (
+            error
+          ) {
+            console.error(
+              `[GEMINI MESSAGE ERROR] ${session.jobId}:`,
+              error.message
+            );
+
+            session.error =
+              "Erro processando resposta Gemini: " +
+              error.message;
+          }
+        }
+      );
+
+      /* =====================================================
+         ERROR
+      ===================================================== */
+
+      ws.on(
+        "error",
+        (error) => {
           console.error(
-            `[ELEVENLABS ERROR] ${session.jobId}:`,
-            message
+            `[GEMINI WS ERROR] ${session.jobId}:`,
+            error.message
           );
 
-          return;
+          session.gemini =
+            false;
+
+          session.error =
+            "WebSocket Gemini: " +
+            error.message;
+
+          if (
+            !opened &&
+            !settled
+          ) {
+            settled =
+              true;
+
+            clearTimeout(
+              timeout
+            );
+
+            reject(error);
+          }
         }
-      } catch (error) {
-        console.error(
-          "[ELEVENLABS MESSAGE ERROR]",
-          error.message
-        );
-      }
-    });
-
-    ws.on("error", (error) => {
-      console.error(
-        `[ELEVENLABS WS ERROR] ${session.jobId}:`,
-        error.message
       );
 
-      session.error =
-        "WebSocket ElevenLabs: " +
-        error.message;
+      /* =====================================================
+         CLOSE
+      ===================================================== */
 
-      session.elevenlabs = false;
+      ws.on(
+        "close",
+        (
+          code,
+          reasonBuffer
+        ) => {
+          const reason =
+            reasonBuffer
+              ? reasonBuffer.toString()
+              : "";
 
-      if (!opened && !settled) {
-        settled = true;
-        clearTimeout(connectionTimeout);
-        reject(error);
-      }
-    });
+          console.log(
+            `[GEMINI] WebSocket fechado ${session.jobId} code=${code} reason=${reason}`
+          );
 
-    ws.on("close", (code, reasonBuffer) => {
-      const reason =
-        reasonBuffer
-          ? reasonBuffer.toString()
-          : "";
+          session.gemini =
+            false;
 
-      console.log(
-        `[ELEVENLABS] WebSocket fechado ${session.jobId} code=${code} reason=${reason}`
+          if (
+            code !== 1000 &&
+            session.status !==
+              "stopped"
+          ) {
+            session.error =
+              `WebSocket Gemini fechado. code=${code} reason=${reason}`;
+
+            session.status =
+              "disconnected";
+          }
+        }
       );
-
-      session.elevenlabs = false;
-
-      if (code !== 1000) {
-        session.error =
-          `WebSocket ElevenLabs fechado. code=${code} reason=${reason}`;
-      }
-
-      if (
-        session.status !== "stopped" &&
-        session.status !== "error"
-      ) {
-        session.status =
-          "disconnected";
-      }
-    });
-  });
+    }
+  );
 }
 
 /* =========================================================
    INICIAR ÁUDIO
 ========================================================= */
 
-app.post("/api/audio/start", async (req, res) => {
-  try {
-    const clientId =
-      req.body?.clientId ||
-      uuidv4();
-
-    const targetLang =
-      req.body?.targetLang ||
-      "pt";
-
-    const jobId =
-      `${Date.now()}-${uuidv4().replace(/-/g, "").slice(0, 16)}`;
-
-    const session = {
-      jobId,
-      clientId,
-      targetLang,
-
-      status: "connecting",
-
-      createdAt: now(),
-
-      chunks: 0,
-      bytesReceived: 0,
-
-      outputQueue: [],
-      outputBytes: 0,
-
-      elevenlabs: false,
-
-      ws: null,
-
-      sendChain: Promise.resolve(),
-
-      inputSampleRate: 16000,
-      outputSampleRate: 16000,
-
-      conversationId: null,
-
-      lastTranscript: "",
-      lastAgentResponse: "",
-
-      error: null,
-    };
-
-    audioSessions.set(
-      jobId,
-      session
-    );
-
-    console.log(
-      `[AUDIO START] ${jobId} client=${clientId} lang=${targetLang}`
-    );
-
-    /*
-     * Conecta ao ElevenLabs antes de aceitar
-     * os chunks do Android.
-     */
-
+app.post(
+  "/api/audio/start",
+  async (req, res) => {
     try {
-      await connectElevenLabs(session);
-    } catch (error) {
-      session.status = "error";
-      session.error =
-        error.message;
+      const clientId =
+        req.body?.clientId ||
+        uuidv4();
 
-      return res.status(500).json({
-        ok: false,
+      const targetLang =
+        req.body?.targetLang ||
+        "pt";
+
+      const jobId =
+        `${Date.now()}-${uuidv4()
+          .replace(/-/g, "")
+          .slice(0, 16)}`;
+
+      const session = {
         jobId,
-        error: error.message,
+
+        clientId,
+
+        targetLang,
+
+        status:
+          "connecting",
+
+        createdAt:
+          now(),
+
+        chunks:
+          0,
+
+        bytesReceived:
+          0,
+
+        outputQueue:
+          [],
+
+        outputBytes:
+          0,
+
+        gemini:
+          false,
+
+        /*
+         * Mantido para compatibilidade
+         * com versões antigas do Android.
+         */
+        elevenlabs:
+          false,
+
+        ws:
+          null,
+
+        sendChain:
+          Promise.resolve(),
+
+        inputSampleRate:
+          16000,
+
+        outputSampleRate:
+          16000,
+
+        conversationId:
+          null,
+
+        lastTranscript:
+          "",
+
+        lastAgentResponse:
+          "",
+
+        lastTurnAt:
+          null,
+
+        error:
+          null,
+      };
+
+      audioSessions.set(
+        jobId,
+        session
+      );
+
+      console.log(
+        `[AUDIO START] ${jobId} client=${clientId} lang=${targetLang}`
+      );
+
+      if (
+        !TARGET_LANGUAGES[
+          targetLang
+        ]
+      ) {
+        console.log(
+          `[GEMINI] Código de idioma não mapeado: ${targetLang}`
+        );
+      }
+
+      try {
+        await connectGemini(
+          session
+        );
+      } catch (
+        error
+      ) {
+        session.status =
+          "error";
+
+        session.error =
+          error.message;
+
+        return res.status(
+          500
+        ).json({
+          ok: false,
+          jobId,
+          error:
+            error.message,
+        });
+      }
+
+      res.json({
+        ok: true,
+
+        jobId,
+
+        clientId,
+
+        targetLang,
+
+        status:
+          session.status,
+
+        gemini:
+          session.gemini,
+      });
+    } catch (
+      error
+    ) {
+      console.error(
+        "[AUDIO START ERROR]",
+        error
+      );
+
+      res.status(
+        500
+      ).json({
+        ok: false,
+        error:
+          error.message,
       });
     }
-
-    res.json({
-      ok: true,
-      jobId,
-      clientId,
-      targetLang,
-      status: session.status,
-      elevenlabs: session.elevenlabs,
-    });
-  } catch (error) {
-    console.error(
-      "[AUDIO START ERROR]",
-      error
-    );
-
-    res.status(500).json({
-      ok: false,
-      error: error.message,
-    });
   }
-});
+);
 
 /* =========================================================
    RECEBER CHUNK DO ANDROID
@@ -646,39 +1014,56 @@ app.post(
         req.body?.audio;
 
       if (!jobId) {
-        return res.status(400).json({
+        return res.status(
+          400
+        ).json({
           ok: false,
-          error: "jobId obrigatório.",
+          error:
+            "jobId obrigatório.",
         });
       }
 
       if (!audio) {
-        return res.status(400).json({
+        return res.status(
+          400
+        ).json({
           ok: false,
-          error: "audio obrigatório.",
+          error:
+            "audio obrigatório.",
         });
       }
 
       const session =
-        audioSessions.get(jobId);
+        audioSessions.get(
+          jobId
+        );
 
       if (!session) {
-        return res.status(404).json({
+        return res.status(
+          404
+        ).json({
           ok: false,
-          error: "Sessão não encontrada.",
+          error:
+            "Sessão não encontrada.",
         });
       }
 
       if (
         !session.ws ||
-        session.ws.readyState !== WebSocket.OPEN
+        session.ws.readyState !==
+          WebSocket.OPEN
       ) {
-        return res.status(409).json({
+        return res.status(
+          409
+        ).json({
           ok: false,
+
           error:
-            "WebSocket ElevenLabs não está conectado.",
-          elevenlabs:
-            session.elevenlabs,
+            "WebSocket Gemini não está conectado.",
+
+          gemini:
+            session.gemini,
+
           sessionError:
             session.error,
         });
@@ -693,32 +1078,35 @@ app.post(
             "base64"
           );
       } catch {
-        return res.status(400).json({
+        return res.status(
+          400
+        ).json({
           ok: false,
           error:
             "Áudio Base64 inválido.",
         });
       }
 
-      if (!audioBuffer.length) {
+      if (
+        !audioBuffer.length
+      ) {
         return res.json({
           ok: true,
           ignored: true,
         });
       }
 
-      session.chunks += 1;
+      session.chunks +=
+        1;
 
       session.bytesReceived +=
         audioBuffer.length;
 
       /*
-       * O Android atualmente envia 16 kHz.
+       * O Android envia PCM16 16 kHz.
        *
-       * O ElevenLabs também informou anteriormente
-       * pcm_16000.
-       *
-       * Portanto enviamos diretamente.
+       * O Gemini Live Translation aceita
+       * exatamente esse formato.
        */
 
       const base64Audio =
@@ -727,86 +1115,118 @@ app.post(
         );
 
       /*
-       * IMPORTANTE:
-       *
-       * Mantemos os envios em sequência para evitar
-       * que vários requests sejam enviados fora de ordem.
+       * Envio sequencial.
        */
 
       session.sendChain =
         session.sendChain
-          .then(() => {
-            return new Promise(
-              (resolve, reject) => {
-                if (
-                  !session.ws ||
-                  session.ws.readyState !==
-                    WebSocket.OPEN
-                ) {
-                  reject(
-                    new Error(
-                      "WebSocket fechado."
-                    )
-                  );
-                  return;
-                }
+          .then(
+            () => {
+              return new Promise(
+                (
+                  resolve,
+                  reject
+                ) => {
+                  if (
+                    !session.ws ||
+                    session.ws.readyState !==
+                      WebSocket.OPEN
+                  ) {
+                    reject(
+                      new Error(
+                        "WebSocket Gemini fechado."
+                      )
+                    );
 
-                try {
-                  session.ws.send(
-                    JSON.stringify({
-                      user_audio_chunk:
-                        base64Audio,
-                    }),
-                    (error) => {
-                      if (error) {
-                        reject(error);
-                      } else {
-                        resolve();
+                    return;
+                  }
+
+                  try {
+                    session.ws.send(
+                      JSON.stringify({
+                        realtimeInput: {
+                          audio: {
+                            data:
+                              base64Audio,
+
+                            mimeType:
+                              "audio/pcm;rate=16000",
+                          },
+                        },
+                      }),
+                      (
+                        error
+                      ) => {
+                        if (
+                          error
+                        ) {
+                          reject(
+                            error
+                          );
+                        } else {
+                          resolve();
+                        }
                       }
-                    }
-                  );
-                } catch (error) {
-                  reject(error);
+                    );
+                  } catch (
+                    error
+                  ) {
+                    reject(
+                      error
+                    );
+                  }
                 }
-              }
-            );
-          })
-          .catch((error) => {
-            session.error =
-              "Erro enviando áudio ao ElevenLabs: " +
-              error.message;
+              );
+            }
+          )
+          .catch(
+            (error) => {
+              session.error =
+                "Erro enviando áudio ao Gemini: " +
+                error.message;
 
-            console.error(
-              `[AUDIO SEND ERROR] ${jobId}:`,
-              error.message
-            );
-          });
+              console.error(
+                `[AUDIO SEND ERROR] ${jobId}:`,
+                error.message
+              );
+            }
+          );
 
       res.json({
         ok: true,
+
         jobId,
-        chunks: session.chunks,
+
+        chunks:
+          session.chunks,
+
         bytesReceived:
           session.bytesReceived,
-        elevenlabs:
-          session.elevenlabs,
+
+        gemini:
+          session.gemini,
       });
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "[AUDIO CHUNK ERROR]",
         error
       );
 
-      res.status(500).json({
+      res.status(
+        500
+      ).json({
         ok: false,
-        error: error.message,
+        error:
+          error.message,
       });
     }
   }
 );
 
 /* =========================================================
-   PEGAR ÁUDIO DE SAÍDA
+   ÁUDIO DE SAÍDA
 ========================================================= */
 
 app.get(
@@ -817,10 +1237,14 @@ app.get(
         req.params.jobId;
 
       const session =
-        audioSessions.get(jobId);
+        audioSessions.get(
+          jobId
+        );
 
       if (!session) {
-        return res.status(404).json({
+        return res.status(
+          404
+        ).json({
           ok: false,
           error:
             "Sessão não encontrada.",
@@ -833,6 +1257,7 @@ app.get(
 
       res.json({
         ok: true,
+
         jobId,
 
         audio,
@@ -841,13 +1266,14 @@ app.get(
           Boolean(audio),
 
         outputQueue:
-          session.outputQueue.length,
+          session.outputQueue
+            .length,
 
         outputBytes:
           session.outputBytes,
 
-        elevenlabs:
-          session.elevenlabs,
+        gemini:
+          session.gemini,
 
         status:
           session.status,
@@ -855,10 +1281,15 @@ app.get(
         error:
           session.error,
       });
-    } catch (error) {
-      res.status(500).json({
+    } catch (
+      error
+    ) {
+      res.status(
+        500
+      ).json({
         ok: false,
-        error: error.message,
+        error:
+          error.message,
       });
     }
   }
@@ -877,7 +1308,9 @@ app.get(
       );
 
     if (!session) {
-      return res.status(404).json({
+      return res.status(
+        404
+      ).json({
         ok: false,
         error:
           "Sessão não encontrada.",
@@ -906,10 +1339,14 @@ app.get(
         session.bytesReceived,
 
       outputQueue:
-        session.outputQueue.length,
+        session.outputQueue
+          .length,
 
       outputBytes:
         session.outputBytes,
+
+      gemini:
+        session.gemini,
 
       elevenlabs:
         session.elevenlabs,
@@ -948,60 +1385,68 @@ app.get(
     const sessions =
       Array.from(
         audioSessions.values()
-      ).map((session) => ({
-        jobId:
-          session.jobId,
+      ).map(
+        (session) => ({
+          jobId:
+            session.jobId,
 
-        clientId:
-          session.clientId,
+          clientId:
+            session.clientId,
 
-        targetLang:
-          session.targetLang,
+          targetLang:
+            session.targetLang,
 
-        status:
-          session.status,
+          status:
+            session.status,
 
-        chunks:
-          session.chunks,
+          chunks:
+            session.chunks,
 
-        bytesReceived:
-          session.bytesReceived,
+          bytesReceived:
+            session.bytesReceived,
 
-        outputQueue:
-          session.outputQueue.length,
+          outputQueue:
+            session.outputQueue
+              .length,
 
-        outputBytes:
-          session.outputBytes,
+          outputBytes:
+            session.outputBytes,
 
-        elevenlabs:
-          session.elevenlabs,
+          gemini:
+            session.gemini,
 
-        inputSampleRate:
-          session.inputSampleRate,
+          elevenlabs:
+            session.elevenlabs,
 
-        outputSampleRate:
-          session.outputSampleRate,
+          inputSampleRate:
+            session.inputSampleRate,
 
-        conversationId:
-          session.conversationId,
+          outputSampleRate:
+            session.outputSampleRate,
 
-        lastTranscript:
-          session.lastTranscript,
+          conversationId:
+            session.conversationId,
 
-        lastAgentResponse:
-          session.lastAgentResponse,
+          lastTranscript:
+            session.lastTranscript,
 
-        error:
-          session.error,
+          lastAgentResponse:
+            session.lastAgentResponse,
 
-        createdAt:
-          session.createdAt,
-      }));
+          error:
+            session.error,
+
+          createdAt:
+            session.createdAt,
+        })
+      );
 
     res.json({
       ok: true,
+
       count:
         sessions.length,
+
       sessions,
     });
   }
@@ -1019,7 +1464,9 @@ app.post(
         req.body?.jobId;
 
       if (!jobId) {
-        return res.status(400).json({
+        return res.status(
+          400
+        ).json({
           ok: false,
           error:
             "jobId obrigatório.",
@@ -1027,10 +1474,14 @@ app.post(
       }
 
       const session =
-        audioSessions.get(jobId);
+        audioSessions.get(
+          jobId
+        );
 
       if (!session) {
-        return res.status(404).json({
+        return res.status(
+          404
+        ).json({
           ok: false,
           error:
             "Sessão não encontrada.",
@@ -1040,7 +1491,7 @@ app.post(
       session.status =
         "stopped";
 
-      session.elevenlabs =
+      session.gemini =
         false;
 
       if (session.ws) {
@@ -1054,24 +1505,30 @@ app.post(
 
       res.json({
         ok: true,
+
         jobId,
-        status: "stopped",
+
+        status:
+          "stopped",
       });
 
-      /*
-       * Remove depois de alguns segundos para
-       * permitir diagnóstico.
-       */
-
-      setTimeout(() => {
-        audioSessions.delete(
-          jobId
-        );
-      }, 30000);
-    } catch (error) {
-      res.status(500).json({
+      setTimeout(
+        () => {
+          audioSessions.delete(
+            jobId
+          );
+        },
+        30000
+      );
+    } catch (
+      error
+    ) {
+      res.status(
+        500
+      ).json({
         ok: false,
-        error: error.message,
+        error:
+          error.message,
       });
     }
   }
@@ -1083,32 +1540,35 @@ app.post(
 
 const storage =
   multer.diskStorage({
-    destination: (
-      req,
-      file,
-      cb
-    ) => {
-      cb(
-        null,
-        UPLOAD_DIR
-      );
-    },
+    destination:
+      (
+        req,
+        file,
+        cb
+      ) => {
+        cb(
+          null,
+          UPLOAD_DIR
+        );
+      },
 
-    filename: (
-      req,
-      file,
-      cb
-    ) => {
-      const extension =
-        path.extname(
-          file.originalname
-        ) || ".mp4";
+    filename:
+      (
+        req,
+        file,
+        cb
+      ) => {
+        const extension =
+          path.extname(
+            file.originalname
+          ) ||
+          ".mp4";
 
-      cb(
-        null,
-        `${Date.now()}-${uuidv4()}${extension}`
-      );
-    },
+        cb(
+          null,
+          `${Date.now()}-${uuidv4()}${extension}`
+        );
+      },
   });
 
 const upload =
@@ -1117,7 +1577,9 @@ const upload =
 
     limits: {
       fileSize:
-        500 * 1024 * 1024,
+        500 *
+        1024 *
+        1024,
     },
   });
 
@@ -1127,11 +1589,15 @@ const upload =
 
 app.post(
   "/api/test-upload",
-  upload.single("video"),
+  upload.single(
+    "video"
+  ),
   (req, res) => {
     try {
       if (!req.file) {
-        return res.status(400).json({
+        return res.status(
+          400
+        ).json({
           ok: false,
           error:
             "Nenhum vídeo enviado.",
@@ -1158,13 +1624,17 @@ app.post(
         url:
           videoUrl,
       });
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
         "[UPLOAD ERROR]",
         error
       );
 
-      res.status(500).json({
+      res.status(
+        500
+      ).json({
         ok: false,
         error:
           error.message,
@@ -1189,17 +1659,14 @@ app.post(
         "pt";
 
       if (!url) {
-        return res.status(400).json({
+        return res.status(
+          400
+        ).json({
           ok: false,
           error:
             "URL obrigatória.",
         });
       }
-
-      /*
-       * Endpoint mantido para compatibilidade
-       * com o frontend.
-       */
 
       res.json({
         ok: true,
@@ -1214,8 +1681,12 @@ app.post(
         status:
           "pending",
       });
-    } catch (error) {
-      res.status(500).json({
+    } catch (
+      error
+    ) {
+      res.status(
+        500
+      ).json({
         ok: false,
         error:
           error.message,
@@ -1242,7 +1713,9 @@ app.post(
         req.body?.message;
 
       if (!clientId) {
-        return res.status(400).json({
+        return res.status(
+          400
+        ).json({
           ok: false,
           error:
             "clientId obrigatório.",
@@ -1250,7 +1723,9 @@ app.post(
       }
 
       if (!message) {
-        return res.status(400).json({
+        return res.status(
+          400
+        ).json({
           ok: false,
           error:
             "message obrigatório.",
@@ -1258,7 +1733,9 @@ app.post(
       }
 
       if (
-        !chatMessages.has(clientId)
+        !chatMessages.has(
+          clientId
+        )
       ) {
         chatMessages.set(
           clientId,
@@ -1269,9 +1746,13 @@ app.post(
       chatMessages
         .get(clientId)
         .push({
-          id: uuidv4(),
+          id:
+            uuidv4(),
+
           clientId,
+
           message,
+
           createdAt:
             new Date().toISOString(),
         });
@@ -1279,8 +1760,12 @@ app.post(
       res.json({
         ok: true,
       });
-    } catch (error) {
-      res.status(500).json({
+    } catch (
+      error
+    ) {
+      res.status(
+        500
+      ).json({
         ok: false,
         error:
           error.message,
@@ -1311,7 +1796,8 @@ app.get(
 app.get(
   "/api/admin/messages",
   (req, res) => {
-    const allMessages = [];
+    const allMessages =
+      [];
 
     for (
       const [
@@ -1324,6 +1810,7 @@ app.get(
       ) {
         allMessages.push({
           ...message,
+
           clientId,
         });
       }
@@ -1331,8 +1818,10 @@ app.get(
 
     res.json({
       ok: true,
+
       count:
         allMessages.length,
+
       messages:
         allMessages,
     });
@@ -1343,42 +1832,50 @@ app.get(
    LIMPEZA AUTOMÁTICA
 ========================================================= */
 
-setInterval(() => {
-  const expiration =
-    30 * 60 * 1000;
+setInterval(
+  () => {
+    const expiration =
+      30 *
+      60 *
+      1000;
 
-  const cutoff =
-    now() - expiration;
+    const cutoff =
+      now() -
+      expiration;
 
-  for (
-    const [
-      jobId,
-      session,
-    ] of audioSessions.entries()
-  ) {
-    if (
-      session.createdAt <
-      cutoff
+    for (
+      const [
+        jobId,
+        session,
+      ] of audioSessions.entries()
     ) {
-      try {
-        if (session.ws) {
-          session.ws.close(
-            1000,
-            "Sessão expirada"
-          );
-        }
-      } catch {}
+      if (
+        session.createdAt <
+        cutoff
+      ) {
+        try {
+          if (
+            session.ws
+          ) {
+            session.ws.close(
+              1000,
+              "Sessão expirada"
+            );
+          }
+        } catch {}
 
-      audioSessions.delete(
-        jobId
-      );
+        audioSessions.delete(
+          jobId
+        );
 
-      console.log(
-        `[CLEANUP] Sessão removida: ${jobId}`
-      );
+        console.log(
+          `[CLEANUP] Sessão removida: ${jobId}`
+        );
+      }
     }
-  }
-}, 5 * 60 * 1000);
+  },
+  5 * 60 * 1000
+);
 
 /* =========================================================
    404
@@ -1386,10 +1883,14 @@ setInterval(() => {
 
 app.use(
   (req, res) => {
-    res.status(404).json({
+    res.status(
+      404
+    ).json({
       ok: false,
+
       error:
         "Endpoint not found",
+
       path:
         req.originalUrl,
     });
@@ -1413,9 +1914,11 @@ app.use(
     );
 
     res.status(
-      error.status || 500
+      error.status ||
+        500
     ).json({
       ok: false,
+
       error:
         error.message ||
         "Erro interno do servidor.",
@@ -1448,18 +1951,22 @@ app.listen(
     );
 
     console.log(
-      `ElevenLabs Agent: ${ELEVENLABS_AGENT_ID}`
+      `Gemini: ${
+        GEMINI_API_KEY
+          ? "CONFIGURADO"
+          : "NÃO CONFIGURADO"
+      }`
     );
 
     console.log(
-      `ElevenLabs Voice: ${ELEVENLABS_VOICE_ID}`
+      `Gemini Model: ${GEMINI_MODEL}`
     );
 
     console.log(
-      `ElevenLabs API Key: ${
+      `ElevenLabs: ${
         ELEVENLABS_API_KEY
-          ? "CONFIGURADA"
-          : "NÃO CONFIGURADA"
+          ? "CONFIGURADO"
+          : "NÃO CONFIGURADO"
       }`
     );
 
