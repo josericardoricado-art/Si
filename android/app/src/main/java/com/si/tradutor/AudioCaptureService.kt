@@ -9,7 +9,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.AudioPlaybackCaptureConfiguration
@@ -53,42 +55,28 @@ class AudioCaptureService : Service() {
         private const val BACKEND_URL =
             "https://si-u2ul.onrender.com"
 
-        /*
-         * O Render / ElevenLabs está trabalhando
-         * com 16 kHz.
-         */
         private const val SAMPLE_RATE =
             16000
 
-        /*
-         * Aproximadamente 300 ms de áudio:
-         *
-         * 16000 samples/s
-         * x 2 bytes
-         * x 0,3 s
-         * = 9600 bytes
-         */
         private const val BUFFER_SIZE =
             9600
     }
 
-    private var mediaProjection:
-            MediaProjection? = null
+    private var mediaProjection: MediaProjection? = null
 
-    private var audioRecord:
-            AudioRecord? = null
+    private var audioRecord: AudioRecord? = null
 
-    private var audioTrack:
-            AudioTrack? = null
+    private var audioTrack: AudioTrack? = null
 
-    private var captureThread:
-            Thread? = null
+    private var captureThread: Thread? = null
 
-    private var sendThread:
-            Thread? = null
+    private var sendThread: Thread? = null
 
-    private var outputThread:
-            Thread? = null
+    private var outputThread: Thread? = null
+
+    private var audioManager: AudioManager? = null
+
+    private var audioFocusRequest: AudioFocusRequest? = null
 
     @Volatile
     private var recording = false
@@ -98,18 +86,8 @@ class AudioCaptureService : Service() {
 
     private var jobId: String? = null
 
-    /*
-     * Fila de áudio.
-     *
-     * O captureThread coloca áudio aqui.
-     * O sendThread envia um por vez.
-     *
-     * Assim não criamos centenas de Threads.
-     */
     private val audioQueue =
-        LinkedBlockingQueue<ByteArray>(
-            30
-        )
+        LinkedBlockingQueue<ByteArray>(30)
 
 
     override fun onCreate() {
@@ -117,6 +95,11 @@ class AudioCaptureService : Service() {
         super.onCreate()
 
         criarCanal()
+
+        audioManager =
+            getSystemService(
+                Context.AUDIO_SERVICE
+            ) as AudioManager
     }
 
 
@@ -165,8 +148,7 @@ class AudioCaptureService : Service() {
                     )
 
                 if (
-                    resultCode !=
-                    Activity.RESULT_OK ||
+                    resultCode != Activity.RESULT_OK ||
                     resultData == null ||
                     jobId.isNullOrEmpty()
                 ) {
@@ -209,6 +191,16 @@ class AudioCaptureService : Service() {
 
             iniciarForeground()
 
+            /*
+             * Solicita Audio Focus com DUCKING.
+             *
+             * Isso pede ao Android para reduzir
+             * temporariamente o áudio de outros
+             * aplicativos, como o YouTube.
+             */
+            solicitarAudioFocus()
+
+
             val manager =
                 getSystemService(
                     Context.MEDIA_PROJECTION_SERVICE
@@ -222,19 +214,14 @@ class AudioCaptureService : Service() {
 
             if (mediaProjection == null) {
 
+                pararTudo()
+
                 stopSelf()
 
                 return
             }
 
-            /*
-             * CAPTURA DO ÁUDIO INTERNO
-             *
-             * Importante:
-             * estamos usando USAGE_MEDIA,
-             * que é onde normalmente fica
-             * o áudio do YouTube.
-             */
+
             val config =
                 AudioPlaybackCaptureConfiguration
                     .Builder(
@@ -313,10 +300,6 @@ class AudioCaptureService : Service() {
             }
 
 
-            /*
-             * Se o Android encerrar a projeção,
-             * paramos tudo.
-             */
             mediaProjection?.registerCallback(
                 object : MediaProjection.Callback() {
 
@@ -331,11 +314,7 @@ class AudioCaptureService : Service() {
             )
 
 
-            /*
-             * Limpa qualquer áudio antigo.
-             */
             audioQueue.clear()
-
 
             audioRecord?.startRecording()
 
@@ -344,11 +323,6 @@ class AudioCaptureService : Service() {
             playingOutput = true
 
 
-            /*
-             * THREAD 1
-             *
-             * Captura o áudio do YouTube.
-             */
             captureThread =
                 Thread {
 
@@ -363,12 +337,6 @@ class AudioCaptureService : Service() {
                 }
 
 
-            /*
-             * THREAD 2
-             *
-             * Envia o áudio para o Render
-             * em sequência.
-             */
             sendThread =
                 Thread {
 
@@ -383,11 +351,6 @@ class AudioCaptureService : Service() {
                 }
 
 
-            /*
-             * THREAD 3
-             *
-             * Busca a voz traduzida.
-             */
             outputThread =
                 Thread {
 
@@ -403,9 +366,119 @@ class AudioCaptureService : Service() {
 
         } catch (e: Exception) {
 
+            e.printStackTrace()
+
             pararTudo()
 
             stopSelf()
+        }
+    }
+
+
+    /*
+     * =====================================================
+     * AUDIO FOCUS / DUCKING
+     * =====================================================
+     */
+
+    private fun solicitarAudioFocus() {
+
+        try {
+
+            val manager =
+                audioManager ?: return
+
+
+            if (
+                Build.VERSION.SDK_INT >=
+                Build.VERSION_CODES.O
+            ) {
+
+                val attributes =
+                    AudioAttributes.Builder()
+                        .setUsage(
+                            AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY
+                        )
+                        .setContentType(
+                            AudioAttributes.CONTENT_TYPE_SPEECH
+                        )
+                        .build()
+
+
+                audioFocusRequest =
+                    AudioFocusRequest.Builder(
+                        AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+                    )
+                        .setAudioAttributes(
+                            attributes
+                        )
+                        .setAcceptsDelayedFocusGain(
+                            false
+                        )
+                        .setWillPauseWhenDucked(
+                            false
+                        )
+                        .build()
+
+
+                manager.requestAudioFocus(
+                    audioFocusRequest!!
+                )
+
+            } else {
+
+                @Suppress("DEPRECATION")
+                manager.requestAudioFocus(
+                    null,
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+                )
+            }
+
+        } catch (e: Exception) {
+
+            println(
+                "SI AudioFocus: ${e.message}"
+            )
+        }
+    }
+
+
+    private fun abandonarAudioFocus() {
+
+        try {
+
+            val manager =
+                audioManager ?: return
+
+
+            if (
+                Build.VERSION.SDK_INT >=
+                Build.VERSION_CODES.O
+            ) {
+
+                audioFocusRequest?.let {
+
+                    manager.abandonAudioFocusRequest(
+                        it
+                    )
+                }
+
+                audioFocusRequest = null
+
+            } else {
+
+                @Suppress("DEPRECATION")
+                manager.abandonAudioFocus(
+                    null
+                )
+            }
+
+        } catch (e: Exception) {
+
+            println(
+                "SI abandonou AudioFocus: ${e.message}"
+            )
         }
     }
 
@@ -443,20 +516,13 @@ class AudioCaptureService : Service() {
                             quantidade
                         )
 
-                    /*
-                     * Coloca na fila.
-                     */
+
                     if (
                         !audioQueue.offer(
                             audio
                         )
                     ) {
 
-                        /*
-                         * Se a fila estiver cheia,
-                         * descarta o pedaço mais antigo
-                         * para manter o áudio em tempo real.
-                         */
                         audioQueue.poll()
 
                         audioQueue.offer(
@@ -481,7 +547,7 @@ class AudioCaptureService : Service() {
 
     /*
      * =====================================================
-     * ENVIO PARA RENDER
+     * ENVIO
      * =====================================================
      */
 
@@ -523,12 +589,8 @@ class AudioCaptureService : Service() {
         val currentJob =
             jobId ?: return
 
-
         try {
 
-            /*
-             * Converte para Base64.
-             */
             val base64 =
                 Base64.encodeToString(
                     audio,
@@ -544,17 +606,6 @@ class AudioCaptureService : Service() {
                 currentJob
             )
 
-            /*
-             * IMPORTANTE!
-             *
-             * O server.js espera:
-             *
-             * "audio"
-             *
-             * e NÃO:
-             *
-             * "audioBase64"
-             */
             json.put(
                 "audio",
                 base64
@@ -617,11 +668,9 @@ class AudioCaptureService : Service() {
                 connection.responseCode
 
 
-            /*
-             * Se o Render retornar erro,
-             * registramos no Logcat.
-             */
-            if (responseCode !in 200..299) {
+            if (
+                responseCode !in 200..299
+            ) {
 
                 println(
                     "SI Render erro HTTP: $responseCode"
@@ -635,10 +684,6 @@ class AudioCaptureService : Service() {
             e: Exception
         ) {
 
-            /*
-             * Um erro isolado não encerra
-             * a captura.
-             */
             println(
                 "SI envio áudio: ${e.message}"
             )
@@ -745,7 +790,7 @@ class AudioCaptureService : Service() {
 
     /*
      * =====================================================
-     * PROCESSAR RESPOSTA
+     * PROCESSAR ÁUDIO
      * =====================================================
      */
 
@@ -772,13 +817,6 @@ class AudioCaptureService : Service() {
             }
 
 
-            /*
-             * O server.js atual retorna:
-             *
-             * "audio": "base64"
-             *
-             * ou null.
-             */
             val audio =
                 json.optString(
                     "audio",
@@ -823,7 +861,7 @@ class AudioCaptureService : Service() {
 
     /*
      * =====================================================
-     * REPRODUÇÃO
+     * REPRODUÇÃO DA DUBLAGEM
      * =====================================================
      */
 
@@ -849,12 +887,6 @@ class AudioCaptureService : Service() {
                     AudioTrack.Builder()
                         .setAudioAttributes(
                             AudioAttributes.Builder()
-                                /*
-                                 * Usamos ASSISTANCE_ACCESSIBILITY
-                                 * para evitar que o áudio dublado
-                                 * seja capturado novamente como
-                                 * áudio do vídeo.
-                                 */
                                 .setUsage(
                                     AudioAttributes
                                         .USAGE_ASSISTANCE_ACCESSIBILITY
@@ -915,7 +947,7 @@ class AudioCaptureService : Service() {
 
     /*
      * =====================================================
-     * PARAR
+     * PARAR TUDO
      * =====================================================
      */
 
@@ -926,14 +958,11 @@ class AudioCaptureService : Service() {
         playingOutput = false
 
 
-        /*
-         * Libera a fila.
-         */
         audioQueue.clear()
 
 
         /*
-         * AudioRecord
+         * Libera AudioRecord.
          */
         try {
             audioRecord?.stop()
@@ -942,6 +971,7 @@ class AudioCaptureService : Service() {
         ) {
         }
 
+
         try {
             audioRecord?.release()
         } catch (
@@ -949,11 +979,12 @@ class AudioCaptureService : Service() {
         ) {
         }
 
+
         audioRecord = null
 
 
         /*
-         * Threads
+         * Threads.
          */
         try {
             captureThread?.interrupt()
@@ -986,7 +1017,7 @@ class AudioCaptureService : Service() {
 
 
         /*
-         * AudioTrack
+         * AudioTrack.
          */
         try {
             audioTrack?.stop()
@@ -995,6 +1026,7 @@ class AudioCaptureService : Service() {
         ) {
         }
 
+
         try {
             audioTrack?.release()
         } catch (
@@ -1002,11 +1034,19 @@ class AudioCaptureService : Service() {
         ) {
         }
 
+
         audioTrack = null
 
 
         /*
-         * MediaProjection
+         * IMPORTANTE:
+         * devolve o áudio normal ao YouTube.
+         */
+        abandonarAudioFocus()
+
+
+        /*
+         * MediaProjection.
          */
         try {
             mediaProjection?.stop()
@@ -1015,6 +1055,7 @@ class AudioCaptureService : Service() {
         ) {
         }
 
+
         mediaProjection = null
 
 
@@ -1022,7 +1063,7 @@ class AudioCaptureService : Service() {
 
 
         /*
-         * Foreground service
+         * Foreground.
          */
         try {
 
