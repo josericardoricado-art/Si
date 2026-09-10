@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.AudioTrack
@@ -1205,54 +1206,71 @@ class AudioCaptureService : Service() {
         try {
 
             if (
-                Build.VERSION.SDK_INT >=
-                Build.VERSION_CODES.M
+                audioTrack == null
             ) {
 
-                if (
-                    audioTrack == null
-                ) {
-
-                    val minBuffer =
-                        AudioTrack.getMinBufferSize(
-                            24000,
-                            AudioFormat.CHANNEL_OUT_MONO,
-                            AudioFormat.ENCODING_PCM_16BIT
-                        )
+                val minBuffer =
+                    AudioTrack.getMinBufferSize(
+                        24000,
+                        AudioFormat.CHANNEL_OUT_MONO,
+                        AudioFormat.ENCODING_PCM_16BIT
+                    )
 
 
-                    audioTrack =
-                        AudioTrack(
-                            AudioAttributes.Builder()
-                                .setUsage(
-                                    AudioAttributes.USAGE_MEDIA
-                                )
-                                .build(),
-                            AudioFormat.Builder()
-                                .setEncoding(
-                                    AudioFormat.ENCODING_PCM_16BIT
-                                )
-                                .setSampleRate(
-                                    24000
-                                )
-                                .setChannelMask(
-                                    AudioFormat.CHANNEL_OUT_MONO
-                                )
-                                .build(),
-                            maxOf(minBuffer, pcm.size),
-                            AudioTrack.MODE_STREAM,
-                            AudioManager.AUDIO_SESSION_ID_GENERATE
-                        )
+                audioTrack =
+                    AudioTrack(
+                        AudioAttributes.Builder()
+                            .setUsage(
+                                AudioAttributes.USAGE_MEDIA
+                            )
+                            .setContentType(
+                                AudioAttributes.CONTENT_TYPE_SPEECH
+                            )
+                            .build(),
+                        AudioFormat.Builder()
+                            .setEncoding(
+                                AudioFormat.ENCODING_PCM_16BIT
+                            )
+                            .setSampleRate(
+                                24000
+                            )
+                            .setChannelMask(
+                                AudioFormat.CHANNEL_OUT_MONO
+                            )
+                            .build(),
+                        maxOf(
+                                minBuffer * 4,
+                                pcm.size
+                            ),
+                        AudioTrack.MODE_STREAM,
+                        AudioManager.AUDIO_SESSION_ID_GENERATE
+                    )
 
-                    audioTrack?.play()
-                }
+                audioTrack?.play()
+
+                Log.d(
+                    TAG,
+                    "AudioTrack iniciado - reproduzindo áudio"
+                )
+            }
 
 
-                audioTrack?.write(
-                    pcm,
-                    0,
-                    pcm.size,
-                    AudioTrack.WRITE_NON_BLOCKING
+            if (
+                audioTrack?.playState ==
+                AudioTrack.PLAYSTATE_PLAYING
+            ) {
+
+                val written =
+                    audioTrack?.write(
+                        pcm,
+                        0,
+                        pcm.size,
+                        AudioTrack.WRITE_NON_BLOCKING
+                    ) ?: 0
+
+                Log.d(
+                    TAG,
+                    "Áudio escrito: \$written bytes"
                 )
             }
 
