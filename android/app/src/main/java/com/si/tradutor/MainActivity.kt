@@ -869,7 +869,7 @@ class MainActivity : AppCompatActivity() {
 
                 OutputStreamWriter(
                     connection.outputStream
-                ).use { writer ->
+                ).use { writer: OutputStreamWriter ->
 
                     writer.write(
                         json.toString()
@@ -908,8 +908,8 @@ class MainActivity : AppCompatActivity() {
                             InputStreamReader(
                                 stream
                             )
-                        ).use {
-                            it.readText()
+                        ).use { reader: BufferedReader ->
+                            reader.readText()
                         }
 
                     } else {
@@ -998,23 +998,28 @@ class MainActivity : AppCompatActivity() {
                         "🟢 Servidor conectado. Autorize a captura..."
                     )
 
+                    solicitarCapturadeTela()
 
-                    pedirMediaProjection()
+                    monitoring = true
+
+                    monitorButton.isEnabled =
+                        false
+
+                    stopButton.isEnabled =
+                        true
                 }
+
 
             } catch (e: Exception) {
 
                 println(
-                    "SI: erro criando sessão: ${e.message}"
+                    "SI: erro ao criar sessão = ${e.message}"
                 )
-
-                e.printStackTrace()
-
 
                 runOnUiThread {
 
                     status(
-                        "❌ Falha ao conectar: ${e.message}"
+                        "❌ Erro ao criar sessão"
                     )
 
                     monitorButton.isEnabled =
@@ -1027,50 +1032,36 @@ class MainActivity : AppCompatActivity() {
 
     /*
      * =====================================================
-     * MEDIA PROJECTION
+     * SOLICITAR CAPTURA DE TELA
      * =====================================================
      */
 
-    private fun pedirMediaProjection() {
+    private fun solicitarCapturadeTela() {
 
-        try {
-
-            val manager =
-                getSystemService(
-                    Context.MEDIA_PROJECTION_SERVICE
-                ) as MediaProjectionManager
+        val projectionManager =
+            getSystemService(
+                Context.MEDIA_PROJECTION_SERVICE
+            ) as MediaProjectionManager
 
 
-            val intent =
-                manager.createScreenCaptureIntent()
+        val intent =
+            projectionManager
+                .createScreenCaptureIntent()
 
 
-            startActivityForResult(
-                intent,
-                REQUEST_MEDIA_PROJECTION
-            )
-
-        } catch (e: Exception) {
-
-            status(
-                "❌ Erro ao solicitar captura"
-            )
-
-            monitorButton.isEnabled =
-                true
-        }
+        startActivityForResult(
+            intent,
+            REQUEST_MEDIA_PROJECTION
+        )
     }
 
 
     /*
      * =====================================================
-     * RESULTADO DA MEDIA PROJECTION
+     * ON ACTIVITY RESULT
      * =====================================================
      */
 
-    @Deprecated(
-        "Deprecated in Android API"
-    )
     override fun onActivityResult(
         requestCode: Int,
         resultCode: Int,
@@ -1085,239 +1076,87 @@ class MainActivity : AppCompatActivity() {
 
 
         if (
-            requestCode !=
+            requestCode ==
             REQUEST_MEDIA_PROJECTION
         ) {
 
-            return
-        }
-
-
-        if (
-            resultCode !=
-            Activity.RESULT_OK ||
-            data == null
-        ) {
-
-            status(
-                "❌ Captura cancelada"
-            )
-
-            monitorButton.isEnabled =
-                true
-
-            pararSessaoBackend()
-
-            return
-        }
-
-
-        val job =
-            currentJobId
-
-
-        if (
-            job.isNullOrEmpty()
-        ) {
-
-            status(
-                "❌ Sessão inválida"
-            )
-
-            monitorButton.isEnabled =
-                true
-
-            return
-        }
-
-
-        try {
-
-            val serviceIntent =
-                Intent(
-                    this,
-                    AudioCaptureService::class.java
-                )
-
-
-            serviceIntent.action =
-                AudioCaptureService.ACTION_START
-
-
-            serviceIntent.putExtra(
-                AudioCaptureService.EXTRA_RESULT_CODE,
-                resultCode
-            )
-
-
-            serviceIntent.putExtra(
-                AudioCaptureService.EXTRA_RESULT_DATA,
-                data
-            )
-
-
-            serviceIntent.putExtra(
-                AudioCaptureService.EXTRA_JOB_ID,
-                job
-            )
-
-
             if (
-                Build.VERSION.SDK_INT >=
-                Build.VERSION_CODES.O
+                resultCode == Activity.RESULT_OK &&
+                data != null
             ) {
 
-                ContextCompat.startForegroundService(
-                    this,
-                    serviceIntent
+                iniciarCapturaAudio(
+                    resultCode,
+                    data
                 )
 
             } else {
 
-                startService(
-                    serviceIntent
+                status(
+                    "❌ Captura de tela não autorizada"
                 )
+
+                monitoring = false
+
+                monitorButton.isEnabled =
+                    true
+
+                stopButton.isEnabled =
+                    false
             }
-
-
-            monitoring =
-                true
-
-
-            monitorButton.isEnabled =
-                false
-
-
-            stopButton.isEnabled =
-                true
-
-
-            status(
-                "🟢 MONITORANDO ÁUDIO DO VÍDEO"
-            )
-
-
-            println(
-                "SI: AudioCaptureService iniciado"
-            )
-
-        } catch (e: Exception) {
-
-            println(
-                "SI: erro iniciando serviço: ${e.message}"
-            )
-
-            status(
-                "❌ Erro iniciando monitoramento"
-            )
-
-            monitorButton.isEnabled =
-                true
-
-            pararSessaoBackend()
         }
     }
 
 
     /*
      * =====================================================
-     * ID DO CLIENTE
+     * INICIAR CAPTURA DE ÁUDIO
      * =====================================================
      */
 
-    private fun obterClientId():
-            String {
+    private fun iniciarCapturaAudio(
+        resultCode: Int,
+        resultData: Intent
+    ) {
 
-        val prefs:
-                SharedPreferences =
-            getSharedPreferences(
-                PREFS,
-                Context.MODE_PRIVATE
+        val intent =
+            Intent(
+                this,
+                AudioCaptureService::class.java
             )
 
 
-        var id =
-            prefs.getString(
-                CLIENT_ID,
-                null
-            )
+        intent.action =
+            AudioCaptureService.companion::class.java
+                .let { cls ->
+                    val field = cls.java
+                        .getField("ACTION_STOP")
+                    val fieldValue = field.get(null)
+                    "com.si.tradutor.START_AUDIO"
+                }
+
+        intent.putExtra(
+            AudioCaptureService.EXTRA_JOB_ID,
+            currentJobId
+        )
+
+        intent.putExtra(
+            AudioCaptureService.EXTRA_RESULT_CODE,
+            resultCode
+        )
+
+        intent.putExtra(
+            AudioCaptureService.EXTRA_RESULT_DATA,
+            resultData
+        )
 
 
-        if (
-            id.isNullOrEmpty()
-        ) {
-
-            id =
-                UUID.randomUUID()
-                    .toString()
+        startService(intent)
 
 
-            prefs.edit()
-                .putString(
-                    CLIENT_ID,
-                    id
-                )
-                .apply()
-        }
-
-
-        return id
-    }
-
-
-    /*
-     * =====================================================
-     * IDIOMA
-     * =====================================================
-     */
-
-    private fun obterIdiomaSelecionado():
-            String {
-
-        return when (
-            languageSpinner.selectedItemPosition
-        ) {
-
-            0 -> "pt"
-
-            1 -> "en"
-
-            2 -> "es"
-
-            3 -> "fr"
-
-            4 -> "de"
-
-            5 -> "it"
-
-            6 -> "ja"
-
-            7 -> "ko"
-
-            8 -> "zh-Hans"
-
-            9 -> "ru"
-
-            10 -> "ar"
-
-            11 -> "hi"
-
-            12 -> "tr"
-
-            13 -> "nl"
-
-            14 -> "pl"
-
-            15 -> "uk"
-
-            16 -> "th"
-
-            17 -> "id"
-
-            18 -> "vi"
-
-            else -> "pt"
-        }
+        status(
+            "🎤 Capturando áudio..."
+        )
     }
 
 
@@ -1329,153 +1168,115 @@ class MainActivity : AppCompatActivity() {
 
     private fun pararMonitoramento() {
 
-        try {
-
-            val intent =
-                Intent(
-                    this,
-                    AudioCaptureService::class.java
-                )
-
-
-            intent.action =
-                AudioCaptureService.ACTION_STOP
-
-
-            startService(
-                intent
+        val intent =
+            Intent(
+                this,
+                AudioCaptureService::class.java
             )
 
-        } catch (
-            _: Exception
-        ) {
-        }
+
+        intent.action =
+            AudioCaptureService.ACTION_STOP
 
 
-        pararSessaoBackend()
+        startService(intent)
 
 
-        monitoring =
-            false
+        status(
+            "⏸ Monitoramento parado"
+        )
 
-
-        currentJobId =
-            null
-
-
-        stopButton.isEnabled =
-            false
-
+        monitoring = false
 
         monitorButton.isEnabled =
             true
 
-
-        status(
-            "🔵 Monitoramento parado"
-        )
+        stopButton.isEnabled =
+            false
     }
 
 
     /*
      * =====================================================
-     * PARAR SESSÃO NO BACKEND
+     * OBTER CLIENT ID
      * =====================================================
      */
 
-    private fun pararSessaoBackend() {
+    private fun obterClientId():
+            String {
 
-        val job =
-            currentJobId
+        val prefs =
+            getSharedPreferences(
+                PREFS,
+                Context.MODE_PRIVATE
+            )
+
+
+        var clientId =
+            prefs.getString(
+                CLIENT_ID,
+                ""
+            ) ?: ""
 
 
         if (
-            job.isNullOrEmpty()
+            clientId.isEmpty()
         ) {
 
-            return
+            clientId =
+                UUID
+                    .randomUUID()
+                    .toString()
+
+
+            prefs
+                .edit()
+                .putString(
+                    CLIENT_ID,
+                    clientId
+                )
+                .apply()
         }
 
 
-        thread {
-
-            try {
-
-                val connection =
-                    URL(
-                        "$BACKEND_URL/api/audio/stop"
-                    )
-                        .openConnection()
-                        as HttpURLConnection
+        return clientId
+    }
 
 
-                connection.requestMethod =
-                    "POST"
+    /*
+     * =====================================================
+     * OBTER IDIOMA SELECIONADO
+     * =====================================================
+     */
 
+    private fun obterIdiomaSelecionado():
+            String {
 
-                connection.connectTimeout =
-                    10000
+        return when (
+            languageSpinner.selectedItemPosition
+        ) {
 
+            0 -> "pt-BR"
+            1 -> "en-US"
+            2 -> "es-ES"
+            3 -> "fr-FR"
+            4 -> "de-DE"
+            5 -> "it-IT"
+            6 -> "ja-JP"
+            7 -> "ko-KR"
+            8 -> "zh-CN"
+            9 -> "ru-RU"
+            10 -> "ar-SA"
+            11 -> "hi-IN"
+            12 -> "tr-TR"
+            13 -> "nl-NL"
+            14 -> "pl-PL"
+            15 -> "uk-UA"
+            16 -> "th-TH"
+            17 -> "id-ID"
+            18 -> "vi-VN"
 
-                connection.readTimeout =
-                    10000
-
-
-                connection.doOutput =
-                    true
-
-
-                connection.useCaches =
-                    false
-
-
-                connection.setRequestProperty(
-                    "Content-Type",
-                    "application/json"
-                )
-
-
-                connection.setRequestProperty(
-                    "Connection",
-                    "close"
-                )
-
-
-                val json =
-                    JSONObject()
-
-
-                json.put(
-                    "jobId",
-                    job
-                )
-
-
-                OutputStreamWriter(
-                    connection.outputStream
-                ).use { writer ->
-
-                    writer.write(
-                        json.toString()
-                    )
-
-                    writer.flush()
-                }
-
-
-                println(
-                    "SI: sessão parada HTTP ${connection.responseCode}"
-                )
-
-
-                connection.disconnect()
-
-            } catch (e: Exception) {
-
-                println(
-                    "SI: erro parando sessão: ${e.message}"
-                )
-            }
+            else -> "pt-BR"
         }
     }
 
@@ -1487,56 +1288,10 @@ class MainActivity : AppCompatActivity() {
      */
 
     private fun status(
-        texto: String
+        message: String
     ) {
 
-        runOnUiThread {
-
-            if (
-                ::statusText.isInitialized
-            ) {
-
-                statusText.text =
-                    texto
-            }
-        }
-    }
-
-
-    /*
-     * =====================================================
-     * DESTROY
-     * =====================================================
-     */
-
-    override fun onDestroy() {
-
-        if (monitoring) {
-
-            try {
-
-                val intent =
-                    Intent(
-                        this,
-                        AudioCaptureService::class.java
-                    )
-
-
-                intent.action =
-                    AudioCaptureService.ACTION_STOP
-
-
-                startService(
-                    intent
-                )
-
-            } catch (
-                _: Exception
-            ) {
-            }
-        }
-
-
-        super.onDestroy()
+        statusText.text =
+            message
     }
 }
