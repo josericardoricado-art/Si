@@ -4,7 +4,6 @@ import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -13,10 +12,10 @@ import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
 import android.view.View
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.Spinner
-import android.widget.ArrayAdapter
 import android.widget.TextView
 import android.graphics.Color
 import android.graphics.Typeface
@@ -53,28 +52,20 @@ class MainActivity : AppCompatActivity() {
             "client_id"
     }
 
-    private lateinit var statusText:
-            TextView
+    private lateinit var statusText: TextView
 
-    private lateinit var monitorButton:
-            Button
+    private lateinit var monitorButton: Button
 
-    private lateinit var stopButton:
-            Button
+    private lateinit var stopButton: Button
 
-    private lateinit var languageSpinner:
-            Spinner
+    private lateinit var languageSpinner: Spinner
 
-    private var currentJobId:
-            String? = null
+    private var currentJobId: String? = null
 
-    private var monitoring =
-        false
+    private var monitoring = false
 
     private val handler =
-        Handler(
-            Looper.getMainLooper()
-        )
+        Handler(Looper.getMainLooper())
 
 
     /*
@@ -87,9 +78,7 @@ class MainActivity : AppCompatActivity() {
         savedInstanceState: Bundle?
     ) {
 
-        super.onCreate(
-            savedInstanceState
-        )
+        super.onCreate(savedInstanceState)
 
         criarTela()
 
@@ -189,9 +178,7 @@ class MainActivity : AppCompatActivity() {
         title.gravity =
             Gravity.CENTER
 
-        root.addView(
-            title
-        )
+        root.addView(title)
 
 
         /*
@@ -221,9 +208,7 @@ class MainActivity : AppCompatActivity() {
             35
         )
 
-        root.addView(
-            subtitle
-        )
+        root.addView(subtitle)
 
 
         /*
@@ -269,10 +254,6 @@ class MainActivity : AppCompatActivity() {
             )
         )
 
-
-        /*
-         * ESPAÇO
-         */
 
         adicionarEspaco(
             root,
@@ -395,9 +376,7 @@ class MainActivity : AppCompatActivity() {
             Typeface.BOLD
         )
 
-        root.addView(
-            languageTitle
-        )
+        root.addView(languageTitle)
 
 
         adicionarEspaco(
@@ -535,11 +514,15 @@ class MainActivity : AppCompatActivity() {
         )
 
 
-        setContentView(
-            root
-        )
+        setContentView(root)
     }
 
+
+    /*
+     * =====================================================
+     * ESPAÇO
+     * =====================================================
+     */
 
     private fun adicionarEspaco(
         root: LinearLayout,
@@ -621,11 +604,6 @@ class MainActivity : AppCompatActivity() {
             false
 
 
-        /*
-         * Primeiro acordamos o Render
-         * através do health.
-         */
-
         thread {
 
             val servidorOk =
@@ -672,12 +650,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun esperarRender():
             Boolean {
-
-        /*
-         * Faz até 5 tentativas.
-         *
-         * Cada uma pode esperar até 30 segundos.
-         */
 
         for (
             tentativa in 1..5
@@ -741,18 +713,15 @@ class MainActivity : AppCompatActivity() {
 
                 connection.disconnect()
 
-            } catch (e: Exception) {
+            } catch (
+                e: Exception
+            ) {
 
                 println(
                     "SI: health erro: ${e.message}"
                 )
             }
 
-
-            /*
-             * Dá alguns segundos para o Render
-             * terminar de acordar.
-             */
 
             try {
 
@@ -833,12 +802,10 @@ class MainActivity : AppCompatActivity() {
                     "application/json"
                 )
 
-
                 connection.setRequestProperty(
                     "Accept",
                     "application/json"
                 )
-
 
                 connection.setRequestProperty(
                     "Connection",
@@ -909,6 +876,7 @@ class MainActivity : AppCompatActivity() {
                                 stream
                             )
                         ).use { reader: BufferedReader ->
+
                             reader.readText()
                         }
 
@@ -1010,7 +978,9 @@ class MainActivity : AppCompatActivity() {
                 }
 
 
-            } catch (e: Exception) {
+            } catch (
+                e: Exception
+            ) {
 
                 println(
                     "SI: erro ao criar sessão = ${e.message}"
@@ -1126,24 +1096,31 @@ class MainActivity : AppCompatActivity() {
             )
 
 
+        /*
+         * AQUI ESTÁ A CORREÇÃO PRINCIPAL.
+         *
+         * Antes estava usando:
+         * AudioCaptureService.companion
+         *
+         * Agora usa diretamente:
+         * AudioCaptureService.ACTION_START
+         */
+
         intent.action =
-            AudioCaptureService.companion::class.java
-                .let { cls ->
-                    val field = cls.java
-                        .getField("ACTION_STOP")
-                    val fieldValue = field.get(null)
-                    "com.si.tradutor.START_AUDIO"
-                }
+            AudioCaptureService.ACTION_START
+
 
         intent.putExtra(
             AudioCaptureService.EXTRA_JOB_ID,
             currentJobId
         )
 
+
         intent.putExtra(
             AudioCaptureService.EXTRA_RESULT_CODE,
             resultCode
         )
+
 
         intent.putExtra(
             AudioCaptureService.EXTRA_RESULT_DATA,
@@ -1186,13 +1163,20 @@ class MainActivity : AppCompatActivity() {
             "⏸ Monitoramento parado"
         )
 
+
         monitoring = false
+
 
         monitorButton.isEnabled =
             true
 
+
         stopButton.isEnabled =
             false
+
+
+        currentJobId =
+            null
     }
 
 
@@ -1245,7 +1229,7 @@ class MainActivity : AppCompatActivity() {
 
     /*
      * =====================================================
-     * OBTER IDIOMA SELECIONADO
+     * OBTER IDIOMA
      * =====================================================
      */
 
@@ -1291,7 +1275,10 @@ class MainActivity : AppCompatActivity() {
         message: String
     ) {
 
-        statusText.text =
-            message
+        runOnUiThread {
+
+            statusText.text =
+                message
+        }
     }
 }
