@@ -999,3 +999,497 @@ app.get(
     });
   }
 );
+/* =========================================================
+   STATUS
+========================================================= */
+
+app.get(
+  "/api/audio/status/:jobId",
+  (req, res) => {
+    const session =
+      sessions.get(
+        req.params.jobId
+      );
+
+    if (!session) {
+      return res.status(404).json({
+        ok: false,
+        error: "Sessão não encontrada"
+      });
+    }
+
+    res.json({
+      ok: true,
+
+      jobId:
+        session.jobId,
+
+      status:
+        session.status,
+
+      targetLang:
+        session.targetLang,
+
+      targetLanguage:
+        session.targetLanguage,
+
+      targetLanguageName:
+        session.targetLanguageName,
+
+      gemini:
+        session.gemini,
+
+      geminiConnected:
+        session.geminiConnected,
+
+      geminiReady:
+        session.geminiReady,
+
+      geminiSetupReceived:
+        session.geminiSetupReceived,
+
+      geminiMessages:
+        session.geminiMessages,
+
+      geminiAuthMode:
+        session.geminiAuthMode,
+
+      geminiError:
+        session.geminiError,
+
+      chunks:
+        session.chunks,
+
+      bytesReceived:
+        session.bytesReceived,
+
+      outputQueue:
+        session.outputQueue.length,
+
+      outputBytes:
+        session.outputBytes,
+
+      lastTranscript:
+        session.lastTranscript,
+
+      lastAgentResponse:
+        session.lastAgentResponse,
+
+      lastAudioAt:
+        session.lastAudioAt,
+
+      diagnostic:
+        session.diagnostic
+    });
+  }
+);
+
+/* =========================================================
+   DIAGNÓSTICO
+========================================================= */
+
+app.post(
+  "/api/audio/diagnostic",
+  (req, res) => {
+    try {
+      const jobId =
+        req.body?.jobId;
+
+      if (!jobId) {
+        return res.status(400).json({
+          ok: false,
+          error: "jobId ausente"
+        });
+      }
+
+      const session =
+        sessions.get(jobId);
+
+      if (!session) {
+        return res.status(404).json({
+          ok: false,
+          error: "Sessão não encontrada"
+        });
+      }
+
+      if (
+        typeof req.body.recording !==
+        "undefined"
+      ) {
+        session.diagnostic.recording =
+          !!req.body.recording;
+      }
+
+      if (
+        typeof req.body.captureStarted !==
+        "undefined"
+      ) {
+        session.diagnostic.captureStarted =
+          !!req.body.captureStarted;
+      }
+
+      if (
+        typeof req.body.readCount !==
+        "undefined"
+      ) {
+        session.diagnostic.readCount =
+          Number(
+            req.body.readCount
+          );
+      }
+
+      if (
+        typeof req.body.lastRead !==
+        "undefined"
+      ) {
+        session.diagnostic.lastRead =
+          Number(
+            req.body.lastRead
+          );
+      }
+
+      if (
+        typeof req.body.capturedBytes !==
+        "undefined"
+      ) {
+        session.diagnostic.capturedBytes =
+          Number(
+            req.body.capturedBytes
+          );
+      }
+
+      if (
+        typeof req.body.error !==
+        "undefined"
+      ) {
+        session.diagnostic.error =
+          req.body.error;
+      }
+
+      session.diagnostic.updatedAt =
+        now();
+
+      res.json({
+        ok: true,
+        diagnostic:
+          session.diagnostic
+      });
+    } catch (error) {
+      console.error(
+        "Erro /api/audio/diagnostic:",
+        error
+      );
+
+      res.status(500).json({
+        ok: false,
+        error: error.message
+      });
+    }
+  }
+);
+
+/* =========================================================
+   LISTAR SESSÕES
+========================================================= */
+
+app.get(
+  "/api/audio/sessions",
+  (req, res) => {
+    const list =
+      Array.from(
+        sessions.values()
+      ).map(
+        (session) => ({
+          jobId:
+            session.jobId,
+
+          clientId:
+            session.clientId,
+
+          targetLang:
+            session.targetLang,
+
+          targetLanguage:
+            session.targetLanguage,
+
+          status:
+            session.status,
+
+          gemini:
+            session.gemini,
+
+          geminiConnected:
+            session.geminiConnected,
+
+          geminiReady:
+            session.geminiReady,
+
+          geminiSetupReceived:
+            session.geminiSetupReceived,
+
+          geminiMessages:
+            session.geminiMessages,
+
+          geminiAuthMode:
+            session.geminiAuthMode,
+
+          chunks:
+            session.chunks,
+
+          bytesReceived:
+            session.bytesReceived,
+
+          outputQueue:
+            session.outputQueue.length,
+
+          outputBytes:
+            session.outputBytes,
+
+          lastTranscript:
+            session.lastTranscript,
+
+          lastAgentResponse:
+            session.lastAgentResponse,
+
+          lastAudioAt:
+            session.lastAudioAt,
+
+          diagnostic:
+            session.diagnostic,
+
+          geminiError:
+            session.geminiError,
+
+          error:
+            session.geminiError,
+
+          createdAt:
+            session.createdAt
+        })
+      );
+
+    res.json({
+      ok: true,
+      count:
+        list.length,
+      sessions:
+        list
+    });
+  }
+);
+
+/* =========================================================
+   PARAR SESSÃO
+========================================================= */
+
+app.post(
+  "/api/audio/stop",
+  (req, res) => {
+    try {
+      const jobId =
+        req.body?.jobId;
+
+      if (!jobId) {
+        return res.status(400).json({
+          ok: false,
+          error: "jobId ausente"
+        });
+      }
+
+      const session =
+        sessions.get(jobId);
+
+      if (!session) {
+        return res.status(404).json({
+          ok: false,
+          error: "Sessão não encontrada"
+        });
+      }
+
+      session.stopped =
+        true;
+
+      session.status =
+        "stopped";
+
+      session.recording =
+        false;
+
+      session.diagnostic.recording =
+        false;
+
+      session.diagnostic.updatedAt =
+        now();
+
+      if (
+        session.reconnectTimer
+      ) {
+        clearTimeout(
+          session.reconnectTimer
+        );
+
+        session.reconnectTimer =
+          null;
+      }
+
+      safeClose(
+        session.geminiWs
+      );
+
+      session.geminiWs =
+        null;
+
+      session.geminiConnected =
+        false;
+
+      session.geminiReady =
+        false;
+
+      session.pendingAudio =
+        [];
+
+      res.json({
+        ok: true,
+
+        jobId,
+
+        status:
+          "stopped"
+      });
+    } catch (error) {
+      console.error(
+        "Erro /api/audio/stop:",
+        error
+      );
+
+      res.status(500).json({
+        ok: false,
+        error: error.message
+      });
+    }
+  }
+);
+
+/* =========================================================
+   RECONEXÃO AUTOMÁTICA
+========================================================= */
+
+function scheduleReconnect(session) {
+  if (!session) {
+    return;
+  }
+
+  if (session.stopped) {
+    return;
+  }
+
+  if (session.reconnectTimer) {
+    return;
+  }
+
+  console.log(
+    `[GEMINI] Nova tentativa em 3 segundos: ${session.jobId}`
+  );
+
+  session.reconnectTimer =
+    setTimeout(
+      () => {
+        session.reconnectTimer =
+          null;
+
+        if (
+          !session.stopped
+        ) {
+          connectGemini(
+            session
+          );
+        }
+      },
+      3000
+    );
+}
+
+/* =========================================================
+   UPLOAD DE VÍDEO
+========================================================= */
+
+app.post(
+  "/api/upload",
+  upload.single("video"),
+  (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          ok: false,
+          error: "Vídeo não enviado"
+        });
+      }
+
+      const targetLang =
+        req.body?.targetLang ||
+        "pt-BR";
+
+      console.log(
+        `[UPLOAD] ${req.file.originalname} - ${req.file.size} bytes`
+      );
+
+      res.json({
+        ok: true,
+
+        message:
+          "Upload recebido",
+
+        filename:
+          req.file.originalname,
+
+        size:
+          req.file.size,
+
+        targetLang
+      });
+    } catch (error) {
+      console.error(
+        "Erro /api/upload:",
+        error
+      );
+
+      res.status(500).json({
+        ok: false,
+        error: error.message
+      });
+    }
+  }
+);
+
+/* =========================================================
+   ROTA RAIZ
+========================================================= */
+
+app.get(
+  "/",
+  (req, res) => {
+    res.json({
+      ok: true,
+
+      service:
+        "SI Tradutor Live",
+
+      version:
+        "6.0-Gemini-Ephemeral",
+
+      message:
+        "Backend do SI Tradutor Live funcionando",
+
+      gemini:
+        !!GEMINI_API_KEY,
+
+      model:
+        GEMINI_MODEL,
+
+      authentication:
+        GEMINI_API_KEY.startsWith("AQ.")
+          ? "AQ via x-goog-api-key"
+          : "API key"
+    });
+  }
+);
