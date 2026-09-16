@@ -1493,3 +1493,119 @@ app.get(
     });
   }
 );
+/* =========================================================
+   LIMPEZA AUTOMÁTICA DAS SESSÕES
+========================================================= */
+
+setInterval(() => {
+  const limit =
+    Date.now() -
+    30 * 60 * 1000;
+
+  for (
+    const [jobId, session]
+    of sessions
+  ) {
+    const created =
+      new Date(
+        session.createdAt
+      ).getTime();
+
+    if (
+      created < limit &&
+      session.stopped
+    ) {
+      safeClose(
+        session.geminiWs
+      );
+
+      if (
+        session.reconnectTimer
+      ) {
+        clearTimeout(
+          session.reconnectTimer
+        );
+      }
+
+      sessions.delete(
+        jobId
+      );
+
+      console.log(
+        `[CLEANUP] Sessão removida: ${jobId}`
+      );
+    }
+  }
+}, 5 * 60 * 1000);
+
+/* =========================================================
+   ERROS GLOBAIS
+========================================================= */
+
+process.on(
+  "uncaughtException",
+  (error) => {
+    console.error(
+      "[PROCESS] uncaughtException:",
+      error
+    );
+  }
+);
+
+process.on(
+  "unhandledRejection",
+  (error) => {
+    console.error(
+      "[PROCESS] unhandledRejection:",
+      error
+    );
+  }
+);
+
+/* =========================================================
+   INICIAR SERVIDOR
+========================================================= */
+
+app.listen(
+  PORT,
+  "0.0.0.0",
+  () => {
+    console.log(
+      "===================================="
+    );
+
+    console.log(
+      "SI Tradutor Live iniciado"
+    );
+
+    console.log(
+      `Porta: ${PORT}`
+    );
+
+    console.log(
+      `Gemini: ${
+        GEMINI_API_KEY
+          ? "CONFIGURADO"
+          : "NÃO CONFIGURADO"
+      }`
+    );
+
+    console.log(
+      `Modelo: ${GEMINI_MODEL}`
+    );
+
+    console.log(
+      `Chave: ${
+        GEMINI_API_KEY.startsWith("AQ.")
+          ? "AQ / Authorization Key"
+          : GEMINI_API_KEY.startsWith("AIza")
+          ? "AIza / Standard Key"
+          : "DESCONHECIDA"
+      }`
+    );
+
+    console.log(
+      "===================================="
+    );
+  }
+);
