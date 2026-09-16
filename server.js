@@ -21,7 +21,7 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 
 const BACKEND_VERSION =
-  "10.0-Gemini-Live-WebSocket-Fixed";
+  "11.0-Gemini-Live-Cursor-Audio";
 
 const GEMINI_API_KEY =
   process.env.GEMINI_API_KEY || "";
@@ -106,7 +106,7 @@ const upload =
   });
 
 // ============================================================
-// GERAR ID
+// ID
 // ============================================================
 
 function createId() {
@@ -188,9 +188,7 @@ const sessions =
 // NORMALIZAR IDIOMA
 // ============================================================
 
-function normalizeLanguage(
-  language
-) {
+function normalizeLanguage(language) {
 
   if (!language) {
     return "pt-BR";
@@ -224,41 +222,23 @@ function normalizeLanguage(
   const shortLanguages = {
 
     pt: "pt-BR",
-
     en: "en-US",
-
     es: "es-ES",
-
     fr: "fr-FR",
-
     de: "de-DE",
-
     it: "it-IT",
-
     ja: "ja-JP",
-
     ko: "ko-KR",
-
     zh: "zh-CN",
-
     ru: "ru-RU",
-
     ar: "ar-SA",
-
     hi: "hi-IN",
-
     tr: "tr-TR",
-
     nl: "nl-NL",
-
     pl: "pl-PL",
-
     uk: "uk-UA",
-
     th: "th-TH",
-
     id: "id-ID",
-
     vi: "vi-VN"
   };
 
@@ -305,7 +285,7 @@ app.get(
 );
 
 // ============================================================
-// TESTE GEMINI NORMAL
+// TESTE GEMINI
 // ============================================================
 
 app.get(
@@ -317,7 +297,9 @@ app.get(
       if (!GEMINI_API_KEY) {
 
         return res.status(500).json({
+
           ok: false,
+
           error:
             "GEMINI_API_KEY não configurada no Render"
         });
@@ -334,6 +316,7 @@ app.get(
             method: "POST",
 
             headers: {
+
               "Content-Type":
                 "application/json",
 
@@ -343,16 +326,26 @@ app.get(
 
             body:
               JSON.stringify({
+
                 contents: [
+
                   {
+
                     parts: [
+
                       {
+
                         text:
                           "Responda somente OK."
+
                       }
+
                     ]
+
                   }
+
                 ]
+
               })
           }
         );
@@ -373,10 +366,6 @@ app.get(
           raw: text
         };
       }
-
-      console.log(
-        `[GEMINI TEST] HTTP ${response.status}`
-      );
 
       return res
         .status(response.status)
@@ -411,7 +400,7 @@ app.get(
 );
 
 // ============================================================
-// CRIAR TOKEN EFÊMERO
+// TOKEN EFÊMERO
 // ============================================================
 
 async function createGeminiEphemeralToken(
@@ -430,10 +419,6 @@ async function createGeminiEphemeralToken(
       targetLanguage
     );
 
-  console.log(
-    `[GEMINI] Criando token temporário para ${target}`
-  );
-
   const now =
     Date.now();
 
@@ -448,20 +433,6 @@ async function createGeminiEphemeralToken(
       now +
       60 * 1000
     ).toISOString();
-
-  // ==========================================================
-  // ATENÇÃO
-  //
-  // O endpoint /auth_tokens recebe diretamente o AuthToken.
-  //
-  // NÃO colocar:
-  //
-  // authToken: {...}
-  //
-  // E a configuração Live é:
-  //
-  // bidiGenerateContentSetup
-  // ==========================================================
 
   const body = {
 
@@ -498,14 +469,11 @@ async function createGeminiEphemeralToken(
     }
   };
 
-  console.log(
-    "[GEMINI] Solicitando token efêmero..."
-  );
-
   const response =
     await fetch(
       GEMINI_TOKEN_URL,
       {
+
         method: "POST",
 
         headers: {
@@ -515,10 +483,12 @@ async function createGeminiEphemeralToken(
 
           "x-goog-api-key":
             GEMINI_API_KEY
+
         },
 
         body:
           JSON.stringify(body)
+
       }
     );
 
@@ -541,11 +511,6 @@ async function createGeminiEphemeralToken(
 
   if (!response.ok) {
 
-    console.error(
-      "[GEMINI TOKEN ERROR]",
-      JSON.stringify(data)
-    );
-
     throw new Error(
       `Falha criando token Gemini (${response.status}): ${
         data?.error?.message ||
@@ -556,19 +521,10 @@ async function createGeminiEphemeralToken(
 
   if (!data.name) {
 
-    console.error(
-      "[GEMINI TOKEN ERROR] Token sem campo name:",
-      JSON.stringify(data)
-    );
-
     throw new Error(
       "Gemini não retornou o token efêmero"
     );
   }
-
-  console.log(
-    "[GEMINI] Token temporário criado com sucesso"
-  );
 
   return data.name;
 }
@@ -629,8 +585,17 @@ app.post(
         bytesReceived:
           0,
 
+        chunksSentToGemini:
+          0,
+
+        bytesSentToGemini:
+          0,
+
         outputChunks:
           [],
+
+        nextOutputSeq:
+          0,
 
         outputBytes:
           0,
@@ -652,6 +617,9 @@ app.post(
 
         ws:
           null,
+
+        pendingInputChunks:
+          [],
 
         diagnostics:
           []
@@ -735,7 +703,7 @@ app.post(
 );
 
 // ============================================================
-// CONECTAR AO GEMINI LIVE
+// CONECTAR GEMINI
 // ============================================================
 
 async function connectGemini(
@@ -748,10 +716,7 @@ async function connectGemini(
     );
 
   if (!session) {
-
-    throw new Error(
-      "Sessão não encontrada"
-    );
+    return;
   }
 
   if (session.stopped) {
@@ -778,22 +743,8 @@ async function connectGemini(
         session.targetLanguage
       );
 
-    if (
-      !token ||
-      typeof token !== "string"
-    ) {
-
-      throw new Error(
-        "Token Gemini inválido"
-      );
-    }
-
     const wsUrl =
       `${GEMINI_WS_BASE}?access_token=${encodeURIComponent(token)}`;
-
-    console.log(
-      "[GEMINI] Abrindo WebSocket..."
-    );
 
     const ws =
       new WebSocket(
@@ -802,14 +753,6 @@ async function connectGemini(
 
     session.ws =
       ws;
-
-    // ========================================================
-    // NÃO usar:
-    //
-    // ws.binaryType = "arraybuffer"
-    //
-    // O ws normalmente entrega Buffer.
-    // ========================================================
 
     ws.on(
       "open",
@@ -830,10 +773,6 @@ async function connectGemini(
 
         session.lastActivity =
           Date.now();
-
-        // ====================================================
-        // SETUP
-        // ====================================================
 
         const setup = {
 
@@ -864,10 +803,6 @@ async function connectGemini(
           }
         };
 
-        console.log(
-          "[GEMINI] Enviando setup..."
-        );
-
         ws.send(
           JSON.stringify(
             setup
@@ -876,21 +811,13 @@ async function connectGemini(
       }
     );
 
-    // ========================================================
-    // MENSAGENS DO WEBSOCKET
-    // ========================================================
-
     ws.on(
       "message",
-      (data, isBinary) => {
+      (data) => {
 
         try {
 
           let raw;
-
-          // --------------------------------------------------
-          // STRING
-          // --------------------------------------------------
 
           if (
             typeof data ===
@@ -899,13 +826,8 @@ async function connectGemini(
 
             raw =
               data;
-          }
 
-          // --------------------------------------------------
-          // BUFFER
-          // --------------------------------------------------
-
-          else if (
+          } else if (
             Buffer.isBuffer(
               data
             )
@@ -915,13 +837,8 @@ async function connectGemini(
               data.toString(
                 "utf8"
               );
-          }
 
-          // --------------------------------------------------
-          // ARRAYBUFFER
-          // --------------------------------------------------
-
-          else if (
+          } else if (
             data instanceof
             ArrayBuffer
           ) {
@@ -932,13 +849,8 @@ async function connectGemini(
                 .toString(
                   "utf8"
                 );
-          }
 
-          // --------------------------------------------------
-          // TYPED ARRAY
-          // --------------------------------------------------
-
-          else if (
+          } else if (
             ArrayBuffer.isView(
               data
             )
@@ -954,21 +866,12 @@ async function connectGemini(
                 .toString(
                   "utf8"
                 );
-          }
 
-          // --------------------------------------------------
-          // FALLBACK
-          // --------------------------------------------------
-
-          else {
+          } else {
 
             raw =
               String(data);
           }
-
-          // --------------------------------------------------
-          // PROCESSAR
-          // --------------------------------------------------
 
           handleGeminiMessage(
             jobId,
@@ -985,10 +888,6 @@ async function connectGemini(
       }
     );
 
-    // ========================================================
-    // ERRO
-    // ========================================================
-
     ws.on(
       "error",
       (error) => {
@@ -1002,10 +901,6 @@ async function connectGemini(
           error.message;
       }
     );
-
-    // ========================================================
-    // FECHAMENTO
-    // ========================================================
 
     ws.on(
       "close",
@@ -1087,10 +982,6 @@ function scheduleGeminiReconnect(
 
   session.reconnectAttempts++;
 
-  console.log(
-    `[GEMINI] Nova tentativa em 3 segundos: ${jobId}`
-  );
-
   session.reconnectTimer =
     setTimeout(
       async () => {
@@ -1121,7 +1012,7 @@ function scheduleGeminiReconnect(
 }
 
 // ============================================================
-// PROCESSAR MENSAGEM DO GEMINI
+// PROCESSAR GEMINI
 // ============================================================
 
 function handleGeminiMessage(
@@ -1141,97 +1032,35 @@ function handleGeminiMessage(
   session.lastActivity =
     Date.now();
 
-  // ==========================================================
-  // GARANTIR STRING
-  // ==========================================================
-
-  if (
-    Buffer.isBuffer(raw)
-  ) {
-
-    raw =
-      raw.toString(
-        "utf8"
-      );
-  }
-
-  else if (
-    raw instanceof
-    ArrayBuffer
-  ) {
-
-    raw =
-      Buffer
-        .from(raw)
-        .toString(
-          "utf8"
-        );
-  }
-
-  else if (
-    ArrayBuffer.isView(raw)
-  ) {
-
-    raw =
-      Buffer
-        .from(
-          raw.buffer,
-          raw.byteOffset,
-          raw.byteLength
-        )
-        .toString(
-          "utf8"
-        );
-  }
-
-  if (
-    typeof raw !==
-    "string"
-  ) {
-
-    raw =
-      String(raw);
-  }
-
-  // ==========================================================
-  // PARSE JSON
-  // ==========================================================
-
   let data;
 
   try {
 
     data =
-      JSON.parse(raw);
+      JSON.parse(
+        raw.toString()
+      );
 
   } catch (error) {
 
     console.error(
-      "[GEMINI] Mensagem JSON inválida:",
+      "[GEMINI] JSON inválido:",
       error.message
-    );
-
-    console.error(
-      "[GEMINI] Conteúdo:",
-      raw.substring(
-        0,
-        500
-      )
     );
 
     return;
   }
 
-  // ==========================================================
-  // SETUP COMPLETO
-  // ==========================================================
+  // ----------------------------------------------------------
+  // SETUP
+  // ----------------------------------------------------------
 
   if (
     data.setupComplete
   ) {
 
     console.log(
-      "[GEMINI] setupComplete recebido!"
+      `[GEMINI] setupComplete recebido - ${jobId}`
     );
 
     session.geminiReady =
@@ -1243,12 +1072,43 @@ function handleGeminiMessage(
     session.lastError =
       null;
 
+    // --------------------------------------------------------
+    // ENVIAR ÁUDIO QUE CHEGOU ANTES DO SETUP
+    // --------------------------------------------------------
+
+    if (
+      session.pendingInputChunks.length >
+      0
+    ) {
+
+      console.log(
+        `[GEMINI] Enviando ${session.pendingInputChunks.length} chunks pendentes`
+      );
+
+      const pending =
+        session.pendingInputChunks.splice(
+          0,
+          session.pendingInputChunks.length
+        );
+
+      for (
+        const audio
+        of pending
+      ) {
+
+        sendAudioToGemini(
+          session,
+          audio
+        );
+      }
+    }
+
     return;
   }
 
-  // ==========================================================
-  // ERRO GEMINI
-  // ==========================================================
+  // ----------------------------------------------------------
+  // ERRO
+  // ----------------------------------------------------------
 
   if (
     data.error
@@ -1276,9 +1136,9 @@ function handleGeminiMessage(
     return;
   }
 
-  // ==========================================================
+  // ----------------------------------------------------------
   // SERVER CONTENT
-  // ==========================================================
+  // ----------------------------------------------------------
 
   if (
     !data.serverContent
@@ -1289,9 +1149,9 @@ function handleGeminiMessage(
   const content =
     data.serverContent;
 
-  // ==========================================================
-  // TRANSCRIÇÃO DE ENTRADA
-  // ==========================================================
+  // ----------------------------------------------------------
+  // INPUT TRANSCRIPT
+  // ----------------------------------------------------------
 
   if (
     content.inputTranscription
@@ -1314,9 +1174,9 @@ function handleGeminiMessage(
     }
   }
 
-  // ==========================================================
-  // TRANSCRIÇÃO DE SAÍDA
-  // ==========================================================
+  // ----------------------------------------------------------
+  // OUTPUT TRANSCRIPT
+  // ----------------------------------------------------------
 
   if (
     content.outputTranscription
@@ -1339,9 +1199,9 @@ function handleGeminiMessage(
     }
   }
 
-  // ==========================================================
+  // ----------------------------------------------------------
   // ÁUDIO GERADO
-  // ==========================================================
+  // ----------------------------------------------------------
 
   if (
     content.modelTurn &&
@@ -1376,26 +1236,37 @@ function handleGeminiMessage(
             0
           ) {
 
-            session.outputChunks.push(
-              audioBase64
-            );
+            session.nextOutputSeq++;
+
+            session.outputChunks.push({
+
+              seq:
+                session.nextOutputSeq,
+
+              audio:
+                audioBase64
+
+            });
 
             session.outputBytes +=
               audioBuffer.length;
 
             console.log(
-              `[GEMINI] Áudio recebido: ${audioBuffer.length} bytes`
+              `[GEMINI] Áudio recebido: ${audioBuffer.length} bytes | seq=${session.nextOutputSeq}`
             );
 
-            // Limite de segurança
+            // ------------------------------------------------
+            // MANTER NO MÁXIMO 500 CHUNKS
+            // ------------------------------------------------
+
             if (
               session.outputChunks.length >
-              200
+              500
             ) {
 
               session.outputChunks =
                 session.outputChunks.slice(
-                  -200
+                  -500
                 );
             }
           }
@@ -1409,6 +1280,74 @@ function handleGeminiMessage(
         }
       }
     }
+  }
+}
+
+// ============================================================
+// ENVIAR ÁUDIO AO GEMINI
+// ============================================================
+
+function sendAudioToGemini(
+  session,
+  audio
+) {
+
+  if (
+    !session.ws ||
+    session.ws.readyState !==
+    WebSocket.OPEN
+  ) {
+
+    return false;
+  }
+
+  const message = {
+
+    realtimeInput: {
+
+      audio: {
+
+        mimeType:
+          "audio/pcm;rate=16000",
+
+        data:
+          audio
+      }
+    }
+  };
+
+  try {
+
+    session.ws.send(
+      JSON.stringify(
+        message
+      )
+    );
+
+    session.chunksSentToGemini++;
+
+    session.bytesSentToGemini +=
+      Buffer.from(
+        audio,
+        "base64"
+      ).length;
+
+    session.lastActivity =
+      Date.now();
+
+    return true;
+
+  } catch (error) {
+
+    session.lastError =
+      error.message;
+
+    console.error(
+      "[GEMINI SEND ERROR]",
+      error.message
+    );
+
+    return false;
   }
 }
 
@@ -1479,24 +1418,23 @@ app.post(
         });
       }
 
-      let audioBuffer;
+      const audioBuffer =
+        Buffer.from(
+          audio,
+          "base64"
+        );
 
-      try {
-
-        audioBuffer =
-          Buffer.from(
-            audio,
-            "base64"
-          );
-
-      } catch (error) {
+      if (
+        audioBuffer.length ===
+        0
+      ) {
 
         return res.status(400).json({
 
           ok: false,
 
           error:
-            "Áudio Base64 inválido"
+            "Áudio vazio"
         });
       }
 
@@ -1508,61 +1446,47 @@ app.post(
       session.lastActivity =
         Date.now();
 
-      // ========================================================
-      // ENVIAR PARA GEMINI
-      // ========================================================
+      // --------------------------------------------------------
+      // GEMINI JÁ PRONTO
+      // --------------------------------------------------------
 
       if (
+        session.geminiReady &&
         session.ws &&
         session.ws.readyState ===
-        WebSocket.OPEN &&
-        session.geminiReady
+        WebSocket.OPEN
       ) {
 
-        const message = {
+        sendAudioToGemini(
+          session,
+          audio
+        );
 
-          realtimeInput: {
+      }
 
-            audio: {
+      // --------------------------------------------------------
+      // GEMINI AINDA NÃO PRONTO
+      // --------------------------------------------------------
 
-              mimeType:
-                "audio/pcm;rate=16000",
-
-              data:
-                audio
-            }
-          }
-        };
-
-        try {
-
-          session.ws.send(
-            JSON.stringify(
-              message
-            )
-          );
-
-        } catch (error) {
-
-          console.error(
-            "[GEMINI SEND ERROR]",
-            error.message
-          );
-
-          session.lastError =
-            error.message;
-        }
-
-      } else {
+      else {
 
         if (
-          session.chunksReceived %
-          20 ===
-          0
+          session.pendingInputChunks.length <
+          50
         ) {
 
+          session.pendingInputChunks.push(
+            audio
+          );
+
           console.log(
-            `[AUDIO] Gemini ainda não pronto. chunks=${session.chunksReceived}`
+            `[AUDIO] Chunk aguardando Gemini. pendentes=${session.pendingInputChunks.length}`
+          );
+
+        } else {
+
+          console.log(
+            "[AUDIO] Fila de entrada cheia; descartando chunk."
           );
         }
       }
@@ -1576,6 +1500,9 @@ app.post(
 
         chunksReceived:
           session.chunksReceived,
+
+        chunksSentToGemini:
+          session.chunksSentToGemini,
 
         geminiReady:
           session.geminiReady
@@ -1600,7 +1527,7 @@ app.post(
 );
 
 // ============================================================
-// ÁUDIO DE SAÍDA
+// ÁUDIO DE SAÍDA - CURSOR
 // ============================================================
 
 app.get(
@@ -1628,66 +1555,79 @@ app.get(
         });
       }
 
-      if (
-        session.outputChunks.length ===
+      const after =
+        Number(
+          req.query.after || 0
+        );
+
+      const limitRaw =
+        Number(
+          req.query.limit || 20
+        );
+
+      const limit =
+        Math.max(
+          1,
+          Math.min(
+            50,
+            Number.isFinite(
+              limitRaw
+            )
+              ? limitRaw
+              : 20
+          )
+        );
+
+      const firstSeq =
+        session.outputChunks.length >
         0
-      ) {
+          ? session.outputChunks[0].seq
+          : session.nextOutputSeq + 1;
 
-        return res.json({
+      const lastSeq =
+        session.outputChunks.length >
+        0
+          ? session.outputChunks[
+              session.outputChunks.length - 1
+            ].seq
+          : session.nextOutputSeq;
 
-          ok: true,
-
-          available:
-            false,
-
-          audio:
-            null,
-
-          sampleRate:
-            24000,
-
-          channels:
-            1,
-
-          format:
-            "pcm_s16le"
-        });
-      }
+      const resetRequired =
+        session.outputChunks.length >
+        0 &&
+        after <
+        firstSeq - 1;
 
       const chunks =
-        session.outputChunks.splice(
-          0,
-          session.outputChunks.length
-        );
-
-      const buffers =
-        chunks.map(
-          (chunk) =>
-            Buffer.from(
-              chunk,
-              "base64"
-            )
-        );
-
-      const combined =
-        Buffer.concat(
-          buffers
-        );
+        session.outputChunks
+          .filter(
+            (item) =>
+              item.seq >
+              after
+          )
+          .slice(
+            0,
+            limit
+          );
 
       return res.json({
 
         ok: true,
 
         available:
-          true,
+          chunks.length >
+          0,
 
-        audio:
-          combined.toString(
-            "base64"
-          ),
+        chunks,
 
-        bytes:
-          combined.length,
+        firstSeq,
+
+        lastSeq,
+
+        nextSeq:
+          session.nextOutputSeq + 1,
+
+        resetRequired,
 
         sampleRate:
           24000,
@@ -1778,8 +1718,20 @@ app.get(
       bytesReceived:
         session.bytesReceived,
 
+      chunksSentToGemini:
+        session.chunksSentToGemini,
+
+      bytesSentToGemini:
+        session.bytesSentToGemini,
+
+      pendingInputChunks:
+        session.pendingInputChunks.length,
+
       outputChunks:
         session.outputChunks.length,
+
+      nextOutputSeq:
+        session.nextOutputSeq,
 
       outputBytes:
         session.outputBytes,
@@ -1804,7 +1756,7 @@ app.get(
 );
 
 // ============================================================
-// DIAGNÓSTICO
+// DIAGNÓSTICO - POST
 // ============================================================
 
 app.post(
@@ -1815,6 +1767,17 @@ app.post(
 
       const jobId =
         req.body?.jobId;
+
+      if (!jobId) {
+
+        return res.status(400).json({
+
+          ok: false,
+
+          error:
+            "jobId obrigatório"
+        });
+      }
 
       const session =
         sessions.get(
@@ -1882,6 +1845,92 @@ app.post(
 );
 
 // ============================================================
+// DIAGNÓSTICO - GET
+// ============================================================
+
+app.get(
+  "/api/audio/diagnostic/:jobId",
+  (req, res) => {
+
+    const jobId =
+      req.params.jobId;
+
+    const session =
+      sessions.get(
+        jobId
+      );
+
+    if (!session) {
+
+      return res.status(404).json({
+
+        ok: false,
+
+        error:
+          "Sessão não encontrada"
+      });
+    }
+
+    return res.json({
+
+      ok: true,
+
+      jobId,
+
+      status:
+        session.status,
+
+      geminiReady:
+        session.geminiReady,
+
+      geminiConnecting:
+        session.geminiConnecting,
+
+      chunksReceived:
+        session.chunksReceived,
+
+      bytesReceived:
+        session.bytesReceived,
+
+      chunksSentToGemini:
+        session.chunksSentToGemini,
+
+      bytesSentToGemini:
+        session.bytesSentToGemini,
+
+      pendingInputChunks:
+        session.pendingInputChunks.length,
+
+      outputChunks:
+        session.outputChunks.length,
+
+      nextOutputSeq:
+        session.nextOutputSeq,
+
+      outputBytes:
+        session.outputBytes,
+
+      inputTranscript:
+        session.inputTranscript,
+
+      outputTranscript:
+        session.outputTranscript,
+
+      lastError:
+        session.lastError,
+
+      lastActivity:
+        session.lastActivity,
+
+      diagnostics:
+        session.diagnostics.slice(
+          -20
+        )
+    });
+  }
+);
+
+// ============================================================
 // LISTAR SESSÕES
 // ============================================================
 
@@ -1917,8 +1966,17 @@ app.get(
         chunksReceived:
           session.chunksReceived,
 
+        bytesReceived:
+          session.bytesReceived,
+
+        chunksSentToGemini:
+          session.chunksSentToGemini,
+
         outputChunks:
           session.outputChunks.length,
+
+        nextOutputSeq:
+          session.nextOutputSeq,
 
         createdAt:
           session.createdAt,
@@ -2079,7 +2137,7 @@ function stopSession(
 }
 
 // ============================================================
-// UPLOAD DE VÍDEO
+// UPLOAD
 // ============================================================
 
 app.post(
@@ -2126,10 +2184,6 @@ app.post(
         finalPath
       );
 
-      console.log(
-        `[UPLOAD] Vídeo recebido: ${jobId}`
-      );
-
       return res.json({
 
         ok: true,
@@ -2161,7 +2215,7 @@ app.post(
 );
 
 // ============================================================
-// ROTA RAIZ
+// RAIZ
 // ============================================================
 
 app.get(
@@ -2241,7 +2295,7 @@ app.use(
 );
 
 // ============================================================
-// LIMPEZA AUTOMÁTICA
+// LIMPEZA
 // ============================================================
 
 setInterval(
@@ -2312,7 +2366,7 @@ process.on(
 );
 
 // ============================================================
-// INICIAR SERVIDOR
+// SERVIDOR
 // ============================================================
 
 app.listen(
@@ -2353,7 +2407,11 @@ app.listen(
     );
 
     console.log(
-      "WebSocket: CORRIGIDO"
+      "Áudio: CURSOR POR SEQUÊNCIA"
+    );
+
+    console.log(
+      "Diagnóstico: GET + POST"
     );
 
     console.log(
