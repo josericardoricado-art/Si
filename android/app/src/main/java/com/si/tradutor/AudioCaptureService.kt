@@ -8,51 +8,39 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
+import android.media.AudioFocusRequest
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.AudioTrack
-import android.media.AudioManager
-import android.media.projection.MediaProjection
-import android.media.projection.MediaProjectionManager
+import android.media.MediaProjection
+import android.media.MediaProjectionManager
 import android.os.Build
 import android.os.IBinder
 import android.util.Base64
 import android.util.Log
-import androidx.core.content.IntentCompat
+import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.Locale
+import java.util.UUID
 import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 class AudioCaptureService : Service() {
 
     companion object {
+
         private const val TAG = "SI_AUDIO"
 
-        private const val BACKEND_URL = "https://si-u2ul.onrender.com"
-
-        private const val CHANNEL_ID = "si_audio_capture"
-        private const val NOTIFICATION_ID = 1001
-
-        // Áudio capturado do aplicativo.
-        private const val INPUT_SAMPLE_RATE = 16000
-
-        // Áudio retornado pelo Gemini Live.
-        private const val OUTPUT_SAMPLE_RATE = 24000
-
-        private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
-        private const val OUTPUT_CHANNEL_CONFIG = AudioFormat.CHANNEL_OUT_MONO
-
-        private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
-
-        private const val CHUNK_SIZE = 3200
+        const val BACKEND_URL = "https://si-u2ul.onrender.com"
 
         const val ACTION_START = "com.si.tradutor.START_AUDIO"
         const val ACTION_STOP = "com.si.tradutor.STOP_AUDIO"
@@ -60,24 +48,26 @@ class AudioCaptureService : Service() {
         const val EXTRA_JOB_ID = "jobId"
         const val EXTRA_RESULT_CODE = "resultCode"
         const val EXTRA_RESULT_DATA = "resultData"
+
+        private const val CHANNEL_ID = "si_audio_channel"
+        private const val NOTIFICATION_ID = 7001
+
+        private const val SAMPLE_RATE = 16000
+        private const val OUTPUT_SAMPLE_RATE = 24000
+
+        private const val CHANNEL_IN = AudioFormat.CHANNEL_IN_MONO
+        private const val CHANNEL_OUT = AudioFormat.CHANNEL_OUT_MONO
+
+        private const val ENCODING = AudioFormat.ENCODING_PCM_16BIT
+
+        private const val CHUNK_SIZE = 3200
+
+        private const val OUTPUT_POLL_MS = 100L
     }
 
-    // ============================================================
-    // MEDIA PROJECTION / CAPTURA
-    // ============================================================
-
-    private var mediaProjection: MediaProjection? = null
-    private var audioRecord: AudioRecord? = null
-
-    // ============================================================
-    // AUDIO OUTPUT
-    // ============================================================
-
-    private var audioTrack: AudioTrack? = null
-
-    // ============================================================
+    // ---------------------------------------------------------
     // ESTADO
-    // ============================================================
+    // ---------------------------------------------------------
 
     @Volatile
     private var running = false
@@ -86,70 +76,79 @@ class AudioCaptureService : Service() {
     private var captureStarted = false
 
     @Volatile
-    private var jobId = ""
+    private var outputPlaying = false
 
     @Volatile
+    private var errorMessage: String? = null
+
+    private var jobId: String? = null
+
     private var targetLanguage = "pt-BR"
 
-    @Volatile
-    private var diagnosticError: String? = null
+    private var mediaProjection: MediaProjection? = null
+    private var audioRecord: AudioRecord? = null
+    private var audioTrack: AudioTrack? = null
 
-    @Volatile
-    private var readCount = 0
+    private var audioManager: AudioManager? = null
 
-    @Volatile
-    private var lastRead = 0
+    private var audioFocusRequest: AudioFocusRequest? = null
 
-    @Volatile
-    private var capturedBytes = 0L
+    private val audioQueue =
+        LinkedBlockingQueue<ByteArray>(100)
 
-    @Volatile
-    private var receivedOutputBytes = 0L
-
-    @Volatile
-    private var playedOutputBytes = 0L
-
-    @Volatile
-    private var outputChunksReceived = 0
-
-    @Volatile
-    private var outputChunksPlayed = 0
-
-    // ============================================================
-    // FILA DE CAPTURA
-    // ============================================================
-
-    private val audioQueue = LinkedBlockingQueue<ByteArray>(40)
-
-    // ============================================================
-    // THREADS
-    // ============================================================
+    private val outputQueue =
+        LinkedBlockingQueue<ByteArray>(100)
 
     private var captureThread: Thread? = null
     private var sendThread: Thread? = null
     private var outputThread: Thread? = null
     private var diagnosticThread: Thread? = null
 
-    private var projectionCallback: MediaProjection.Callback? = null
+    private var readCount = 0
+    private var capturedBytes = 0L
 
-    // ============================================================
-    // ANDROID SERVICE
-    // ============================================================
+    private var receivedOutputBytes = 0L
+    private var playedOutputBytes = 0L
+
+    private var outputChunksReceived = 0
+    private var outputChunksPlayed = 0
+
+    private var lastRead = 0
+    private var queueSize = 0
+
+    private var clientId: String =
+        UUID.randomUUID().toString()
+
+    // ---------------------------------------------------------
+    // MEDIA PROJECTION CALLBACK
+    // ---------------------------------------------------------
+
+    private val projectionCallback =
+        object : MediaProjection.Callback() {
+
+            override fun onStop() {
+                Log.d(TAG, "MediaProjection encerrado")
+
+                if (running) {
+                    stopCapture()
+                }
+            }
+        }
+
+    // ---------------------------------------------------------
+    // SERVICE
+    // ---------------------------------------------------------
 
     override fun onCreate() {
         super.onCreate()
 
+        Log.d(TAG, "AudioCaptureService criado")
+
+        audioManager =
+            getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
         createNotificationChannel()
-
-        Log.d(
-            TAG,
-            "SI Tradutor Live - serviço criado. SDK=${Build.VERSION.SDK_INT}"
-        )
     }
-
-    // ============================================================
-    // START / STOP
-    // ============================================================
 
     override fun onStartCommand(
         intent: Intent?,
@@ -157,140 +156,108 @@ class AudioCaptureService : Service() {
         startId: Int
     ): Int {
 
-        Log.d(
-            TAG,
-            "onStartCommand action=${intent?.action}"
-        )
-
-        // --------------------------------------------------------
-        // PARAR
-        // --------------------------------------------------------
-
-        if (intent?.action == ACTION_STOP) {
-            stopCapture(sendServerStop = true)
+        if (intent == null) {
             return START_NOT_STICKY
         }
 
-        // --------------------------------------------------------
-        // DADOS DO JOB
-        // --------------------------------------------------------
+        val action = intent.action
 
-        jobId = intent?.getStringExtra(EXTRA_JOB_ID) ?: ""
+        Log.d(
+            TAG,
+            "onStartCommand action=$action"
+        )
+
+        if (action == ACTION_STOP) {
+
+            stopCapture()
+
+            stopSelf()
+
+            return START_NOT_STICKY
+        }
+
+        if (action != ACTION_START) {
+            return START_NOT_STICKY
+        }
+
+        if (running) {
+            Log.d(TAG, "Captura já está ativa")
+            return START_STICKY
+        }
+
+        jobId =
+            intent.getStringExtra(EXTRA_JOB_ID)
 
         val resultCode =
-            intent?.getIntExtra(
+            intent.getIntExtra(
                 EXTRA_RESULT_CODE,
                 -1
-            ) ?: -1
+            )
 
-        val resultData: Intent? =
-            if (intent != null) {
-                try {
-
-                    IntentCompat.getParcelableExtra(
-                        intent,
-                        EXTRA_RESULT_DATA,
-                        Intent::class.java
-                    )
-
-                } catch (e: Exception) {
-
-                    Log.e(
-                        TAG,
-                        "Erro lendo resultData",
-                        e
-                    )
-
-                    @Suppress("DEPRECATION")
-                    intent.getParcelableExtra(
-                        EXTRA_RESULT_DATA
-                    )
-                }
+        val resultData =
+            if (Build.VERSION.SDK_INT >= 33) {
+                intent.getParcelableExtra(
+                    EXTRA_RESULT_DATA,
+                    Intent::class.java
+                )
             } else {
-                null
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(
+                    EXTRA_RESULT_DATA
+                )
             }
 
-        Log.d(
-            TAG,
-            "jobId=$jobId " +
-                    "resultCode=$resultCode " +
-                    "resultDataExiste=${resultData != null}"
-        )
+        if (jobId.isNullOrBlank()) {
 
-        // --------------------------------------------------------
-        // FOREGROUND
-        // --------------------------------------------------------
+            errorMessage =
+                "jobId não informado"
 
-        try {
-
-            startForegroundCompat()
-
-        } catch (e: Exception) {
-
-            failCapture(
-                "Erro foreground: " +
-                        "${e.javaClass.simpleName}: ${e.message}"
+            Log.e(
+                TAG,
+                "jobId não informado"
             )
+
+            stopSelf()
 
             return START_NOT_STICKY
         }
 
-        // --------------------------------------------------------
-        // VALIDAÇÕES
-        // --------------------------------------------------------
+        if (resultCode == -1 && resultData == null) {
 
-        if (jobId.isBlank()) {
+            errorMessage =
+                "Permissão de captura inválida"
 
-            failCapture("jobId vazio")
-
-            return START_NOT_STICKY
-        }
-
-        if (resultCode != android.app.Activity.RESULT_OK) {
-
-            failCapture(
-                "MediaProjection inválido: " +
-                        "resultCode=$resultCode"
+            Log.e(
+                TAG,
+                "Permissão MediaProjection inválida"
             )
 
-            return START_NOT_STICKY
-        }
-
-        if (resultData == null) {
-
-            failCapture(
-                "MediaProjection inválido: resultData=null"
-            )
+            stopSelf()
 
             return START_NOT_STICKY
         }
 
         if (
-            checkSelfPermission(
+            ContextCompat.checkSelfPermission(
+                this,
                 Manifest.permission.RECORD_AUDIO
             ) != PackageManager.PERMISSION_GRANTED
         ) {
 
-            failCapture(
-                "RECORD_AUDIO não autorizado"
+            errorMessage =
+                "Permissão RECORD_AUDIO não concedida"
+
+            Log.e(
+                TAG,
+                errorMessage!!
             )
+
+            stopSelf()
 
             return START_NOT_STICKY
         }
 
-        if (running) {
-
-            Log.d(
-                TAG,
-                "Captura já está rodando"
-            )
-
-            return START_STICKY
-        }
-
-        // --------------------------------------------------------
-        // INICIAR
-        // --------------------------------------------------------
+        startForegroundServiceNotification()
 
         startCapture(
             resultCode,
@@ -300,21 +267,32 @@ class AudioCaptureService : Service() {
         return START_STICKY
     }
 
-    // ============================================================
+    // ---------------------------------------------------------
     // INICIAR CAPTURA
-    // ============================================================
+    // ---------------------------------------------------------
 
     private fun startCapture(
         resultCode: Int,
-        resultData: Intent
+        resultData: Intent?
     ) {
+
+        if (resultData == null) {
+
+            errorMessage =
+                "Intent de MediaProjection vazio"
+
+            return
+        }
 
         try {
 
-            diagnosticError = null
+            running = true
+            errorMessage = null
+
+            audioQueue.clear()
+            outputQueue.clear()
 
             readCount = 0
-            lastRead = 0
             capturedBytes = 0L
 
             receivedOutputBytes = 0L
@@ -323,464 +301,357 @@ class AudioCaptureService : Service() {
             outputChunksReceived = 0
             outputChunksPlayed = 0
 
-            captureStarted = false
-
-            audioQueue.clear()
-
-            running = true
-
-            // ----------------------------------------------------
-            // BUSCAR IDIOMA DA SESSÃO
-            // ----------------------------------------------------
-
-            loadTargetLanguage()
-
-            // ----------------------------------------------------
-            // MEDIA PROJECTION
-            // ----------------------------------------------------
-
-            val projectionManager =
+            val manager =
                 getSystemService(
                     Context.MEDIA_PROJECTION_SERVICE
                 ) as MediaProjectionManager
 
-            val projection =
-                projectionManager.getMediaProjection(
+            mediaProjection =
+                manager.getMediaProjection(
                     resultCode,
                     resultData
-                ) ?: run {
+                )
 
-                    failCapture(
-                        "MediaProjection retornou null"
-                    )
+            if (mediaProjection == null) {
 
-                    return
-                }
-
-            mediaProjection = projection
-
-            // ----------------------------------------------------
-            // CALLBACK
-            // ----------------------------------------------------
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-
-                projectionCallback =
-                    object : MediaProjection.Callback() {
-
-                        override fun onStop() {
-
-                            Log.w(
-                                TAG,
-                                "MediaProjection encerrada pelo Android"
-                            )
-
-                            diagnosticError =
-                                "MediaProjection encerrada pelo Android"
-
-                            if (running) {
-
-                                stopCapture(
-                                    sendServerStop = false
-                                )
-                            }
-                        }
-                    }
-
-                mediaProjection?.registerCallback(
-                    projectionCallback!!,
-                    null
+                throw Exception(
+                    "Não foi possível obter MediaProjection"
                 )
             }
 
-            // ----------------------------------------------------
-            // ANDROID 10+
-            // ----------------------------------------------------
+            mediaProjection?.registerCallback(
+                projectionCallback,
+                null
+            )
 
-            if (
-                Build.VERSION.SDK_INT <
-                Build.VERSION_CODES.Q
-            ) {
+            // Buscar idioma atual da sessão
+            loadSessionStatus()
 
-                failCapture(
-                    "Android abaixo do 10 " +
-                            "não suporta captura interna"
-                )
+            // Criar AudioRecord
+            createAudioRecord()
 
-                return
-            }
-
-            // ----------------------------------------------------
-            // CONFIGURAÇÃO DA CAPTURA INTERNA
-            // ----------------------------------------------------
-
-            val playbackConfig =
-                AudioPlaybackCaptureConfiguration.Builder(
-                    mediaProjection!!
-                )
-                    .addMatchingUsage(
-                        AudioAttributes.USAGE_MEDIA
-                    )
-                    .addMatchingUsage(
-                        AudioAttributes.USAGE_GAME
-                    )
-                    .addMatchingUsage(
-                        AudioAttributes.USAGE_UNKNOWN
-                    )
-                    .build()
-
-            // ----------------------------------------------------
-            // FORMATO DE ENTRADA
-            // ----------------------------------------------------
-
-            val audioFormat =
-                AudioFormat.Builder()
-                    .setEncoding(
-                        AUDIO_FORMAT
-                    )
-                    .setSampleRate(
-                        INPUT_SAMPLE_RATE
-                    )
-                    .setChannelMask(
-                        CHANNEL_CONFIG
-                    )
-                    .build()
-
-            val minBuffer =
-                AudioRecord.getMinBufferSize(
-                    INPUT_SAMPLE_RATE,
-                    CHANNEL_CONFIG,
-                    AUDIO_FORMAT
-                )
-
-            if (minBuffer <= 0) {
-
-                failCapture(
-                    "getMinBufferSize inválido: $minBuffer"
-                )
-
-                return
-            }
-
-            val bufferSize =
-                maxOf(
-                    minBuffer * 2,
-                    CHUNK_SIZE * 4
-                )
-
-            // ----------------------------------------------------
-            // AUDIO RECORD
-            // ----------------------------------------------------
-
-            val record =
-                AudioRecord.Builder()
-                    .setAudioFormat(
-                        audioFormat
-                    )
-                    .setBufferSizeInBytes(
-                        bufferSize
-                    )
-                    .setAudioPlaybackCaptureConfig(
-                        playbackConfig
-                    )
-                    .build()
-
-            audioRecord = record
-
-            if (
-                record.state !=
-                AudioRecord.STATE_INITIALIZED
-            ) {
-
-                failCapture(
-                    "AudioRecord não foi inicializado"
-                )
-
-                return
-            }
-
-            // ----------------------------------------------------
-            // INICIAR RECORDING
-            // ----------------------------------------------------
-
-            record.startRecording()
-
-            if (
-                record.recordingState !=
-                AudioRecord.RECORDSTATE_RECORDING
-            ) {
-
-                failCapture(
-                    "AudioRecord não entrou em RECORDING"
-                )
-
-                return
-            }
+            // Criar AudioTrack
+            createAudioTrack()
 
             captureStarted = true
 
             Log.d(
                 TAG,
-                "CAPTURA INTERNA INICIADA - " +
-                        "PCM16 MONO 16000 Hz - " +
-                        "alvo=$targetLanguage"
+                "Captura iniciada"
             )
 
-            // ----------------------------------------------------
-            // INICIAR AUDIO OUTPUT
-            // ----------------------------------------------------
-
-            initializeAudioTrack()
-
-            // ----------------------------------------------------
-            // DIAGNÓSTICO
-            // ----------------------------------------------------
-
-            sendDiagnostic()
-
-            // ----------------------------------------------------
-            // THREADS
-            // ----------------------------------------------------
-
+            // Threads
             startCaptureThread()
-
             startSendThread()
-
             startOutputThread()
-
             startDiagnosticThread()
 
-        } catch (e: SecurityException) {
-
-            failCapture(
-                "SecurityException: " +
-                        (e.message ?: "permissão negada")
-            )
-
         } catch (e: Exception) {
 
-            failCapture(
-                "${e.javaClass.simpleName}: " +
-                        (e.message ?: "erro desconhecido")
-            )
-        }
-    }
-
-    // ============================================================
-    // AUDIO TRACK
-    // ============================================================
-
-    private fun initializeAudioTrack() {
-
-        try {
-
-            val minBuffer =
-                AudioTrack.getMinBufferSize(
-                    OUTPUT_SAMPLE_RATE,
-                    OUTPUT_CHANNEL_CONFIG,
-                    AUDIO_FORMAT
-                )
-
-            if (minBuffer <= 0) {
-
-                diagnosticError =
-                    "AudioTrack buffer inválido: $minBuffer"
-
-                Log.e(
-                    TAG,
-                    diagnosticError!!
-                )
-
-                return
-            }
-
-            val bufferSize =
-                maxOf(
-                    minBuffer * 4,
-                    OUTPUT_SAMPLE_RATE * 2
-                )
-
-            val attributes =
-                AudioAttributes.Builder()
-                    .setUsage(
-                        AudioAttributes.USAGE_MEDIA
-                    )
-                    .setContentType(
-                        AudioAttributes.CONTENT_TYPE_SPEECH
-                    )
-                    .build()
-
-            val format =
-                AudioFormat.Builder()
-                    .setEncoding(
-                        AUDIO_FORMAT
-                    )
-                    .setSampleRate(
-                        OUTPUT_SAMPLE_RATE
-                    )
-                    .setChannelMask(
-                        OUTPUT_CHANNEL_CONFIG
-                    )
-                    .build()
-
-            val track =
-                AudioTrack.Builder()
-                    .setAudioAttributes(
-                        attributes
-                    )
-                    .setAudioFormat(
-                        format
-                    )
-                    .setBufferSizeInBytes(
-                        bufferSize
-                    )
-                    .setTransferMode(
-                        AudioTrack.MODE_STREAM
-                    )
-                    .build()
-
-            if (
-                track.state !=
-                AudioTrack.STATE_INITIALIZED
-            ) {
-
-                diagnosticError =
-                    "AudioTrack não foi inicializado"
-
-                Log.e(
-                    TAG,
-                    diagnosticError!!
-                )
-
-                try {
-                    track.release()
-                } catch (_: Exception) {
-                }
-
-                return
-            }
-
-            audioTrack = track
-
-            track.play()
-
-            Log.d(
-                TAG,
-                "AudioTrack iniciado: " +
-                        "PCM16 MONO ${OUTPUT_SAMPLE_RATE} Hz"
-            )
-
-        } catch (e: Exception) {
-
-            diagnosticError =
-                "Erro AudioTrack: " +
-                        "${e.javaClass.simpleName}: " +
-                        "${e.message}"
+            errorMessage =
+                e.message ?: e.toString()
 
             Log.e(
                 TAG,
-                diagnosticError!!,
+                "Erro ao iniciar captura",
+                e
+            )
+
+            stopCapture()
+        }
+    }
+
+    // ---------------------------------------------------------
+    // AUDIO RECORD
+    // ---------------------------------------------------------
+
+    private fun createAudioRecord() {
+
+        val minBuffer =
+            AudioRecord.getMinBufferSize(
+                SAMPLE_RATE,
+                CHANNEL_IN,
+                ENCODING
+            )
+
+        if (minBuffer <= 0) {
+
+            throw Exception(
+                "AudioRecord.getMinBufferSize inválido"
+            )
+        }
+
+        val bufferSize =
+            maxOf(
+                minBuffer * 2,
+                CHUNK_SIZE * 4
+            )
+
+        val config =
+            AudioFormat.Builder()
+                .setEncoding(ENCODING)
+                .setSampleRate(SAMPLE_RATE)
+                .setChannelMask(CHANNEL_IN)
+                .build()
+
+        val captureConfig =
+            AudioPlaybackCaptureConfiguration.Builder(
+                mediaProjection
+            )
+                .addMatchingUsage(
+                    android.media.AudioAttributes.USAGE_MEDIA
+                )
+                .addMatchingUsage(
+                    android.media.AudioAttributes.USAGE_GAME
+                )
+                .addMatchingUsage(
+                    android.media.AudioAttributes.USAGE_UNKNOWN
+                )
+                .build()
+
+        audioRecord =
+            AudioRecord.Builder()
+                .setAudioFormat(config)
+                .setBufferSizeInBytes(bufferSize)
+                .setAudioPlaybackCaptureConfig(
+                    captureConfig
+                )
+                .build()
+
+        if (
+            audioRecord?.state !=
+            AudioRecord.STATE_INITIALIZED
+        ) {
+
+            throw Exception(
+                "AudioRecord não foi inicializado"
+            )
+        }
+
+        audioRecord?.startRecording()
+
+        Log.d(
+            TAG,
+            "AudioRecord iniciado"
+        )
+    }
+
+    // ---------------------------------------------------------
+    // AUDIO TRACK
+    // ---------------------------------------------------------
+
+    private fun createAudioTrack() {
+
+        val minBuffer =
+            AudioTrack.getMinBufferSize(
+                OUTPUT_SAMPLE_RATE,
+                CHANNEL_OUT,
+                ENCODING
+            )
+
+        if (minBuffer <= 0) {
+
+            throw Exception(
+                "AudioTrack.getMinBufferSize inválido"
+            )
+        }
+
+        val bufferSize =
+            maxOf(
+                minBuffer * 4,
+                24000
+            )
+
+        val attributes =
+            AudioAttributes.Builder()
+                .setUsage(
+                    AudioAttributes.USAGE_MEDIA
+                )
+                .setContentType(
+                    AudioAttributes.CONTENT_TYPE_SPEECH
+                )
+                .build()
+
+        val format =
+            AudioFormat.Builder()
+                .setEncoding(ENCODING)
+                .setSampleRate(
+                    OUTPUT_SAMPLE_RATE
+                )
+                .setChannelMask(
+                    CHANNEL_OUT
+                )
+                .build()
+
+        audioTrack =
+            AudioTrack.Builder()
+                .setAudioAttributes(attributes)
+                .setAudioFormat(format)
+                .setBufferSizeInBytes(bufferSize)
+                .setTransferMode(
+                    AudioTrack.MODE_STREAM
+                )
+                .setPerformanceMode(
+                    AudioTrack.PERFORMANCE_MODE_LOW_LATENCY
+                )
+                .build()
+
+        if (
+            audioTrack?.state !=
+            AudioTrack.STATE_INITIALIZED
+        ) {
+
+            throw Exception(
+                "AudioTrack não foi inicializado"
+            )
+        }
+
+        // Volume máximo do próprio AudioTrack
+        try {
+            audioTrack?.setVolume(1.0f)
+        } catch (_: Exception) {
+        }
+
+        // Tentar direcionar para o alto-falante
+        routeAudioToSpeaker()
+
+        requestAudioFocus()
+
+        audioTrack?.play()
+
+        outputPlaying = true
+
+        Log.d(
+            TAG,
+            "AudioTrack iniciado"
+        )
+    }
+
+    // ---------------------------------------------------------
+    // DIRECIONAR ÁUDIO PARA O ALTO-FALANTE
+    // ---------------------------------------------------------
+
+    private fun routeAudioToSpeaker() {
+
+        val track =
+            audioTrack ?: return
+
+        val manager =
+            audioManager ?: return
+
+        try {
+
+            val devices =
+                manager.getDevices(
+                    AudioManager.GET_DEVICES_OUTPUTS
+                )
+
+            val speaker =
+                devices.firstOrNull {
+                    it.type ==
+                        AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                }
+
+            if (speaker != null) {
+
+                val result =
+                    track.setPreferredDevice(
+                        speaker
+                    )
+
+                Log.d(
+                    TAG,
+                    "Alto-falante selecionado: $result"
+                )
+
+            } else {
+
+                Log.d(
+                    TAG,
+                    "Alto-falante interno não encontrado"
+                )
+            }
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Erro ao selecionar alto-falante",
                 e
             )
         }
     }
 
-    // ============================================================
-    // IDIOMA
-    // ============================================================
+    // ---------------------------------------------------------
+    // AUDIO FOCUS
+    // ---------------------------------------------------------
 
-    private fun loadTargetLanguage() {
+    private fun requestAudioFocus() {
 
-        val currentJob = jobId
+        val manager =
+            audioManager ?: return
 
-        if (currentJob.isBlank()) {
-            return
-        }
+        try {
 
-        thread(
-            name = "SI-LoadLanguage"
-        ) {
+            if (Build.VERSION.SDK_INT >= 26) {
 
-            var connection:
-                    HttpURLConnection? = null
+                val request =
+                    AudioFocusRequest.Builder(
+                        AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+                    )
+                        .setAudioAttributes(
+                            AudioAttributes.Builder()
+                                .setUsage(
+                                    AudioAttributes.USAGE_MEDIA
+                                )
+                                .setContentType(
+                                    AudioAttributes.CONTENT_TYPE_SPEECH
+                                )
+                                .build()
+                        )
+                        .build()
 
-            try {
+                audioFocusRequest = request
 
-                val url =
-                    URL(
-                        "$BACKEND_URL/api/audio/status/$currentJob"
+                val result =
+                    manager.requestAudioFocus(
+                        request
                     )
 
-                connection =
-                    url.openConnection()
-                            as HttpURLConnection
-
-                connection.requestMethod = "GET"
-
-                connection.connectTimeout = 5000
-
-                connection.readTimeout = 8000
-
-                connection.setRequestProperty(
-                    "Connection",
-                    "close"
-                )
-
-                if (
-                    connection.responseCode == 200
-                ) {
-
-                    val response =
-                        connection.inputStream
-                            .bufferedReader()
-                            .use {
-                                it.readText()
-                            }
-
-                    val language =
-                        extractJsonString(
-                            response,
-                            "targetLang"
-                        )
-
-                    if (
-                        !language.isNullOrBlank()
-                    ) {
-
-                        targetLanguage = language
-
-                        Log.d(
-                            TAG,
-                            "Idioma alvo recebido do Render: " +
-                                    language
-                        )
-                    }
-                }
-
-            } catch (e: Exception) {
-
-                Log.w(
+                Log.d(
                     TAG,
-                    "Não foi possível ler targetLang do Render",
-                    e
+                    "Audio focus=$result"
                 )
 
-            } finally {
+            } else {
 
-                connection?.disconnect()
+                @Suppress("DEPRECATION")
+                manager.requestAudioFocus(
+                    null,
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+                )
             }
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Erro no audio focus",
+                e
+            )
         }
     }
 
-    // ============================================================
+    // ---------------------------------------------------------
     // THREAD DE CAPTURA
-    // ============================================================
+    // ---------------------------------------------------------
 
     private fun startCaptureThread() {
 
         captureThread =
             thread(
-                name = "SI-AudioCapture"
+                name = "SI-Capture"
             ) {
 
                 val buffer =
@@ -790,121 +661,81 @@ class AudioCaptureService : Service() {
 
                     try {
 
-                        val record =
-                            audioRecord ?: break
-
-                        val read =
-                            record.read(
+                        val count =
+                            audioRecord?.read(
                                 buffer,
                                 0,
-                                buffer.size,
-                                AudioRecord.READ_BLOCKING
-                            )
+                                buffer.size
+                            ) ?: -1
 
-                        readCount++
+                        if (count > 0) {
 
-                        lastRead = read
-
-                        if (read > 0) {
+                            readCount++
+                            lastRead = count
+                            capturedBytes += count.toLong()
 
                             val chunk =
-                                buffer.copyOf(read)
-
-                            capturedBytes +=
-                                read.toLong()
+                                buffer.copyOf(count)
 
                             if (
-                                !audioQueue.offer(chunk)
+                                !audioQueue.offer(
+                                    chunk,
+                                    100,
+                                    TimeUnit.MILLISECONDS
+                                )
                             ) {
 
-                                audioQueue.poll()
-
-                                audioQueue.offer(chunk)
-                            }
-
-                            if (
-                                readCount == 1 ||
-                                readCount % 20 == 0
-                            ) {
-
-                                Log.d(
+                                Log.w(
                                     TAG,
-                                    "Áudio capturado: " +
-                                            "read=$read " +
-                                            "bytes=$capturedBytes " +
-                                            "queue=${audioQueue.size}"
+                                    "Fila de captura cheia"
                                 )
                             }
 
-                        } else if (
-                            read ==
-                            AudioRecord.ERROR_INVALID_OPERATION
-                        ) {
+                            queueSize =
+                                audioQueue.size
 
-                            diagnosticError =
-                                "ERROR_INVALID_OPERATION"
+                        } else {
 
-                            break
+                            Log.w(
+                                TAG,
+                                "AudioRecord.read=$count"
+                            )
 
-                        } else if (
-                            read ==
-                            AudioRecord.ERROR_BAD_VALUE
-                        ) {
-
-                            diagnosticError =
-                                "ERROR_BAD_VALUE"
-
-                            break
-
-                        } else if (
-                            read ==
-                            AudioRecord.ERROR_DEAD_OBJECT
-                        ) {
-
-                            diagnosticError =
-                                "ERROR_DEAD_OBJECT"
-
-                            break
+                            Thread.sleep(20)
                         }
-
-                    } catch (
-                        _: InterruptedException
-                    ) {
-
-                        break
 
                     } catch (e: Exception) {
 
-                        diagnosticError =
-                            "${e.javaClass.simpleName}: " +
-                                    "${e.message ?: ""}"
+                        if (running) {
 
-                        Log.e(
-                            TAG,
-                            "Erro no AudioRecord",
-                            e
-                        )
+                            errorMessage =
+                                "Erro na captura: ${e.message}"
 
-                        break
+                            Log.e(
+                                TAG,
+                                "Erro na thread de captura",
+                                e
+                            )
+                        }
                     }
                 }
 
                 Log.d(
                     TAG,
-                    "Thread de captura terminou"
+                    "Thread de captura encerrada"
                 )
             }
     }
 
-    // ============================================================
-    // THREAD DE ENVIO PARA RENDER
-    // ============================================================
+    // ---------------------------------------------------------
+    // THREAD DE ENVIO PARA GEMINI
+    // ---------------------------------------------------------
 
     private fun startSendThread() {
 
         sendThread =
             thread(
-                name = "SI-AudioSend"
+                name = "SI-Send"
             ) {
 
                 while (running) {
@@ -912,262 +743,206 @@ class AudioCaptureService : Service() {
                     try {
 
                         val chunk =
-                            audioQueue.take()
-
-                        sendAudioChunk(
-                            Base64.encodeToString(
-                                chunk,
-                                Base64.NO_WRAP
+                            audioQueue.poll(
+                                200,
+                                TimeUnit.MILLISECONDS
                             )
-                        )
 
-                    } catch (
-                        _: InterruptedException
-                    ) {
+                        if (chunk != null) {
 
-                        break
+                            sendAudioChunk(
+                                chunk
+                            )
+                        }
 
                     } catch (e: Exception) {
 
-                        Log.e(
-                            TAG,
-                            "Erro enviando áudio",
-                            e
-                        )
+                        if (running) {
+
+                            Log.e(
+                                TAG,
+                                "Erro enviando áudio",
+                                e
+                            )
+                        }
                     }
                 }
+
+                Log.d(
+                    TAG,
+                    "Thread de envio encerrada"
+                )
             }
     }
 
-    // ============================================================
+    // ---------------------------------------------------------
     // ENVIAR CHUNK
-    // ============================================================
+    // ---------------------------------------------------------
 
     private fun sendAudioChunk(
-        base64: String
+        data: ByteArray
     ) {
 
-        if (jobId.isBlank()) {
-            return
-        }
+        val id =
+            jobId ?: return
 
-        var connection:
-                HttpURLConnection? = null
+        thread {
 
-        try {
+            try {
 
-            connection =
-                URL(
-                    "$BACKEND_URL/api/audio/chunk"
+                val encoded =
+                    Base64.encodeToString(
+                        data,
+                        Base64.NO_WRAP
+                    )
+
+                val body =
+                    JSONObject()
+                        .put(
+                            "jobId",
+                            id
+                        )
+                        .put(
+                            "clientId",
+                            clientId
+                        )
+                        .put(
+                            "audio",
+                            encoded
+                        )
+                        .toString()
+
+                postJson(
+                    "$BACKEND_URL/api/audio/chunk",
+                    body
                 )
-                    .openConnection()
-                        as HttpURLConnection
 
-            connection.requestMethod = "POST"
+            } catch (e: Exception) {
 
-            connection.doOutput = true
+                if (running) {
 
-            connection.connectTimeout = 8000
-
-            connection.readTimeout = 10000
-
-            connection.setRequestProperty(
-                "Content-Type",
-                "application/json"
-            )
-
-            connection.setRequestProperty(
-                "Connection",
-                "close"
-            )
-
-            val json =
-                JSONObject().apply {
-
-                    put(
-                        "jobId",
-                        jobId
+                    Log.e(
+                        TAG,
+                        "Erro no envio do chunk",
+                        e
                     )
-
-                    put(
-                        "audio",
-                        base64
-                    )
-                }.toString()
-
-            connection.outputStream.use {
-
-                it.write(
-                    json.toByteArray(
-                        Charsets.UTF_8
-                    )
-                )
+                }
             }
-
-            val code =
-                connection.responseCode
-
-            if (code !in 200..299) {
-
-                Log.e(
-                    TAG,
-                    "Render respondeu HTTP " +
-                            "$code ao enviar chunk"
-                )
-            }
-
-        } catch (e: Exception) {
-
-            Log.e(
-                TAG,
-                "Falha ao enviar chunk",
-                e
-            )
-
-        } finally {
-
-            connection?.disconnect()
         }
     }
 
-    // ============================================================
-    // THREAD DE SAÍDA GEMINI
-    // ============================================================
+    // ---------------------------------------------------------
+    // THREAD DE SAÍDA
+    // ---------------------------------------------------------
 
     private fun startOutputThread() {
 
         outputThread =
             thread(
-                name = "SI-AudioGeminiOutput"
+                name = "SI-Output"
             ) {
 
                 while (running) {
 
                     try {
 
-                        // Pequeno intervalo para não sobrecarregar
-                        // o Render com requisições.
-                        Thread.sleep(100)
+                        pollOutput()
 
-                        fetchAndPlayGeminiAudio()
-
-                    } catch (
-                        _: InterruptedException
-                    ) {
-
-                        break
+                        Thread.sleep(
+                            OUTPUT_POLL_MS
+                        )
 
                     } catch (e: Exception) {
 
-                        Log.e(
-                            TAG,
-                            "Erro buscando áudio do Gemini",
-                            e
-                        )
+                        if (running) {
+
+                            Log.e(
+                                TAG,
+                                "Erro na saída de áudio",
+                                e
+                            )
+                        }
                     }
                 }
+
+                Log.d(
+                    TAG,
+                    "Thread de saída encerrada"
+                )
             }
     }
 
-    // ============================================================
-    // BUSCAR ÁUDIO DO GEMINI NO RENDER
-    // ============================================================
+    // ---------------------------------------------------------
+    // BUSCAR ÁUDIO TRADUZIDO
+    // ---------------------------------------------------------
 
-    private fun fetchAndPlayGeminiAudio() {
+    private fun pollOutput() {
 
-        if (jobId.isBlank()) {
-            return
-        }
-
-        var connection:
-                HttpURLConnection? = null
+        val id =
+            jobId ?: return
 
         try {
 
-            val url =
-                URL(
-                    "$BACKEND_URL/api/audio/output/$jobId"
-                )
-
-            connection =
-                url.openConnection()
-                        as HttpURLConnection
-
-            connection.requestMethod = "GET"
-
-            connection.connectTimeout = 5000
-
-            connection.readTimeout = 8000
-
-            connection.setRequestProperty(
-                "Connection",
-                "close"
-            )
-
-            connection.setRequestProperty(
-                "Accept",
-                "application/json"
-            )
-
-            val code =
-                connection.responseCode
-
-            if (code != 200) {
-
-                if (code != 204) {
-
-                    Log.w(
-                        TAG,
-                        "Output Render HTTP $code"
-                    )
-                }
-
-                return
-            }
-
             val response =
-                BufferedReader(
-                    InputStreamReader(
-                        connection.inputStream,
-                        Charsets.UTF_8
-                    )
-                ).use {
-                    it.readText()
-                }
+                getJson(
+                    "$BACKEND_URL/api/audio/output/$id"
+                ) ?: return
 
             if (response.isBlank()) {
                 return
             }
 
-            val audioBase64 =
-                extractAudioBase64(
-                    response
-                )
+            val json =
+                JSONObject(response)
 
             if (
-                audioBase64.isNullOrBlank()
+                json.has("error") &&
+                !json.isNull("error")
             ) {
+
+                Log.e(
+                    TAG,
+                    "Erro retornado pelo backend: ${
+                        json.optString("error")
+                    }"
+                )
+
+                return
+            }
+
+            var encoded =
+                json.optString(
+                    "audio",
+                    ""
+                )
+
+            if (encoded.isBlank()) {
+
+                encoded =
+                    json.optString(
+                        "data",
+                        ""
+                    )
+            }
+
+            if (encoded.isBlank()) {
+
+                encoded =
+                    json.optString(
+                        "pcm",
+                        ""
+                    )
+            }
+
+            if (encoded.isBlank()) {
                 return
             }
 
             val pcm =
-                try {
-
-                    Base64.decode(
-                        audioBase64,
-                        Base64.DEFAULT
-                    )
-
-                } catch (e: Exception) {
-
-                    Log.e(
-                        TAG,
-                        "Base64 do áudio inválido",
-                        e
-                    )
-
-                    return
-                }
+                Base64.decode(
+                    encoded,
+                    Base64.DEFAULT
+                )
 
             if (pcm.isEmpty()) {
                 return
@@ -1178,24 +953,413 @@ class AudioCaptureService : Service() {
 
             outputChunksReceived++
 
-            Log.d(
-                TAG,
-                "Áudio Gemini recebido: " +
-                        "${pcm.size} bytes " +
-                        "chunks=$outputChunksReceived"
+            outputQueue.offer(
+                pcm,
+                100,
+                TimeUnit.MILLISECONDS
             )
 
-            playGeminiAudio(
-                pcm
+            playOutputQueue()
+
+        } catch (e: Exception) {
+
+            if (running) {
+
+                Log.e(
+                    TAG,
+                    "Erro lendo saída",
+                    e
+                )
+            }
+        }
+    }
+
+    // ---------------------------------------------------------
+    // REPRODUZIR ÁUDIO
+    // ---------------------------------------------------------
+
+    private fun playOutputQueue() {
+
+        val track =
+            audioTrack ?: return
+
+        if (
+            track.state !=
+            AudioTrack.STATE_INITIALIZED
+        ) {
+            return
+        }
+
+        try {
+
+            while (true) {
+
+                val pcm =
+                    outputQueue.poll()
+                        ?: break
+
+                if (pcm.isEmpty()) {
+                    continue
+                }
+
+                // Garantir que o AudioTrack continue tocando
+                if (
+                    track.playState !=
+                    AudioTrack.PLAYSTATE_PLAYING
+                ) {
+
+                    routeAudioToSpeaker()
+
+                    track.play()
+
+                    outputPlaying = true
+                }
+
+                var offset = 0
+
+                while (
+                    offset < pcm.size &&
+                    running
+                ) {
+
+                    val written =
+                        if (Build.VERSION.SDK_INT >= 23) {
+
+                            track.write(
+                                pcm,
+                                offset,
+                                pcm.size - offset,
+                                AudioTrack.WRITE_BLOCKING
+                            )
+
+                        } else {
+
+                            @Suppress("DEPRECATION")
+                            track.write(
+                                pcm,
+                                offset,
+                                pcm.size - offset
+                            )
+                        }
+
+                    if (written > 0) {
+
+                        offset += written
+
+                        playedOutputBytes +=
+                            written.toLong()
+
+                    } else if (written < 0) {
+
+                        Log.e(
+                            TAG,
+                            "AudioTrack.write=$written"
+                        )
+
+                        break
+
+                    } else {
+
+                        Thread.sleep(5)
+                    }
+                }
+
+                outputChunksPlayed++
+
+                Log.d(
+                    TAG,
+                    "Áudio reproduzido: ${pcm.size} bytes"
+                )
+            }
+
+        } catch (e: Exception) {
+
+            if (running) {
+
+                errorMessage =
+                    "Erro reproduzindo áudio: ${e.message}"
+
+                Log.e(
+                    TAG,
+                    "Erro no AudioTrack",
+                    e
+                )
+            }
+        }
+    }
+
+    // ---------------------------------------------------------
+    // STATUS DA SESSÃO
+    // ---------------------------------------------------------
+
+    private fun loadSessionStatus() {
+
+        val id =
+            jobId ?: return
+
+        try {
+
+            val response =
+                getJson(
+                    "$BACKEND_URL/api/audio/status/$id"
+                ) ?: return
+
+            if (response.isBlank()) {
+                return
+            }
+
+            val json =
+                JSONObject(response)
+
+            val language =
+                json.optString(
+                    "targetLanguage",
+                    ""
+                )
+
+            if (language.isNotBlank()) {
+
+                targetLanguage =
+                    language
+            }
+
+            Log.d(
+                TAG,
+                "Idioma destino=$targetLanguage"
             )
+
+        } catch (e: Exception) {
+
+            Log.w(
+                TAG,
+                "Não foi possível obter idioma: ${e.message}"
+            )
+        }
+    }
+
+    // ---------------------------------------------------------
+    // DIAGNÓSTICO
+    // ---------------------------------------------------------
+
+    private fun startDiagnosticThread() {
+
+        diagnosticThread =
+            thread(
+                name = "SI-Diagnostic"
+            ) {
+
+                while (running) {
+
+                    try {
+
+                        sendDiagnostic()
+
+                        Thread.sleep(5000)
+
+                    } catch (e: Exception) {
+
+                        if (running) {
+
+                            Log.e(
+                                TAG,
+                                "Erro no diagnóstico",
+                                e
+                            )
+                        }
+                    }
+                }
+            }
+    }
+
+    private fun sendDiagnostic() {
+
+        val id =
+            jobId ?: return
+
+        try {
+
+            val json =
+                JSONObject()
+
+                    .put(
+                        "jobId",
+                        id
+                    )
+
+                    .put(
+                        "recording",
+                        running
+                    )
+
+                    .put(
+                        "captureStarted",
+                        captureStarted
+                    )
+
+                    .put(
+                        "readCount",
+                        readCount
+                    )
+
+                    .put(
+                        "lastRead",
+                        lastRead
+                    )
+
+                    .put(
+                        "capturedBytes",
+                        capturedBytes
+                    )
+
+                    .put(
+                        "queueSize",
+                        audioQueue.size
+                    )
+
+                    .put(
+                        "targetLanguage",
+                        targetLanguage
+                    )
+
+                    .put(
+                        "ttsReady",
+                        outputPlaying
+                    )
+
+                    .put(
+                        "audioTrackReady",
+                        audioTrack?.state ==
+                            AudioTrack.STATE_INITIALIZED
+                    )
+
+                    .put(
+                        "outputPlaying",
+                        outputPlaying
+                    )
+
+                    .put(
+                        "receivedOutputBytes",
+                        receivedOutputBytes
+                    )
+
+                    .put(
+                        "playedOutputBytes",
+                        playedOutputBytes
+                    )
+
+                    .put(
+                        "outputChunksReceived",
+                        outputChunksReceived
+                    )
+
+                    .put(
+                        "outputChunksPlayed",
+                        outputChunksPlayed
+                    )
+
+                    .put(
+                        "error",
+                        errorMessage
+                    )
+
+            postJson(
+                "$BACKEND_URL/api/audio/diagnostic",
+                json.toString()
+            )
+
+        } catch (e: Exception) {
+
+            Log.w(
+                TAG,
+                "Falha no diagnóstico: ${e.message}"
+            )
+        }
+    }
+
+    // ---------------------------------------------------------
+    // HTTP POST
+    // ---------------------------------------------------------
+
+    private fun postJson(
+        urlString: String,
+        body: String
+    ): String? {
+
+        var connection:
+            HttpURLConnection? = null
+
+        return try {
+
+            val url =
+                URL(urlString)
+
+            connection =
+                url.openConnection()
+                    as HttpURLConnection
+
+            connection.requestMethod =
+                "POST"
+
+            connection.connectTimeout =
+                15000
+
+            connection.readTimeout =
+                30000
+
+            connection.doOutput =
+                true
+
+            connection.setRequestProperty(
+                "Content-Type",
+                "application/json"
+            )
+
+            connection.setRequestProperty(
+                "Accept",
+                "application/json"
+            )
+
+            connection.outputStream
+                .use { output ->
+
+                    output.write(
+                        body.toByteArray(
+                            Charsets.UTF_8
+                        )
+                    )
+                }
+
+            val code =
+                connection.responseCode
+
+            val stream =
+                if (code in 200..299) {
+                    connection.inputStream
+                } else {
+                    connection.errorStream
+                }
+
+            if (stream == null) {
+                return null
+            }
+
+            BufferedReader(
+                InputStreamReader(
+                    stream
+                )
+            ).use {
+                it.readText()
+            }
 
         } catch (e: Exception) {
 
             Log.e(
                 TAG,
-                "Erro recebendo áudio Gemini",
+                "HTTP POST erro: $urlString",
                 e
             )
+
+            null
 
         } finally {
 
@@ -1203,764 +1367,85 @@ class AudioCaptureService : Service() {
         }
     }
 
-    // ============================================================
-    // EXTRAIR BASE64 DE DIFERENTES FORMATOS JSON
-    // ============================================================
+    // ---------------------------------------------------------
+    // HTTP GET
+    // ---------------------------------------------------------
 
-    private fun extractAudioBase64(
-        response: String
+    private fun getJson(
+        urlString: String
     ): String? {
+
+        var connection:
+            HttpURLConnection? = null
 
         return try {
 
-            val json =
-                JSONObject(response)
+            val url =
+                URL(urlString)
 
-            // Formato principal:
-            //
-            // {
-            //   "ok": true,
-            //   "audio": "BASE64..."
-            // }
+            connection =
+                url.openConnection()
+                    as HttpURLConnection
 
-            if (
-                json.has("audio") &&
-                !json.isNull("audio")
-            ) {
+            connection.requestMethod =
+                "GET"
 
-                return json.optString(
-                    "audio",
-                    null
-                )
-            }
+            connection.connectTimeout =
+                10000
 
-            // Possíveis nomes alternativos.
+            connection.readTimeout =
+                15000
 
-            if (
-                json.has("data") &&
-                !json.isNull("data")
-            ) {
-
-                val data =
-                    json.optString(
-                        "data",
-                        ""
-                    )
-
-                if (data.isNotBlank()) {
-                    return data
-                }
-            }
-
-            if (
-                json.has("pcm") &&
-                !json.isNull("pcm")
-            ) {
-
-                return json.optString(
-                    "pcm",
-                    null
-                )
-            }
-
-            null
-
-        } catch (e: Exception) {
-
-            Log.e(
-                TAG,
-                "JSON de output inválido: $response",
-                e
+            connection.setRequestProperty(
+                "Accept",
+                "application/json"
             )
 
-            null
-        }
-    }
+            val code =
+                connection.responseCode
 
-    // ============================================================
-    // REPRODUZIR ÁUDIO GEMINI
-    // ============================================================
-
-    private fun playGeminiAudio(
-        pcm: ByteArray
-    ) {
-
-        try {
-
-            var track = audioTrack
-
-            if (
-                track == null ||
-                track.state !=
-                AudioTrack.STATE_INITIALIZED
-            ) {
-
-                initializeAudioTrack()
-
-                track = audioTrack
-            }
-
-            if (track == null) {
-
-                diagnosticError =
-                    "AudioTrack indisponível"
-
-                Log.e(
-                    TAG,
-                    diagnosticError!!
-                )
-
-                return
-            }
-
-            if (
-                track.playState !=
-                AudioTrack.PLAYSTATE_PLAYING
-            ) {
-
-                track.play()
-
-                Log.d(
-                    TAG,
-                    "AudioTrack voltou para PLAYING"
-                )
-            }
-
-            var offset = 0
-
-            while (
-                offset < pcm.size &&
-                running
-            ) {
-
-                val written =
-                    track.write(
-                        pcm,
-                        offset,
-                        pcm.size - offset,
-                        AudioTrack.WRITE_BLOCKING
-                    )
-
-                if (written > 0) {
-
-                    offset += written
-
-                    playedOutputBytes +=
-                        written.toLong()
-
+            val stream =
+                if (code in 200..299) {
+                    connection.inputStream
                 } else {
-
-                    Log.e(
-                        TAG,
-                        "AudioTrack.write retornou $written"
-                    )
-
-                    break
+                    connection.errorStream
                 }
+
+            if (stream == null) {
+                return null
             }
 
-            if (offset > 0) {
-
-                outputChunksPlayed++
-
-                Log.d(
-                    TAG,
-                    "Áudio Gemini reproduzido: " +
-                            "$offset bytes " +
-                            "chunks=$outputChunksPlayed"
+            BufferedReader(
+                InputStreamReader(
+                    stream
                 )
+            ).use {
+                it.readText()
             }
 
         } catch (e: Exception) {
 
-            diagnosticError =
-                "Erro reproduzindo Gemini: " +
-                        "${e.javaClass.simpleName}: " +
-                        "${e.message}"
-
             Log.e(
                 TAG,
-                diagnosticError!!,
+                "HTTP GET erro: $urlString",
                 e
             )
+
+            null
+
+        } finally {
+
+            connection?.disconnect()
         }
     }
 
-    // ============================================================
-    // DIAGNÓSTICO
-    // ============================================================
-
-    private fun startDiagnosticThread() {
-
-        diagnosticThread =
-            thread(
-                name = "SI-AudioDiagnostic"
-            ) {
-
-                while (running) {
-
-                    try {
-
-                        Thread.sleep(3000)
-
-                        sendDiagnostic()
-
-                    } catch (
-                        _: InterruptedException
-                    ) {
-
-                        break
-                    }
-                }
-            }
-    }
-
-    // ============================================================
-    // ENVIAR DIAGNÓSTICO
-    // ============================================================
-
-    private fun sendDiagnostic() {
-
-        if (jobId.isBlank()) {
-            return
-        }
-
-        thread(
-            name = "SI-DiagnosticRequest"
-        ) {
-
-            var connection:
-                    HttpURLConnection? = null
-
-            try {
-
-                connection =
-                    URL(
-                        "$BACKEND_URL/api/audio/diagnostic"
-                    )
-                        .openConnection()
-                            as HttpURLConnection
-
-                connection.requestMethod = "POST"
-
-                connection.doOutput = true
-
-                connection.connectTimeout = 5000
-
-                connection.readTimeout = 8000
-
-                connection.setRequestProperty(
-                    "Content-Type",
-                    "application/json"
-                )
-
-                connection.setRequestProperty(
-                    "Connection",
-                    "close"
-                )
-
-                val recording =
-                    audioRecord?.recordingState ==
-                            AudioRecord.RECORDSTATE_RECORDING
-
-                val outputPlaying =
-                    audioTrack?.playState ==
-                            AudioTrack.PLAYSTATE_PLAYING
-
-                val json =
-                    JSONObject().apply {
-
-                        put(
-                            "jobId",
-                            jobId
-                        )
-
-                        put(
-                            "recording",
-                            recording
-                        )
-
-                        put(
-                            "captureStarted",
-                            captureStarted
-                        )
-
-                        put(
-                            "readCount",
-                            readCount
-                        )
-
-                        put(
-                            "lastRead",
-                            lastRead
-                        )
-
-                        put(
-                            "capturedBytes",
-                            capturedBytes
-                        )
-
-                        put(
-                            "queueSize",
-                            audioQueue.size
-                        )
-
-                        put(
-                            "targetLanguage",
-                            targetLanguage
-                        )
-
-                        put(
-                            "ttsReady",
-                            outputPlaying
-                        )
-
-                        put(
-                            "audioTrackReady",
-                            audioTrack?.state ==
-                                    AudioTrack.STATE_INITIALIZED
-                        )
-
-                        put(
-                            "outputPlaying",
-                            outputPlaying
-                        )
-
-                        put(
-                            "receivedOutputBytes",
-                            receivedOutputBytes
-                        )
-
-                        put(
-                            "playedOutputBytes",
-                            playedOutputBytes
-                        )
-
-                        put(
-                            "outputChunksReceived",
-                            outputChunksReceived
-                        )
-
-                        put(
-                            "outputChunksPlayed",
-                            outputChunksPlayed
-                        )
-
-                        if (
-                            diagnosticError.isNullOrBlank()
-                        ) {
-
-                            put(
-                                "error",
-                                JSONObject.NULL
-                            )
-
-                        } else {
-
-                            put(
-                                "error",
-                                diagnosticError
-                            )
-                        }
-                    }.toString()
-
-                connection.outputStream.use {
-
-                    it.write(
-                        json.toByteArray(
-                            Charsets.UTF_8
-                        )
-                    )
-                }
-
-                Log.d(
-                    TAG,
-                    "Diagnóstico HTTP " +
-                            "${connection.responseCode} " +
-                            "reads=$readCount " +
-                            "captured=$capturedBytes " +
-                            "received=$receivedOutputBytes " +
-                            "played=$playedOutputBytes"
-                )
-
-            } catch (e: Exception) {
-
-                Log.e(
-                    TAG,
-                    "Falha no diagnóstico",
-                    e
-                )
-
-            } finally {
-
-                connection?.disconnect()
-            }
-        }
-    }
-
-    // ============================================================
-    // PARAR CAPTURA
-    // ============================================================
-
-    private fun stopCapture(
-        sendServerStop: Boolean
-    ) {
-
-        if (
-            !running &&
-            !captureStarted
-        ) {
-
-            releaseAudioResources()
-
-            return
-        }
-
-        running = false
-
-        // --------------------------------------------------------
-        // PARAR THREADS
-        // --------------------------------------------------------
-
-        captureThread?.interrupt()
-
-        sendThread?.interrupt()
-
-        outputThread?.interrupt()
-
-        diagnosticThread?.interrupt()
-
-        captureThread = null
-
-        sendThread = null
-
-        outputThread = null
-
-        diagnosticThread = null
-
-        // --------------------------------------------------------
-        // PARAR AUDIO RECORD
-        // --------------------------------------------------------
-
-        try {
-            audioRecord?.stop()
-        } catch (_: Exception) {
-        }
-
-        try {
-            audioRecord?.release()
-        } catch (_: Exception) {
-        }
-
-        audioRecord = null
-
-        // --------------------------------------------------------
-        // PARAR AUDIO TRACK
-        // --------------------------------------------------------
-
-        try {
-            audioTrack?.pause()
-        } catch (_: Exception) {
-        }
-
-        try {
-            audioTrack?.flush()
-        } catch (_: Exception) {
-        }
-
-        try {
-            audioTrack?.stop()
-        } catch (_: Exception) {
-        }
-
-        try {
-            audioTrack?.release()
-        } catch (_: Exception) {
-        }
-
-        audioTrack = null
-
-        // --------------------------------------------------------
-        // INFORMAR RENDER
-        // --------------------------------------------------------
-
-        if (
-            sendServerStop &&
-            jobId.isNotBlank()
-        ) {
-
-            sendStopToServer()
-        }
-
-        // --------------------------------------------------------
-        // MEDIA PROJECTION
-        // --------------------------------------------------------
-
-        unregisterAndStopProjection()
-
-        audioQueue.clear()
-
-        captureStarted = false
-
-        // --------------------------------------------------------
-        // FOREGROUND
-        // --------------------------------------------------------
-
-        try {
-
-            if (
-                Build.VERSION.SDK_INT >=
-                Build.VERSION_CODES.N
-            ) {
-
-                stopForeground(
-                    STOP_FOREGROUND_REMOVE
-                )
-
-            } else {
-
-                @Suppress("DEPRECATION")
-                stopForeground(true)
-            }
-
-        } catch (_: Exception) {
-        }
-
-        Log.d(
-            TAG,
-            "Captura encerrada"
-        )
-
-        stopSelf()
-    }
-
-    // ============================================================
-    // LIBERAR RECURSOS
-    // ============================================================
-
-    private fun releaseAudioResources() {
-
-        try {
-            audioRecord?.stop()
-        } catch (_: Exception) {
-        }
-
-        try {
-            audioRecord?.release()
-        } catch (_: Exception) {
-        }
-
-        audioRecord = null
-
-        try {
-            audioTrack?.pause()
-        } catch (_: Exception) {
-        }
-
-        try {
-            audioTrack?.flush()
-        } catch (_: Exception) {
-        }
-
-        try {
-            audioTrack?.stop()
-        } catch (_: Exception) {
-        }
-
-        try {
-            audioTrack?.release()
-        } catch (_: Exception) {
-        }
-
-        audioTrack = null
-
-        unregisterAndStopProjection()
-
-        audioQueue.clear()
-
-        captureStarted = false
-    }
-
-    // ============================================================
-    // MEDIA PROJECTION STOP
-    // ============================================================
-
-    private fun unregisterAndStopProjection() {
-
-        try {
-
-            projectionCallback?.let {
-
-                mediaProjection?.unregisterCallback(
-                    it
-                )
-            }
-
-        } catch (_: Exception) {
-        }
-
-        projectionCallback = null
-
-        try {
-
-            mediaProjection?.stop()
-
-        } catch (_: Exception) {
-        }
-
-        mediaProjection = null
-    }
-
-    // ============================================================
-    // STOP NO RENDER
-    // ============================================================
-
-    private fun sendStopToServer() {
-
-        val currentJob = jobId
-
-        if (currentJob.isBlank()) {
-            return
-        }
-
-        thread(
-            name = "SI-AudioStop"
-        ) {
-
-            var connection:
-                    HttpURLConnection? = null
-
-            try {
-
-                connection =
-                    URL(
-                        "$BACKEND_URL/api/audio/stop"
-                    )
-                        .openConnection()
-                            as HttpURLConnection
-
-                connection.requestMethod = "POST"
-
-                connection.doOutput = true
-
-                connection.connectTimeout = 5000
-
-                connection.readTimeout = 8000
-
-                connection.setRequestProperty(
-                    "Content-Type",
-                    "application/json"
-                )
-
-                connection.setRequestProperty(
-                    "Connection",
-                    "close"
-                )
-
-                val json =
-                    JSONObject().apply {
-
-                        put(
-                            "jobId",
-                            currentJob
-                        )
-                    }.toString()
-
-                connection.outputStream.use {
-
-                    it.write(
-                        json.toByteArray(
-                            Charsets.UTF_8
-                        )
-                    )
-                }
-
-                Log.d(
-                    TAG,
-                    "Stop enviado HTTP " +
-                            connection.responseCode
-                )
-
-            } catch (e: Exception) {
-
-                Log.e(
-                    TAG,
-                    "Erro enviando stop",
-                    e
-                )
-
-            } finally {
-
-                connection?.disconnect()
-            }
-        }
-    }
-
-    // ============================================================
-    // FALHA
-    // ============================================================
-
-    private fun failCapture(
-        message: String
-    ) {
-
-        diagnosticError = message
-
-        Log.e(
-            TAG,
-            "FALHA NA CAPTURA: $message"
-        )
-
-        running = false
-
-        captureStarted = false
-
-        sendDiagnostic()
-
-        releaseAudioResources()
-
-        stopSelf()
-    }
-
-    // ============================================================
-    // FOREGROUND
-    // ============================================================
-
-    private fun startForegroundCompat() {
-
-        val notification =
-            createNotification()
-
-        if (
-            Build.VERSION.SDK_INT >=
-            Build.VERSION_CODES.Q
-        ) {
-
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-            )
-
-        } else {
-
-            startForeground(
-                NOTIFICATION_ID,
-                notification
-            )
-        }
-    }
-
-    // ============================================================
-    // NOTIFICATION CHANNEL
-    // ============================================================
+    // ---------------------------------------------------------
+    // NOTIFICAÇÃO
+    // ---------------------------------------------------------
 
     private fun createNotificationChannel() {
 
-        if (
-            Build.VERSION.SDK_INT >=
-            Build.VERSION_CODES.O
-        ) {
+        if (Build.VERSION.SDK_INT >= 26) {
 
             val channel =
                 NotificationChannel(
@@ -1972,26 +1457,21 @@ class AudioCaptureService : Service() {
             channel.description =
                 "Captura e tradução de áudio em tempo real"
 
-            getSystemService(
-                NotificationManager::class.java
-            )?.createNotificationChannel(
+            val manager =
+                getSystemService(
+                    NotificationManager::class.java
+                )
+
+            manager.createNotificationChannel(
                 channel
             )
         }
     }
 
-    // ============================================================
-    // NOTIFICATION
-    // ============================================================
+    private fun startForegroundServiceNotification() {
 
-    private fun createNotification(): Notification {
-
-        return if (
-            Build.VERSION.SDK_INT >=
-            Build.VERSION_CODES.O
-        ) {
-
-            Notification.Builder(
+        val notification: Notification =
+            NotificationCompat.Builder(
                 this,
                 CHANNEL_ID
             )
@@ -1999,104 +1479,200 @@ class AudioCaptureService : Service() {
                     "SI Tradutor Live"
                 )
                 .setContentText(
-                    "Traduzindo áudio da tela em tempo real..."
+                    "Traduzindo áudio em tempo real..."
                 )
                 .setSmallIcon(
-                    android.R.drawable.ic_media_play
+                    R.drawable.si_logo
                 )
                 .setOngoing(true)
+                .setCategory(
+                    NotificationCompat.CATEGORY_SERVICE
+                )
                 .build()
+
+        if (Build.VERSION.SDK_INT >= 29) {
+
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                android.content.pm.ServiceInfo
+                    .FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            )
 
         } else {
 
-            @Suppress("DEPRECATION")
-            Notification.Builder(this)
-                .setContentTitle(
-                    "SI Tradutor Live"
-                )
-                .setContentText(
-                    "Traduzindo áudio da tela em tempo real..."
-                )
-                .setSmallIcon(
-                    android.R.drawable.ic_media_play
-                )
-                .setOngoing(true)
-                .build()
+            startForeground(
+                NOTIFICATION_ID,
+                notification
+            )
         }
     }
 
-    // ============================================================
-    // JSON STRING
-    // ============================================================
+    // ---------------------------------------------------------
+    // PARAR CAPTURA
+    // ---------------------------------------------------------
 
-    private fun extractJsonString(
-        jsonText: String,
-        key: String
-    ): String? {
+    private fun stopCapture() {
 
-        return try {
+        if (!running &&
+            audioRecord == null &&
+            audioTrack == null &&
+            mediaProjection == null
+        ) {
+            return
+        }
 
-            val json =
-                JSONObject(jsonText)
+        Log.d(
+            TAG,
+            "Parando sessão $jobId"
+        )
+
+        running = false
+        captureStarted = false
+        outputPlaying = false
+
+        // Parar threads
+        try {
+            captureThread?.interrupt()
+        } catch (_: Exception) {
+        }
+
+        try {
+            sendThread?.interrupt()
+        } catch (_: Exception) {
+        }
+
+        try {
+            outputThread?.interrupt()
+        } catch (_: Exception) {
+        }
+
+        try {
+            diagnosticThread?.interrupt()
+        } catch (_: Exception) {
+        }
+
+        captureThread = null
+        sendThread = null
+        outputThread = null
+        diagnosticThread = null
+
+        // AudioRecord
+        try {
+
+            audioRecord?.stop()
+
+        } catch (_: Exception) {
+        }
+
+        try {
+
+            audioRecord?.release()
+
+        } catch (_: Exception) {
+        }
+
+        audioRecord = null
+
+        // AudioTrack
+        try {
+
+            audioTrack?.pause()
+
+        } catch (_: Exception) {
+        }
+
+        try {
+
+            audioTrack?.flush()
+
+        } catch (_: Exception) {
+        }
+
+        try {
+
+            audioTrack?.stop()
+
+        } catch (_: Exception) {
+        }
+
+        try {
+
+            audioTrack?.release()
+
+        } catch (_: Exception) {
+        }
+
+        audioTrack = null
+
+        // Audio focus
+        abandonAudioFocus()
+
+        // MediaProjection
+        try {
+
+            mediaProjection?.unregisterCallback(
+                projectionCallback
+            )
+
+        } catch (_: Exception) {
+        }
+
+        try {
+
+            mediaProjection?.stop()
+
+        } catch (_: Exception) {
+        }
+
+        mediaProjection = null
+
+        audioQueue.clear()
+        outputQueue.clear()
+
+        Log.d(
+            TAG,
+            "Sessão parada: $jobId"
+        )
+
+        jobId = null
+    }
+
+    // ---------------------------------------------------------
+    // LIBERAR AUDIO FOCUS
+    // ---------------------------------------------------------
+
+    private fun abandonAudioFocus() {
+
+        val manager =
+            audioManager ?: return
+
+        try {
 
             if (
-                !json.has(key) ||
-                json.isNull(key)
+                Build.VERSION.SDK_INT >= 26 &&
+                audioFocusRequest != null
             ) {
 
-                null
+                manager.abandonAudioFocusRequest(
+                    audioFocusRequest!!
+                )
+
+                audioFocusRequest = null
 
             } else {
 
-                json.optString(
-                    key,
-                    null
-                )
+                @Suppress("DEPRECATION")
+                manager.abandonAudioFocus(null)
             }
 
         } catch (_: Exception) {
-
-            try {
-
-                val pattern =
-                    "\"$key\"\\s*:\\s*\"((?:\\\\.|[^\"])*)\""
-                        .toRegex()
-
-                pattern
-                    .find(jsonText)
-                    ?.groupValues
-                    ?.getOrNull(1)
-                    ?.replace(
-                        "\\\"",
-                        "\""
-                    )
-                    ?.replace(
-                        "\\n",
-                        "\n"
-                    )
-                    ?.replace(
-                        "\\r",
-                        "\r"
-                    )
-
-            } catch (_: Exception) {
-
-                null
-            }
         }
     }
 
-    // ============================================================
-    // BIND
-    // ============================================================
-
-    override fun onBind(
-        intent: Intent?
-    ): IBinder? = null
-
-    // ============================================================
+    // ---------------------------------------------------------
     // DESTROY
-    // ============================================================
+    // ---------------------------------------------------------
 
     override fun onDestroy() {
 
@@ -2105,23 +1681,18 @@ class AudioCaptureService : Service() {
             "AudioCaptureService destruído"
         )
 
-        if (
-            running ||
-            captureStarted ||
-            audioRecord != null ||
-            audioTrack != null ||
-            mediaProjection != null
-        ) {
-
-            stopCapture(
-                sendServerStop = false
-            )
-
-        } else {
-
-            releaseAudioResources()
-        }
+        stopCapture()
 
         super.onDestroy()
+    }
+
+    // ---------------------------------------------------------
+    // BIND
+    // ---------------------------------------------------------
+
+    override fun onBind(
+        intent: Intent?
+    ): IBinder? {
+        return null
     }
 }
