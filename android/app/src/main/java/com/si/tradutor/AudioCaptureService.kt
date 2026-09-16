@@ -16,8 +16,8 @@ import android.media.AudioManager
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.AudioTrack
-import android.media.MediaProjection
-import android.media.MediaProjectionManager
+import android.media.projection.MediaProjection
+import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.IBinder
 import android.util.Base64
@@ -40,34 +40,55 @@ class AudioCaptureService : Service() {
 
         private const val TAG = "SI_AUDIO"
 
-        const val BACKEND_URL = "https://si-u2ul.onrender.com"
+        private const val BACKEND_URL =
+            "https://si-u2ul.onrender.com"
 
-        const val ACTION_START = "com.si.tradutor.START_AUDIO"
-        const val ACTION_STOP = "com.si.tradutor.STOP_AUDIO"
+        const val ACTION_START =
+            "com.si.tradutor.START_AUDIO"
 
-        const val EXTRA_JOB_ID = "jobId"
-        const val EXTRA_RESULT_CODE = "resultCode"
-        const val EXTRA_RESULT_DATA = "resultData"
+        const val ACTION_STOP =
+            "com.si.tradutor.STOP_AUDIO"
 
-        private const val CHANNEL_ID = "si_audio_channel"
-        private const val NOTIFICATION_ID = 7001
+        const val EXTRA_JOB_ID =
+            "jobId"
 
-        private const val SAMPLE_RATE = 16000
-        private const val OUTPUT_SAMPLE_RATE = 24000
+        const val EXTRA_RESULT_CODE =
+            "resultCode"
 
-        private const val CHANNEL_IN = AudioFormat.CHANNEL_IN_MONO
-        private const val CHANNEL_OUT = AudioFormat.CHANNEL_OUT_MONO
+        const val EXTRA_RESULT_DATA =
+            "resultData"
 
-        private const val ENCODING = AudioFormat.ENCODING_PCM_16BIT
+        private const val CHANNEL_ID =
+            "si_audio_channel"
 
-        private const val CHUNK_SIZE = 3200
+        private const val NOTIFICATION_ID =
+            7001
 
-        private const val OUTPUT_POLL_MS = 100L
+        private const val SAMPLE_RATE =
+            16000
+
+        private const val OUTPUT_SAMPLE_RATE =
+            24000
+
+        private const val CHANNEL_IN =
+            AudioFormat.CHANNEL_IN_MONO
+
+        private const val CHANNEL_OUT =
+            AudioFormat.CHANNEL_OUT_MONO
+
+        private const val ENCODING =
+            AudioFormat.ENCODING_PCM_16BIT
+
+        private const val CHUNK_SIZE =
+            3200
+
+        private const val OUTPUT_POLL_MS =
+            100L
     }
 
-    // ---------------------------------------------------------
+    // =========================================================
     // ESTADO
-    // ---------------------------------------------------------
+    // =========================================================
 
     @Volatile
     private var running = false
@@ -83,15 +104,23 @@ class AudioCaptureService : Service() {
 
     private var jobId: String? = null
 
-    private var targetLanguage = "pt-BR"
+    private var targetLanguage =
+        "pt-BR"
 
-    private var mediaProjection: MediaProjection? = null
-    private var audioRecord: AudioRecord? = null
-    private var audioTrack: AudioTrack? = null
+    private var mediaProjection:
+        MediaProjection? = null
 
-    private var audioManager: AudioManager? = null
+    private var audioRecord:
+        AudioRecord? = null
 
-    private var audioFocusRequest: AudioFocusRequest? = null
+    private var audioTrack:
+        AudioTrack? = null
+
+    private var audioManager:
+        AudioManager? = null
+
+    private var audioFocusRequest:
+        AudioFocusRequest? = null
 
     private val audioQueue =
         LinkedBlockingQueue<ByteArray>(100)
@@ -99,35 +128,50 @@ class AudioCaptureService : Service() {
     private val outputQueue =
         LinkedBlockingQueue<ByteArray>(100)
 
-    private var captureThread: Thread? = null
-    private var sendThread: Thread? = null
-    private var outputThread: Thread? = null
-    private var diagnosticThread: Thread? = null
+    private var captureThread:
+        Thread? = null
+
+    private var sendThread:
+        Thread? = null
+
+    private var outputThread:
+        Thread? = null
+
+    private var diagnosticThread:
+        Thread? = null
 
     private var readCount = 0
+
     private var capturedBytes = 0L
 
     private var receivedOutputBytes = 0L
+
     private var playedOutputBytes = 0L
 
     private var outputChunksReceived = 0
+
     private var outputChunksPlayed = 0
 
     private var lastRead = 0
+
     private var queueSize = 0
 
-    private var clientId: String =
+    private var clientId =
         UUID.randomUUID().toString()
 
-    // ---------------------------------------------------------
-    // MEDIA PROJECTION CALLBACK
-    // ---------------------------------------------------------
+    // =========================================================
+    // CALLBACK DO MEDIAPROJECTION
+    // =========================================================
 
     private val projectionCallback =
         object : MediaProjection.Callback() {
 
             override fun onStop() {
-                Log.d(TAG, "MediaProjection encerrado")
+
+                Log.d(
+                    TAG,
+                    "MediaProjection encerrado"
+                )
 
                 if (running) {
                     stopCapture()
@@ -135,20 +179,30 @@ class AudioCaptureService : Service() {
             }
         }
 
-    // ---------------------------------------------------------
-    // SERVICE
-    // ---------------------------------------------------------
+    // =========================================================
+    // ON CREATE
+    // =========================================================
 
     override fun onCreate() {
+
         super.onCreate()
 
-        Log.d(TAG, "AudioCaptureService criado")
+        Log.d(
+            TAG,
+            "AudioCaptureService criado"
+        )
 
         audioManager =
-            getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            getSystemService(
+                Context.AUDIO_SERVICE
+            ) as AudioManager
 
         createNotificationChannel()
     }
+
+    // =========================================================
+    // ON START COMMAND
+    // =========================================================
 
     override fun onStartCommand(
         intent: Intent?,
@@ -160,12 +214,17 @@ class AudioCaptureService : Service() {
             return START_NOT_STICKY
         }
 
-        val action = intent.action
+        val action =
+            intent.action
 
         Log.d(
             TAG,
             "onStartCommand action=$action"
         )
+
+        // -----------------------------------------------------
+        // PARAR
+        // -----------------------------------------------------
 
         if (action == ACTION_STOP) {
 
@@ -176,17 +235,28 @@ class AudioCaptureService : Service() {
             return START_NOT_STICKY
         }
 
+        // -----------------------------------------------------
+        // INICIAR
+        // -----------------------------------------------------
+
         if (action != ACTION_START) {
             return START_NOT_STICKY
         }
 
         if (running) {
-            Log.d(TAG, "Captura já está ativa")
+
+            Log.d(
+                TAG,
+                "Captura já está ativa"
+            )
+
             return START_STICKY
         }
 
         jobId =
-            intent.getStringExtra(EXTRA_JOB_ID)
+            intent.getStringExtra(
+                EXTRA_JOB_ID
+            )
 
         val resultCode =
             intent.getIntExtra(
@@ -194,13 +264,16 @@ class AudioCaptureService : Service() {
                 -1
             )
 
-        val resultData =
+        val resultData: Intent? =
             if (Build.VERSION.SDK_INT >= 33) {
+
                 intent.getParcelableExtra(
                     EXTRA_RESULT_DATA,
                     Intent::class.java
                 )
+
             } else {
+
                 @Suppress("DEPRECATION")
                 intent.getParcelableExtra(
                     EXTRA_RESULT_DATA
@@ -214,7 +287,7 @@ class AudioCaptureService : Service() {
 
             Log.e(
                 TAG,
-                "jobId não informado"
+                errorMessage!!
             )
 
             stopSelf()
@@ -222,14 +295,17 @@ class AudioCaptureService : Service() {
             return START_NOT_STICKY
         }
 
-        if (resultCode == -1 && resultData == null) {
+        if (
+            resultCode == -1 &&
+            resultData == null
+        ) {
 
             errorMessage =
                 "Permissão de captura inválida"
 
             Log.e(
                 TAG,
-                "Permissão MediaProjection inválida"
+                errorMessage!!
             )
 
             stopSelf()
@@ -241,7 +317,8 @@ class AudioCaptureService : Service() {
             ContextCompat.checkSelfPermission(
                 this,
                 Manifest.permission.RECORD_AUDIO
-            ) != PackageManager.PERMISSION_GRANTED
+            ) !=
+            PackageManager.PERMISSION_GRANTED
         ) {
 
             errorMessage =
@@ -267,9 +344,9 @@ class AudioCaptureService : Service() {
         return START_STICKY
     }
 
-    // ---------------------------------------------------------
+    // =========================================================
     // INICIAR CAPTURA
-    // ---------------------------------------------------------
+    // =========================================================
 
     private fun startCapture(
         resultCode: Int,
@@ -287,18 +364,27 @@ class AudioCaptureService : Service() {
         try {
 
             running = true
+
+            captureStarted = false
+
+            outputPlaying = false
+
             errorMessage = null
 
             audioQueue.clear()
+
             outputQueue.clear()
 
             readCount = 0
+
             capturedBytes = 0L
 
             receivedOutputBytes = 0L
+
             playedOutputBytes = 0L
 
             outputChunksReceived = 0
+
             outputChunksPlayed = 0
 
             val manager =
@@ -324,13 +410,13 @@ class AudioCaptureService : Service() {
                 null
             )
 
-            // Buscar idioma atual da sessão
+            // Buscar idioma da sessão
             loadSessionStatus()
 
-            // Criar AudioRecord
+            // Criar captura
             createAudioRecord()
 
-            // Criar AudioTrack
+            // Criar reprodução
             createAudioTrack()
 
             captureStarted = true
@@ -340,10 +426,12 @@ class AudioCaptureService : Service() {
                 "Captura iniciada"
             )
 
-            // Threads
             startCaptureThread()
+
             startSendThread()
+
             startOutputThread()
+
             startDiagnosticThread()
 
         } catch (e: Exception) {
@@ -361,9 +449,9 @@ class AudioCaptureService : Service() {
         }
     }
 
-    // ---------------------------------------------------------
+    // =========================================================
     // AUDIO RECORD
-    // ---------------------------------------------------------
+    // =========================================================
 
     private fun createAudioRecord() {
 
@@ -389,9 +477,15 @@ class AudioCaptureService : Service() {
 
         val config =
             AudioFormat.Builder()
-                .setEncoding(ENCODING)
-                .setSampleRate(SAMPLE_RATE)
-                .setChannelMask(CHANNEL_IN)
+                .setEncoding(
+                    ENCODING
+                )
+                .setSampleRate(
+                    SAMPLE_RATE
+                )
+                .setChannelMask(
+                    CHANNEL_IN
+                )
                 .build()
 
         val captureConfig =
@@ -411,8 +505,12 @@ class AudioCaptureService : Service() {
 
         audioRecord =
             AudioRecord.Builder()
-                .setAudioFormat(config)
-                .setBufferSizeInBytes(bufferSize)
+                .setAudioFormat(
+                    config
+                )
+                .setBufferSizeInBytes(
+                    bufferSize
+                )
                 .setAudioPlaybackCaptureConfig(
                     captureConfig
                 )
@@ -436,9 +534,9 @@ class AudioCaptureService : Service() {
         )
     }
 
-    // ---------------------------------------------------------
+    // =========================================================
     // AUDIO TRACK
-    // ---------------------------------------------------------
+    // =========================================================
 
     private fun createAudioTrack() {
 
@@ -474,7 +572,9 @@ class AudioCaptureService : Service() {
 
         val format =
             AudioFormat.Builder()
-                .setEncoding(ENCODING)
+                .setEncoding(
+                    ENCODING
+                )
                 .setSampleRate(
                     OUTPUT_SAMPLE_RATE
                 )
@@ -485,9 +585,15 @@ class AudioCaptureService : Service() {
 
         audioTrack =
             AudioTrack.Builder()
-                .setAudioAttributes(attributes)
-                .setAudioFormat(format)
-                .setBufferSizeInBytes(bufferSize)
+                .setAudioAttributes(
+                    attributes
+                )
+                .setAudioFormat(
+                    format
+                )
+                .setBufferSizeInBytes(
+                    bufferSize
+                )
                 .setTransferMode(
                     AudioTrack.MODE_STREAM
                 )
@@ -506,13 +612,15 @@ class AudioCaptureService : Service() {
             )
         }
 
-        // Volume máximo do próprio AudioTrack
         try {
-            audioTrack?.setVolume(1.0f)
+
+            audioTrack?.setVolume(
+                1.0f
+            )
+
         } catch (_: Exception) {
         }
 
-        // Tentar direcionar para o alto-falante
         routeAudioToSpeaker()
 
         requestAudioFocus()
@@ -527,9 +635,9 @@ class AudioCaptureService : Service() {
         )
     }
 
-    // ---------------------------------------------------------
-    // DIRECIONAR ÁUDIO PARA O ALTO-FALANTE
-    // ---------------------------------------------------------
+    // =========================================================
+    // ALTO-FALANTE
+    // =========================================================
 
     private fun routeAudioToSpeaker() {
 
@@ -548,6 +656,7 @@ class AudioCaptureService : Service() {
 
             val speaker =
                 devices.firstOrNull {
+
                     it.type ==
                         AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
                 }
@@ -576,15 +685,15 @@ class AudioCaptureService : Service() {
 
             Log.e(
                 TAG,
-                "Erro ao selecionar alto-falante",
+                "Erro selecionando alto-falante",
                 e
             )
         }
     }
 
-    // ---------------------------------------------------------
+    // =========================================================
     // AUDIO FOCUS
-    // ---------------------------------------------------------
+    // =========================================================
 
     private fun requestAudioFocus() {
 
@@ -611,7 +720,8 @@ class AudioCaptureService : Service() {
                         )
                         .build()
 
-                audioFocusRequest = request
+                audioFocusRequest =
+                    request
 
                 val result =
                     manager.requestAudioFocus(
@@ -643,9 +753,9 @@ class AudioCaptureService : Service() {
         }
     }
 
-    // ---------------------------------------------------------
+    // =========================================================
     // THREAD DE CAPTURA
-    // ---------------------------------------------------------
+    // =========================================================
 
     private fun startCaptureThread() {
 
@@ -655,7 +765,9 @@ class AudioCaptureService : Service() {
             ) {
 
                 val buffer =
-                    ByteArray(CHUNK_SIZE)
+                    ByteArray(
+                        CHUNK_SIZE
+                    )
 
                 while (running) {
 
@@ -671,11 +783,17 @@ class AudioCaptureService : Service() {
                         if (count > 0) {
 
                             readCount++
-                            lastRead = count
-                            capturedBytes += count.toLong()
+
+                            lastRead =
+                                count
+
+                            capturedBytes +=
+                                count.toLong()
 
                             val chunk =
-                                buffer.copyOf(count)
+                                buffer.copyOf(
+                                    count
+                                )
 
                             if (
                                 !audioQueue.offer(
@@ -701,7 +819,9 @@ class AudioCaptureService : Service() {
                                 "AudioRecord.read=$count"
                             )
 
-                            Thread.sleep(20)
+                            Thread.sleep(
+                                20
+                            )
                         }
 
                     } catch (e: Exception) {
@@ -727,9 +847,9 @@ class AudioCaptureService : Service() {
             }
     }
 
-    // ---------------------------------------------------------
-    // THREAD DE ENVIO PARA GEMINI
-    // ---------------------------------------------------------
+    // =========================================================
+    // THREAD DE ENVIO
+    // =========================================================
 
     private fun startSendThread() {
 
@@ -775,9 +895,9 @@ class AudioCaptureService : Service() {
             }
     }
 
-    // ---------------------------------------------------------
-    // ENVIAR CHUNK
-    // ---------------------------------------------------------
+    // =========================================================
+    // ENVIAR AUDIO
+    // =========================================================
 
     private fun sendAudioChunk(
         data: ByteArray
@@ -831,9 +951,9 @@ class AudioCaptureService : Service() {
         }
     }
 
-    // ---------------------------------------------------------
+    // =========================================================
     // THREAD DE SAÍDA
-    // ---------------------------------------------------------
+    // =========================================================
 
     private fun startOutputThread() {
 
@@ -872,9 +992,9 @@ class AudioCaptureService : Service() {
             }
     }
 
-    // ---------------------------------------------------------
-    // BUSCAR ÁUDIO TRADUZIDO
-    // ---------------------------------------------------------
+    // =========================================================
+    // BUSCAR SAÍDA DO GEMINI
+    // =========================================================
 
     private fun pollOutput() {
 
@@ -886,14 +1006,17 @@ class AudioCaptureService : Service() {
             val response =
                 getJson(
                     "$BACKEND_URL/api/audio/output/$id"
-                ) ?: return
+                )
+                    ?: return
 
             if (response.isBlank()) {
                 return
             }
 
             val json =
-                JSONObject(response)
+                JSONObject(
+                    response
+                )
 
             if (
                 json.has("error") &&
@@ -902,7 +1025,7 @@ class AudioCaptureService : Service() {
 
                 Log.e(
                     TAG,
-                    "Erro retornado pelo backend: ${
+                    "Erro backend: ${
                         json.optString("error")
                     }"
                 )
@@ -974,9 +1097,9 @@ class AudioCaptureService : Service() {
         }
     }
 
-    // ---------------------------------------------------------
-    // REPRODUZIR ÁUDIO
-    // ---------------------------------------------------------
+    // =========================================================
+    // REPRODUZIR SAÍDA
+    // =========================================================
 
     private fun playOutputQueue() {
 
@@ -1002,7 +1125,6 @@ class AudioCaptureService : Service() {
                     continue
                 }
 
-                // Garantir que o AudioTrack continue tocando
                 if (
                     track.playState !=
                     AudioTrack.PLAYSTATE_PLAYING
@@ -1044,7 +1166,8 @@ class AudioCaptureService : Service() {
 
                     if (written > 0) {
 
-                        offset += written
+                        offset +=
+                            written
 
                         playedOutputBytes +=
                             written.toLong()
@@ -1060,7 +1183,9 @@ class AudioCaptureService : Service() {
 
                     } else {
 
-                        Thread.sleep(5)
+                        Thread.sleep(
+                            5
+                        )
                     }
                 }
 
@@ -1088,9 +1213,9 @@ class AudioCaptureService : Service() {
         }
     }
 
-    // ---------------------------------------------------------
+    // =========================================================
     // STATUS DA SESSÃO
-    // ---------------------------------------------------------
+    // =========================================================
 
     private fun loadSessionStatus() {
 
@@ -1102,14 +1227,17 @@ class AudioCaptureService : Service() {
             val response =
                 getJson(
                     "$BACKEND_URL/api/audio/status/$id"
-                ) ?: return
+                )
+                    ?: return
 
             if (response.isBlank()) {
                 return
             }
 
             val json =
-                JSONObject(response)
+                JSONObject(
+                    response
+                )
 
             val language =
                 json.optString(
@@ -1137,9 +1265,9 @@ class AudioCaptureService : Service() {
         }
     }
 
-    // ---------------------------------------------------------
+    // =========================================================
     // DIAGNÓSTICO
-    // ---------------------------------------------------------
+    // =========================================================
 
     private fun startDiagnosticThread() {
 
@@ -1154,7 +1282,9 @@ class AudioCaptureService : Service() {
 
                         sendDiagnostic()
 
-                        Thread.sleep(5000)
+                        Thread.sleep(
+                            5000
+                        )
 
                     } catch (e: Exception) {
 
@@ -1162,7 +1292,7 @@ class AudioCaptureService : Service() {
 
                             Log.e(
                                 TAG,
-                                "Erro no diagnóstico",
+                                "Erro diagnóstico",
                                 e
                             )
                         }
@@ -1276,9 +1406,9 @@ class AudioCaptureService : Service() {
         }
     }
 
-    // ---------------------------------------------------------
-    // HTTP POST
-    // ---------------------------------------------------------
+    // =========================================================
+    // POST JSON
+    // =========================================================
 
     private fun postJson(
         urlString: String,
@@ -1367,9 +1497,9 @@ class AudioCaptureService : Service() {
         }
     }
 
-    // ---------------------------------------------------------
-    // HTTP GET
-    // ---------------------------------------------------------
+    // =========================================================
+    // GET JSON
+    // =========================================================
 
     private fun getJson(
         urlString: String
@@ -1439,9 +1569,9 @@ class AudioCaptureService : Service() {
         }
     }
 
-    // ---------------------------------------------------------
+    // =========================================================
     // NOTIFICAÇÃO
-    // ---------------------------------------------------------
+    // =========================================================
 
     private fun createNotificationChannel() {
 
@@ -1470,7 +1600,8 @@ class AudioCaptureService : Service() {
 
     private fun startForegroundServiceNotification() {
 
-        val notification: Notification =
+        val notification:
+            Notification =
             NotificationCompat.Builder(
                 this,
                 CHANNEL_ID
@@ -1508,13 +1639,14 @@ class AudioCaptureService : Service() {
         }
     }
 
-    // ---------------------------------------------------------
+    // =========================================================
     // PARAR CAPTURA
-    // ---------------------------------------------------------
+    // =========================================================
 
     private fun stopCapture() {
 
-        if (!running &&
+        if (
+            !running &&
             audioRecord == null &&
             audioTrack == null &&
             mediaProjection == null
@@ -1528,10 +1660,15 @@ class AudioCaptureService : Service() {
         )
 
         running = false
+
         captureStarted = false
+
         outputPlaying = false
 
-        // Parar threads
+        // -----------------------------------------------------
+        // THREADS
+        // -----------------------------------------------------
+
         try {
             captureThread?.interrupt()
         } catch (_: Exception) {
@@ -1553,62 +1690,65 @@ class AudioCaptureService : Service() {
         }
 
         captureThread = null
+
         sendThread = null
+
         outputThread = null
+
         diagnosticThread = null
 
-        // AudioRecord
+        // -----------------------------------------------------
+        // AUDIO RECORD
+        // -----------------------------------------------------
+
         try {
-
             audioRecord?.stop()
-
         } catch (_: Exception) {
         }
 
         try {
-
             audioRecord?.release()
-
         } catch (_: Exception) {
         }
 
         audioRecord = null
 
-        // AudioTrack
-        try {
+        // -----------------------------------------------------
+        // AUDIO TRACK
+        // -----------------------------------------------------
 
+        try {
             audioTrack?.pause()
-
         } catch (_: Exception) {
         }
 
         try {
-
             audioTrack?.flush()
-
         } catch (_: Exception) {
         }
 
         try {
-
             audioTrack?.stop()
-
         } catch (_: Exception) {
         }
 
         try {
-
             audioTrack?.release()
-
         } catch (_: Exception) {
         }
 
         audioTrack = null
 
-        // Audio focus
+        // -----------------------------------------------------
+        // AUDIO FOCUS
+        // -----------------------------------------------------
+
         abandonAudioFocus()
 
-        // MediaProjection
+        // -----------------------------------------------------
+        // MEDIA PROJECTION
+        // -----------------------------------------------------
+
         try {
 
             mediaProjection?.unregisterCallback(
@@ -1627,7 +1767,12 @@ class AudioCaptureService : Service() {
 
         mediaProjection = null
 
+        // -----------------------------------------------------
+        // FILAS
+        // -----------------------------------------------------
+
         audioQueue.clear()
+
         outputQueue.clear()
 
         Log.d(
@@ -1638,9 +1783,9 @@ class AudioCaptureService : Service() {
         jobId = null
     }
 
-    // ---------------------------------------------------------
-    // LIBERAR AUDIO FOCUS
-    // ---------------------------------------------------------
+    // =========================================================
+    // ABANDONAR AUDIO FOCUS
+    // =========================================================
 
     private fun abandonAudioFocus() {
 
@@ -1663,16 +1808,18 @@ class AudioCaptureService : Service() {
             } else {
 
                 @Suppress("DEPRECATION")
-                manager.abandonAudioFocus(null)
+                manager.abandonAudioFocus(
+                    null
+                )
             }
 
         } catch (_: Exception) {
         }
     }
 
-    // ---------------------------------------------------------
+    // =========================================================
     // DESTROY
-    // ---------------------------------------------------------
+    // =========================================================
 
     override fun onDestroy() {
 
@@ -1686,13 +1833,14 @@ class AudioCaptureService : Service() {
         super.onDestroy()
     }
 
-    // ---------------------------------------------------------
+    // =========================================================
     // BIND
-    // ---------------------------------------------------------
+    // =========================================================
 
     override fun onBind(
         intent: Intent?
     ): IBinder? {
+
         return null
     }
 }
