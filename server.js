@@ -25,12 +25,17 @@ const GEMINI_MODEL =
   process.env.GEMINI_MODEL ||
   "gemini-3.5-live-translate-preview";
 
-const GEMINI_WS_CONSTRAINED =
+const GEMINI_WS_URL =
   "wss://generativelanguage.googleapis.com/ws/" +
   "google.ai.generativelanguage.v1beta." +
   "GenerativeService.BidiGenerateContentConstrained";
 
 const sessions = new Map();
+
+
+/* =========================================================
+   IDIOMAS
+========================================================= */
 
 const languageNames = {
   "pt-BR": "Português do Brasil",
@@ -71,7 +76,10 @@ function safeClose(ws) {
   try {
     if (
       ws &&
-      ws.readyState === WebSocket.OPEN
+      (
+        ws.readyState === WebSocket.OPEN ||
+        ws.readyState === WebSocket.CONNECTING
+      )
     ) {
       ws.close();
     }
@@ -89,7 +97,7 @@ function sendJson(ws, data) {
     }
   } catch (error) {
     console.error(
-      "[WS] Erro enviando mensagem:",
+      "[WS] Erro enviando:",
       error.message
     );
   }
@@ -107,17 +115,15 @@ app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
     service: "SI Tradutor Live",
-    version: "7.0-Gemini-Ephemeral",
+    version: "8.0-Gemini-Ephemeral",
+    message:
+      "Backend do SI Tradutor Live funcionando",
     gemini: !!GEMINI_API_KEY,
     model: GEMINI_MODEL,
-
-    keyType:
+    authentication:
       GEMINI_API_KEY.startsWith("AQ.")
-        ? "AQ-authorization-key"
-        : GEMINI_API_KEY.startsWith("AIza")
-        ? "legacy-AIza-key"
-        : "unknown",
-
+        ? "AQ Authorization Key"
+        : "API Key",
     sessions: sessions.size,
     time: now()
   });
@@ -138,42 +144,40 @@ app.get(
       return res.status(500).json({
         ok: false,
         error:
-          "GEMINI_API_KEY não configurada no Render"
+          "GEMINI_API_KEY não configurada"
       });
 
     }
 
     try {
 
-      const response =
-        await fetch(
-          "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent",
-          {
-            method: "POST",
+      const response = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent",
+        {
+          method: "POST",
 
-            headers: {
-              "Content-Type":
-                "application/json",
+          headers: {
+            "Content-Type":
+              "application/json",
 
-              "x-goog-api-key":
-                GEMINI_API_KEY
-            },
+            "x-goog-api-key":
+              GEMINI_API_KEY
+          },
 
-            body:
-              JSON.stringify({
-                contents: [
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
                   {
-                    parts: [
-                      {
-                        text:
-                          "Responda somente: OK"
-                      }
-                    ]
+                    text:
+                      "Responda somente: OK"
                   }
                 ]
-              })
-          }
-        );
+              }
+            ]
+          })
+        }
+      );
 
       const text =
         await response.text();
@@ -181,8 +185,7 @@ app.get(
       let data;
 
       try {
-        data =
-          JSON.parse(text);
+        data = JSON.parse(text);
       } catch (_) {
         data = {
           raw: text
@@ -226,7 +229,7 @@ app.get(
 
 
 /* =========================================================
-   CRIAR TOKEN EFÊMERO GEMINI
+   TOKEN EFÊMERO GEMINI
 ========================================================= */
 
 async function createGeminiEphemeralToken(
@@ -234,79 +237,78 @@ async function createGeminiEphemeralToken(
 ) {
 
   if (!GEMINI_API_KEY) {
-
     throw new Error(
-      "GEMINI_API_KEY não configurada no Render"
+      "GEMINI_API_KEY não configurada"
     );
-
   }
 
   console.log(
     `[GEMINI] Criando token temporário para ${targetLanguage}`
   );
 
-  const nowMs =
-    Date.now();
 
   const expireTime =
     new Date(
-      nowMs +
+      Date.now() +
       30 * 60 * 1000
     ).toISOString();
 
+
   const newSessionExpireTime =
     new Date(
-      nowMs +
+      Date.now() +
       60 * 1000
     ).toISOString();
 
 
   /*
-   * IMPORTANTE:
+   * IMPORTANTE
    *
-   * A API atual aceita CreateAuthTokenRequest
-   * contendo authToken.
+   * O endpoint REST /auth_tokens recebe
+   * diretamente o AuthToken.
    *
-   * Dentro dele usamos
-   * bidiGenerateContentSetup.
+   * NÃO colocamos:
+   *
+   * authToken: {}
+   *
+   * aqui.
+   *
+   * Para uma sessão Live restrita,
+   * usamos liveConnectConstraints.
    */
 
   const body = {
 
-    authToken: {
+    uses: 1,
 
-      uses: 1,
+    expireTime,
 
-      expireTime,
+    newSessionExpireTime,
 
-      newSessionExpireTime,
+    liveConnectConstraints: {
 
-      bidiGenerateContentSetup: {
+      model:
+        `models/${GEMINI_MODEL}`,
 
-        model:
-          `models/${GEMINI_MODEL}`,
+      config: {
 
-        generationConfig: {
-
-          responseModalities: [
-            "AUDIO"
-          ],
-
-          translationConfig: {
-
-            targetLanguageCode:
-              targetLanguage,
-
-            echoTargetLanguage:
-              false
-
-          }
-
-        },
+        responseModalities: [
+          "AUDIO"
+        ],
 
         inputAudioTranscription: {},
 
-        outputAudioTranscription: {}
+        outputAudioTranscription: {},
+
+        translationConfig: {
+
+          targetLanguageCode:
+            targetLanguage,
+
+          echoTargetLanguage:
+            false
+
+        }
 
       }
 
@@ -320,46 +322,41 @@ async function createGeminiEphemeralToken(
   );
 
 
-  const response =
-    await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/auth_tokens",
-      {
+  const response = await fetch(
+    "https://generativelanguage.googleapis.com/v1beta/auth_tokens",
+    {
+      method: "POST",
 
-        method: "POST",
+      headers: {
 
-        headers: {
+        "Content-Type":
+          "application/json",
 
-          "Content-Type":
-            "application/json",
+        "x-goog-api-key":
+          GEMINI_API_KEY
 
-          "x-goog-api-key":
-            GEMINI_API_KEY
+      },
 
-        },
+      body:
+        JSON.stringify(body)
 
-        body:
-          JSON.stringify(body)
-
-      }
-    );
+    }
+  );
 
 
   const text =
     await response.text();
 
+
   let data;
 
   try {
-
     data =
       JSON.parse(text);
-
   } catch (_) {
-
     data = {
       raw: text
     };
-
   }
 
 
@@ -382,9 +379,7 @@ async function createGeminiEphemeralToken(
 
 
   const token =
-    data?.name ||
-    data?.authToken?.name ||
-    data?.token?.name;
+    data?.name;
 
 
   if (!token) {
@@ -407,12 +402,11 @@ async function createGeminiEphemeralToken(
 
 
   return token;
-
 }
 
 
 /* =========================================================
-   INICIAR SESSÃO DE ÁUDIO
+   INICIAR ÁUDIO
 ========================================================= */
 
 app.post(
@@ -425,10 +419,12 @@ app.post(
         req.body?.clientId ||
         crypto.randomUUID();
 
+
       const targetLanguage =
         req.body?.targetLang ||
         req.body?.targetLanguage ||
         "pt-BR";
+
 
       const jobId =
         createJobId();
@@ -447,9 +443,7 @@ app.post(
           targetLanguage,
 
         targetLanguageName:
-          languageNames[
-            targetLanguage
-          ] ||
+          languageNames[targetLanguage] ||
           targetLanguage,
 
         status:
@@ -570,9 +564,7 @@ app.post(
           targetLanguage,
 
         targetLanguage:
-          languageNames[
-            targetLanguage
-          ] ||
+          languageNames[targetLanguage] ||
           targetLanguage
 
       });
@@ -601,7 +593,7 @@ app.post(
 
 
 /* =========================================================
-   CONECTAR AO GEMINI LIVE
+   CONECTAR GEMINI LIVE
 ========================================================= */
 
 async function connectGemini(
@@ -637,12 +629,12 @@ async function connectGemini(
     true;
 
 
-  const target =
-    session.targetLanguage ||
-    "pt-BR";
-
-
   try {
+
+    const target =
+      session.targetLanguage ||
+      "pt-BR";
+
 
     const token =
       await createGeminiEphemeralToken(
@@ -663,7 +655,7 @@ async function connectGemini(
 
 
     const wsUrl =
-      GEMINI_WS_CONSTRAINED +
+      GEMINI_WS_URL +
       "?access_token=" +
       encodeURIComponent(
         token
@@ -671,7 +663,7 @@ async function connectGemini(
 
 
     console.log(
-      `[GEMINI] Conectando Live. idioma=${target}`
+      "[GEMINI] Conectando WebSocket Live..."
     );
 
 
@@ -694,7 +686,7 @@ async function connectGemini(
 
 
     /* =====================================================
-       WEBSOCKET ABERTO
+       ABERTO
     ===================================================== */
 
     ws.on(
@@ -723,11 +715,13 @@ async function connectGemini(
 
 
         /*
-         * O token já está limitado
-         * ao modelo/configuração.
+         * Estrutura correta do WebSocket:
          *
-         * Ainda enviamos o setup
-         * exigido pela sessão Live.
+         * translationConfig dentro de
+         * generationConfig.
+         *
+         * input/output transcription
+         * ficam no setup.
          */
 
         const setupMessage = {
@@ -743,12 +737,6 @@ async function connectGemini(
                 "AUDIO"
               ],
 
-              inputAudioTranscription:
-                {},
-
-              outputAudioTranscription:
-                {},
-
               translationConfig: {
 
                 targetLanguageCode:
@@ -759,7 +747,11 @@ async function connectGemini(
 
               }
 
-            }
+            },
+
+            inputAudioTranscription: {},
+
+            outputAudioTranscription: {}
 
           }
 
@@ -767,7 +759,7 @@ async function connectGemini(
 
 
         console.log(
-          "[GEMINI] Enviando setup"
+          "[GEMINI] Enviando setup..."
         );
 
 
@@ -810,9 +802,10 @@ async function connectGemini(
           error.message
         );
 
+
         session.geminiError =
           error.message ||
-          "Erro no WebSocket Gemini";
+          "Erro WebSocket Gemini";
 
       }
     );
@@ -880,8 +873,7 @@ async function connectGemini(
       false;
 
     session.geminiError =
-      error.message ||
-      "Erro conectando ao Gemini";
+      error.message;
 
 
     console.error(
@@ -906,7 +898,7 @@ async function connectGemini(
 
 
 /* =========================================================
-   RECEBER MENSAGENS GEMINI
+   MENSAGENS GEMINI
 ========================================================= */
 
 function handleGeminiMessage(
@@ -927,7 +919,7 @@ function handleGeminiMessage(
   } catch (error) {
 
     console.error(
-      "[GEMINI] Mensagem não JSON:",
+      "[GEMINI] JSON inválido:",
       error.message
     );
 
@@ -976,7 +968,7 @@ function handleGeminiMessage(
 
 
   /* =====================================================
-     ERRO GEMINI
+     ERRO
   ===================================================== */
 
   if (
@@ -1047,7 +1039,7 @@ function handleGeminiMessage(
 
 
   /* =====================================================
-     TRANSCRIÇÃO DA SAÍDA
+     TRANSCRIÇÃO DE SAÍDA
   ===================================================== */
 
   if (
@@ -1080,7 +1072,7 @@ function handleGeminiMessage(
 
 
   /* =====================================================
-     ÁUDIO GERADO
+     ÁUDIO
   ===================================================== */
 
   if (
@@ -1107,15 +1099,6 @@ function handleGeminiMessage(
       }
 
 
-      console.log(
-        "[GEMINI] Áudio recebido:",
-        inlineData.mimeType ||
-          "",
-        inlineData.data.length,
-        "chars"
-      );
-
-
       try {
 
         const audioBuffer =
@@ -1130,6 +1113,11 @@ function handleGeminiMessage(
         ) {
           continue;
         }
+
+
+        console.log(
+          `[GEMINI] Áudio recebido: ${audioBuffer.length} bytes`
+        );
 
 
         session.outputQueue.push(
@@ -1152,7 +1140,7 @@ function handleGeminiMessage(
       } catch (error) {
 
         console.error(
-          "[GEMINI] Erro convertendo áudio:",
+          "[GEMINI] Erro no áudio:",
           error.message
         );
 
@@ -1166,35 +1154,16 @@ function handleGeminiMessage(
 
 
 /* =========================================================
-   ENVIAR ÁUDIO PENDENTE
+   FILA DE ÁUDIO PENDENTE
 ========================================================= */
 
 function flushAudioQueue(
   session
 ) {
 
-  if (!session) {
-    return;
-  }
-
-
   if (
+    !session ||
     !session.geminiReady
-  ) {
-    return;
-  }
-
-
-  if (
-    !session.geminiWs
-  ) {
-    return;
-  }
-
-
-  if (
-    session.geminiWs.readyState !==
-    WebSocket.OPEN
   ) {
     return;
   }
@@ -1222,12 +1191,12 @@ function flushAudioQueue(
 
 
   for (
-    const base64 of pending
+    const audio of pending
   ) {
 
     sendAudioToGemini(
       session,
-      base64
+      audio
     );
 
   }
@@ -1236,7 +1205,7 @@ function flushAudioQueue(
 
 
 /* =========================================================
-   ENVIAR PCM PARA GEMINI
+   ENVIAR ÁUDIO PARA GEMINI
 ========================================================= */
 
 function sendAudioToGemini(
@@ -1244,7 +1213,10 @@ function sendAudioToGemini(
   base64
 ) {
 
-  if (!session) {
+  if (
+    !session ||
+    !base64
+  ) {
     return false;
   }
 
@@ -1256,10 +1228,8 @@ function sendAudioToGemini(
     if (
       !session.pendingAudio
     ) {
-
       session.pendingAudio =
         [];
-
     }
 
 
@@ -1345,9 +1315,12 @@ app.post(
       if (!jobId) {
 
         return res.status(400).json({
+
           ok: false,
+
           error:
             "jobId ausente"
+
         });
 
       }
@@ -1356,9 +1329,12 @@ app.post(
       if (!audio) {
 
         return res.status(400).json({
+
           ok: false,
+
           error:
             "audio ausente"
+
         });
 
       }
@@ -1373,9 +1349,12 @@ app.post(
       if (!session) {
 
         return res.status(404).json({
+
           ok: false,
+
           error:
             "Sessão não encontrada"
+
         });
 
       }
@@ -1386,9 +1365,12 @@ app.post(
       ) {
 
         return res.status(400).json({
+
           ok: false,
+
           error:
-            "Sessão já parada"
+            "Sessão parada"
+
         });
 
       }
@@ -1407,8 +1389,7 @@ app.post(
 
       const receivedBytes =
         Math.floor(
-          (audio.length * 3) /
-          4
+          audio.length * 3 / 4
         );
 
 
@@ -1449,8 +1430,15 @@ app.post(
 
 
       if (
-        !session.geminiReady
+        session.geminiReady
       ) {
+
+        sendAudioToGemini(
+          session,
+          audio
+        );
+
+      } else {
 
         session.pendingAudio.push(
           audio
@@ -1466,13 +1454,6 @@ app.post(
 
         }
 
-      } else {
-
-        sendAudioToGemini(
-          session,
-          audio
-        );
-
       }
 
 
@@ -1480,7 +1461,8 @@ app.post(
 
         ok: true,
 
-        received: true,
+        received:
+          true,
 
         jobId,
 
@@ -1556,9 +1538,11 @@ app.get(
 
         ok: true,
 
-        available: false,
+        available:
+          false,
 
-        audio: null,
+        audio:
+          null,
 
         sampleRate:
           24000,
@@ -1586,12 +1570,11 @@ app.get(
 
       ok: true,
 
-      available: true,
+      available:
+        true,
 
       audio:
-        buffer.toString(
-          "base64"
-        ),
+        buffer.toString("base64"),
 
       sampleRate:
         24000,
@@ -1880,14 +1863,8 @@ app.get(
           targetLang:
             session.targetLang,
 
-          targetLanguage:
-            session.targetLanguage,
-
           status:
             session.status,
-
-          gemini:
-            session.gemini,
 
           geminiConnected:
             session.geminiConnected,
@@ -1903,6 +1880,9 @@ app.get(
 
           geminiAuthMode:
             session.geminiAuthMode,
+
+          geminiError:
+            session.geminiError,
 
           chunks:
             session.chunks,
@@ -1928,9 +1908,6 @@ app.get(
           diagnostic:
             session.diagnostic,
 
-          geminiError:
-            session.geminiError,
-
           createdAt:
             session.createdAt
 
@@ -1955,7 +1932,7 @@ app.get(
 
 
 /* =========================================================
-   PARAR SESSÃO
+   PARAR
 ========================================================= */
 
 app.post(
@@ -2076,12 +2053,8 @@ function scheduleReconnect(
   session
 ) {
 
-  if (!session) {
-    return;
-  }
-
-
   if (
+    !session ||
     session.stopped
   ) {
     return;
@@ -2096,8 +2069,7 @@ function scheduleReconnect(
 
 
   console.log(
-    "[GEMINI] Nova tentativa em 3 segundos:",
-    session.jobId
+    `[GEMINI] Nova tentativa em 3 segundos: ${session.jobId}`
   );
 
 
@@ -2207,7 +2179,7 @@ app.get(
         "SI Tradutor Live",
 
       version:
-        "7.0-Gemini-Ephemeral",
+        "8.0-Gemini-Ephemeral",
 
       message:
         "Backend do SI Tradutor Live funcionando",
@@ -2219,9 +2191,7 @@ app.get(
         GEMINI_MODEL,
 
       authentication:
-        GEMINI_API_KEY.startsWith(
-          "AQ."
-        )
+        GEMINI_API_KEY.startsWith("AQ.")
           ? "AQ Authorization Key"
           : "API Key"
 
@@ -2232,7 +2202,7 @@ app.get(
 
 
 /* =========================================================
-   LIMPEZA AUTOMÁTICA
+   LIMPEZA
 ========================================================= */
 
 setInterval(
@@ -2283,8 +2253,7 @@ setInterval(
 
 
         console.log(
-          "[CLEANUP] Sessão removida:",
-          jobId
+          `[CLEANUP] Sessão removida: ${jobId}`
         );
 
       }
@@ -2327,7 +2296,7 @@ process.on(
 
 
 /* =========================================================
-   INICIAR SERVIDOR
+   INICIAR
 ========================================================= */
 
 app.listen(
@@ -2361,13 +2330,9 @@ app.listen(
 
     console.log(
       `Chave: ${
-        GEMINI_API_KEY.startsWith(
-          "AQ."
-        )
+        GEMINI_API_KEY.startsWith("AQ.")
           ? "AQ / Authorization Key"
-          : GEMINI_API_KEY.startsWith(
-              "AIza"
-            )
+          : GEMINI_API_KEY.startsWith("AIza")
           ? "AIza / Standard Key"
           : "DESCONHECIDA"
       }`
