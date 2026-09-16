@@ -21,7 +21,7 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 
 const BACKEND_VERSION =
-  "11.0-Gemini-Live-Cursor-Audio";
+  "12.0-Gemini-Live-Audio-Robusto";
 
 const GEMINI_API_KEY =
   process.env.GEMINI_API_KEY || "";
@@ -1073,7 +1073,7 @@ function handleGeminiMessage(
       null;
 
     // --------------------------------------------------------
-    // ENVIAR ÁUDIO QUE CHEGOU ANTES DO SETUP
+    // ENVIAR ÁUDIO PENDENTE
     // --------------------------------------------------------
 
     if (
@@ -1298,6 +1298,10 @@ function sendAudioToGemini(
     WebSocket.OPEN
   ) {
 
+    console.warn(
+      `[GEMINI] WebSocket não está aberto - ${session.jobId}`
+    );
+
     return false;
   }
 
@@ -1335,6 +1339,10 @@ function sendAudioToGemini(
     session.lastActivity =
       Date.now();
 
+    console.log(
+      `[GEMINI] Áudio enviado: ${Buffer.from(audio, "base64").length} bytes`
+    );
+
     return true;
 
   } catch (error) {
@@ -1353,6 +1361,7 @@ function sendAudioToGemini(
 
 // ============================================================
 // RECEBER ÁUDIO DO ANDROID
+// VERSÃO ROBUSTA
 // ============================================================
 
 app.post(
@@ -1361,33 +1370,104 @@ app.post(
 
     try {
 
+      console.log(
+        "[AUDIO CHUNK] Requisição recebida"
+      );
+
+      console.log(
+        "[AUDIO CHUNK] Content-Type:",
+        req.headers["content-type"]
+      );
+
+      // ------------------------------------------------------
+      // ACEITAR DIFERENTES NOMES DE JOB ID
+      // ------------------------------------------------------
+
       const jobId =
-        req.body?.jobId;
+        req.body?.jobId ||
+        req.body?.jobID ||
+        req.body?.id ||
+        "";
+
+      // ------------------------------------------------------
+      // ACEITAR DIFERENTES NOMES PARA O ÁUDIO
+      // ------------------------------------------------------
 
       const audio =
-        req.body?.audio;
+        req.body?.audio ||
+        req.body?.audioBase64 ||
+        req.body?.data ||
+        "";
+
+      // ------------------------------------------------------
+      // DIAGNÓSTICO
+      // ------------------------------------------------------
+
+      console.log(
+        "[AUDIO CHUNK] jobId:",
+        jobId
+          ? "OK"
+          : "AUSENTE"
+      );
+
+      console.log(
+        "[AUDIO CHUNK] audio:",
+        audio
+          ? `OK (${String(audio).length} caracteres)`
+          : "AUSENTE"
+      );
+
+      // ------------------------------------------------------
+      // VALIDAR JOB ID
+      // ------------------------------------------------------
 
       if (!jobId) {
 
+        console.error(
+          "[AUDIO CHUNK] ERRO: jobId não enviado"
+        );
+
         return res.status(400).json({
 
           ok: false,
 
           error:
-            "jobId obrigatório"
+            "jobId obrigatório",
+
+          receivedFields:
+            Object.keys(
+              req.body || {}
+            )
         });
       }
+
+      // ------------------------------------------------------
+      // VALIDAR ÁUDIO
+      // ------------------------------------------------------
 
       if (!audio) {
 
+        console.error(
+          "[AUDIO CHUNK] ERRO: áudio não enviado"
+        );
+
         return res.status(400).json({
 
           ok: false,
 
           error:
-            "audio obrigatório"
+            "audio obrigatório",
+
+          receivedFields:
+            Object.keys(
+              req.body || {}
+            )
         });
       }
+
+      // ------------------------------------------------------
+      // PROCURAR SESSÃO
+      // ------------------------------------------------------
 
       const session =
         sessions.get(
@@ -1396,47 +1476,135 @@ app.post(
 
       if (!session) {
 
+        console.error(
+          `[AUDIO CHUNK] Sessão não encontrada: ${jobId}`
+        );
+
         return res.status(404).json({
 
           ok: false,
 
           error:
-            "Sessão não encontrada"
+            "Sessão não encontrada",
+
+          jobId
         });
       }
+
+      // ------------------------------------------------------
+      // SESSÃO PARADA
+      // ------------------------------------------------------
 
       if (
         session.stopped
       ) {
+
+        console.log(
+          `[AUDIO CHUNK] Sessão parada: ${jobId}`
+        );
 
         return res.json({
 
           ok: false,
 
           stopped:
-            true
+            true,
+
+          jobId
         });
       }
 
-      const audioBuffer =
-        Buffer.from(
-          audio,
-          "base64"
-        );
+      // ------------------------------------------------------
+      // LIMPAR POSSÍVEL PREFIXO DATA
+      // ------------------------------------------------------
+
+      let cleanAudio =
+        String(audio);
 
       if (
-        audioBuffer.length ===
-        0
+        cleanAudio.includes(",")
       ) {
+
+        const commaIndex =
+          cleanAudio.indexOf(",");
+
+        const possiblePrefix =
+          cleanAudio.substring(
+            0,
+            commaIndex
+          );
+
+        if (
+          possiblePrefix.includes(
+            "base64"
+          )
+        ) {
+
+          cleanAudio =
+            cleanAudio.substring(
+              commaIndex + 1
+            );
+        }
+      }
+
+      // ------------------------------------------------------
+      // DECODIFICAR BASE64
+      // ------------------------------------------------------
+
+      let audioBuffer;
+
+      try {
+
+        audioBuffer =
+          Buffer.from(
+            cleanAudio,
+            "base64"
+          );
+
+      } catch (decodeError) {
+
+        console.error(
+          "[AUDIO CHUNK] Erro Base64:",
+          decodeError.message
+        );
 
         return res.status(400).json({
 
           ok: false,
 
           error:
-            "Áudio vazio"
+            "Áudio Base64 inválido",
+
+          details:
+            decodeError.message
         });
       }
+
+      // ------------------------------------------------------
+      // VALIDAR ÁUDIO
+      // ------------------------------------------------------
+
+      if (
+        !audioBuffer ||
+        audioBuffer.length === 0
+      ) {
+
+        console.error(
+          "[AUDIO CHUNK] Áudio vazio após Base64"
+        );
+
+        return res.status(400).json({
+
+          ok: false,
+
+          error:
+            "Áudio vazio após decodificação Base64"
+        });
+      }
+
+      // ------------------------------------------------------
+      // REGISTRAR RECEBIMENTO
+      // ------------------------------------------------------
 
       session.chunksReceived++;
 
@@ -1446,9 +1614,13 @@ app.post(
       session.lastActivity =
         Date.now();
 
-      // --------------------------------------------------------
-      // GEMINI JÁ PRONTO
-      // --------------------------------------------------------
+      console.log(
+        `[AUDIO CHUNK] ${jobId} | ${audioBuffer.length} bytes | chunk=${session.chunksReceived}`
+      );
+
+      // ------------------------------------------------------
+      // GEMINI PRONTO
+      // ------------------------------------------------------
 
       if (
         session.geminiReady &&
@@ -1457,16 +1629,40 @@ app.post(
         WebSocket.OPEN
       ) {
 
-        sendAudioToGemini(
-          session,
-          audio
-        );
+        const enviado =
+          sendAudioToGemini(
+            session,
+            cleanAudio
+          );
+
+        if (enviado) {
+
+          console.log(
+            `[AUDIO → GEMINI] Enviado | chunk=${session.chunksReceived} | total=${session.chunksSentToGemini}`
+          );
+
+        } else {
+
+          console.error(
+            "[AUDIO → GEMINI] Falha no envio"
+          );
+
+          if (
+            session.pendingInputChunks.length <
+            50
+          ) {
+
+            session.pendingInputChunks.push(
+              cleanAudio
+            );
+          }
+        }
 
       }
 
-      // --------------------------------------------------------
+      // ------------------------------------------------------
       // GEMINI AINDA NÃO PRONTO
-      // --------------------------------------------------------
+      // ------------------------------------------------------
 
       else {
 
@@ -1476,24 +1672,30 @@ app.post(
         ) {
 
           session.pendingInputChunks.push(
-            audio
+            cleanAudio
           );
 
           console.log(
-            `[AUDIO] Chunk aguardando Gemini. pendentes=${session.pendingInputChunks.length}`
+            `[AUDIO] Aguardando Gemini | pendentes=${session.pendingInputChunks.length}`
           );
 
         } else {
 
-          console.log(
-            "[AUDIO] Fila de entrada cheia; descartando chunk."
+          console.warn(
+            "[AUDIO] Fila pendente cheia; descartando chunk"
           );
         }
       }
 
+      // ------------------------------------------------------
+      // RESPOSTA
+      // ------------------------------------------------------
+
       return res.json({
 
         ok: true,
+
+        jobId,
 
         received:
           audioBuffer.length,
@@ -1501,8 +1703,17 @@ app.post(
         chunksReceived:
           session.chunksReceived,
 
+        bytesReceived:
+          session.bytesReceived,
+
         chunksSentToGemini:
           session.chunksSentToGemini,
+
+        bytesSentToGemini:
+          session.bytesSentToGemini,
+
+        pendingInputChunks:
+          session.pendingInputChunks.length,
 
         geminiReady:
           session.geminiReady
@@ -1942,8 +2153,11 @@ app.get(
       [];
 
     for (
-      const session
-      of sessions.values()
+      const [
+        jobId,
+        session
+      ]
+      of sessions.entries()
     ) {
 
       result.push({
@@ -1971,6 +2185,9 @@ app.get(
 
         chunksSentToGemini:
           session.chunksSentToGemini,
+
+        bytesSentToGemini:
+          session.bytesSentToGemini,
 
         outputChunks:
           session.outputChunks.length,
@@ -2090,6 +2307,9 @@ function stopSession(
 
   session.geminiReady =
     false;
+
+  session.pendingInputChunks =
+    [];
 
   if (
     session.reconnectTimer
@@ -2408,6 +2628,10 @@ app.listen(
 
     console.log(
       "Áudio: CURSOR POR SEQUÊNCIA"
+    );
+
+    console.log(
+      "Entrada: API ROBUSTA"
     );
 
     console.log(
