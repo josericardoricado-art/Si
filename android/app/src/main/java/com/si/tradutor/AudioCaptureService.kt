@@ -278,6 +278,10 @@ class AudioCaptureService : Service() {
             400
         )
 
+    // Lock separado da fila para controlar o despertar da thread de playback.
+    // LinkedBlockingQueue não expõe wait()/notifyAll() em Kotlin.
+    private val playbackLock = Any()
+
     @Volatile
     private var outputQueueBytes =
         0L
@@ -1952,7 +1956,9 @@ class AudioCaptureService : Service() {
                 }
 
                 // Acorda imediatamente a thread de playback.
-                outputQueue.notifyAll()
+                synchronized(playbackLock) {
+                    playbackLock.notifyAll()
+                }
             }
         }
     }
@@ -2060,13 +2066,13 @@ class AudioCaptureService : Service() {
             // ---------------------------------------------------------
             // PRÉ-BUFFER INICIAL
             // ---------------------------------------------------------
-            synchronized(outputQueue) {
+            synchronized(playbackLock) {
                 while (
                     running.get() &&
                     !playbackPrebufferReady
                 ) {
                     try {
-                        outputQueue.wait(1000L)
+                        playbackLock.wait(1000L)
                     } catch (_: InterruptedException) {
                         return@Thread
                     }
@@ -2095,7 +2101,7 @@ class AudioCaptureService : Service() {
 
                     val proximo: ByteArray?
 
-                    synchronized(outputQueue) {
+                    synchronized(playbackLock) {
                         proximo = outputQueue.poll()
 
                         if (proximo != null) {
@@ -2105,7 +2111,7 @@ class AudioCaptureService : Service() {
                         } else {
                             // Sem áudio neste instante: espera ser
                             // acordado por adicionarNaFilaSaida().
-                            outputQueue.wait(1000L)
+                            playbackLock.wait(1000L)
                         }
                     }
 
@@ -2711,6 +2717,12 @@ class AudioCaptureService : Service() {
 
             outputQueueBytes =
                 0L
+        }
+
+        // Acorda imediatamente a thread de playback caso ela esteja
+        // esperando por novos dados.
+        synchronized(playbackLock) {
+            playbackLock.notifyAll()
         }
 
         captureStarted =
