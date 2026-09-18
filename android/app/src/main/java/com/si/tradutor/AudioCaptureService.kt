@@ -156,14 +156,14 @@ class AudioCaptureService : Service() {
          * Primeiro acumula vários pedaços.
          */
         private const val PREBUFFER_CHUNKS =
-            24
+            2
 
         /*
          * Aproximadamente 1 segundo de PCM16
          * mono 24 kHz.
          */
         private const val PREBUFFER_BYTES =
-            288000
+            192000
 
         /*
          * A cada ciclo, junta até aproximadamente
@@ -1908,106 +1908,51 @@ class AudioCaptureService : Service() {
         audioOriginal: ByteArray
     ) {
 
-        if (
-            !running.get()
-        ) {
+        if (!running.get()) {
             return
         }
 
-        /*
-         * Amplifica antes de colocar no buffer.
-         */
         val audio =
             amplificarPcm(
                 audioOriginal,
                 OUTPUT_GAIN
             )
 
-        if (
-            audio.isEmpty()
-        ) {
+        if (audio.isEmpty()) {
             return
         }
 
-        synchronized(
-            outputQueue
-        ) {
+        synchronized(outputQueue) {
 
-            /*
-             * Segurança contra crescimento
-             * infinito de memória.
-             */
             while (
-                outputQueueBytes +
-                    audio.size >
+                outputQueueBytes + audio.size >
                     MAX_OUTPUT_QUEUE_BYTES
             ) {
-
-                val antigo =
-                    outputQueue.poll()
-                        ?: break
-
+                val antigo = outputQueue.poll() ?: break
                 outputQueueBytes =
-                    (
-                        outputQueueBytes -
-                            antigo.size
-                        )
-                        .coerceAtLeast(
-                            0L
-                        )
+                    (outputQueueBytes - antigo.size)
+                        .coerceAtLeast(0L)
             }
 
-            if (
-                outputQueue.offer(
-                    audio
-                )
-            ) {
-
-                outputQueueBytes +=
-                    audio.size.toLong()
-
+            if (outputQueue.offer(audio)) {
+                outputQueueBytes += audio.size.toLong()
                 queuedOutputChunks++
 
-                /*
-                 * Quando chega ao pré-buffer,
-                 * marcamos como pronto.
-                 */
                 if (
                     !playbackPrebufferReady &&
-                    outputQueue.size >=
-                    PREBUFFER_CHUNKS &&
-                    outputQueueBytes >=
-                    PREBUFFER_BYTES
+                    outputQueueBytes >= PREBUFFER_BYTES
                 ) {
+                    playbackPrebufferReady = true
 
-                    playbackPrebufferReady =
-                        true
-
-                    Log.d(
-                        TAG,
-                        "================================"
-                    )
-
-                    Log.d(
-                        TAG,
-                        "PRÉ-BUFFER DE DUBLAGEM PRONTO"
-                    )
-
-                    Log.d(
-                        TAG,
-                        "chunks=${outputQueue.size}"
-                    )
-
-                    Log.d(
-                        TAG,
-                        "bytes=$outputQueueBytes"
-                    )
-
-                    Log.d(
-                        TAG,
-                        "================================"
-                    )
+                    Log.d(TAG, "================================")
+                    Log.d(TAG, "PRÉ-BUFFER DE DUBLAGEM PRONTO")
+                    Log.d(TAG, "chunks=${outputQueue.size}")
+                    Log.d(TAG, "bytes=$outputQueueBytes")
+                    Log.d(TAG, "================================")
                 }
+
+                // Acorda imediatamente a thread de playback.
+                outputQueue.notifyAll()
             }
         }
     }
@@ -2108,212 +2053,86 @@ class AudioCaptureService : Service() {
 
     private fun iniciarThreadPlayback() {
 
-        playbackThread =
-            Thread {
+        playbackThread = Thread {
 
-                Log.d(
-                    TAG,
-                    "THREAD PLAYBACK CONTÍNUA INICIADA"
-                )
+            Log.d(TAG, "THREAD PLAYBACK CONTÍNUA INICIADA")
 
-                // ---------------------------------------------------------
-                // PRÉ-BUFFER INICIAL
-                // ---------------------------------------------------------
+            // ---------------------------------------------------------
+            // PRÉ-BUFFER INICIAL
+            // ---------------------------------------------------------
+            synchronized(outputQueue) {
                 while (
                     running.get() &&
                     !playbackPrebufferReady
                 ) {
                     try {
-                        Thread.sleep(20)
+                        outputQueue.wait(1000L)
                     } catch (_: InterruptedException) {
                         return@Thread
                     }
                 }
+            }
 
-                if (!running.get()) {
-                    return@Thread
-                }
+            if (!running.get()) {
+                return@Thread
+            }
 
-                playbackStarted = true
-                lastStage = "playback_started"
+            playbackStarted = true
+            lastStage = "playback_started"
 
-                Log.d(
-                    TAG,
-                    "PLAYBACK CONTÍNUA DE DUBLAGEM INICIADA"
-                )
+            Log.d(TAG, "PLAYBACK CONTÍNUA DE DUBLAGEM INICIADA")
 
-                // ---------------------------------------------------------
-                // REPRODUÇÃO CONTÍNUA
-                //
-                // Não recria o AudioTrack entre frases.
-                // Junta vários chunks antes de cada write e mantém
-                // o AudioTrack alimentado enquanto houver dados.
-                // ---------------------------------------------------------
-                while (running.get()) {
-                    try {
+            // ---------------------------------------------------------
+            // FLUXO CONTÍNUO
+            // ---------------------------------------------------------
+            // Não cria um AudioTrack novo entre frases.
+            // Não usa poll com timeout longo.
+            // O AudioTrack recebe cada bloco diretamente e a thread
+            // é acordada assim que um novo bloco chega.
+            // ---------------------------------------------------------
+            while (running.get()) {
+                try {
 
-                        val lote = ByteArrayBatch(PLAYBACK_BATCH_BYTES)
+                    val proximo: ByteArray?
 
-                        // Se houver dados, pega imediatamente.
-                        // Se a fila estiver temporariamente vazia, espera
-                        // até 1500 ms antes de desistir deste ciclo.
-                        val primeiro = outputQueue.poll(
-                            1500,
-                            java.util.concurrent.TimeUnit.MILLISECONDS
-                        )
+                    synchronized(outputQueue) {
+                        proximo = outputQueue.poll()
 
-                        if (primeiro == null) {
-                            continue
-                        }
-
-                        synchronized(outputQueue) {
+                        if (proximo != null) {
                             outputQueueBytes =
-                                (outputQueueBytes - primeiro.size)
+                                (outputQueueBytes - proximo.size)
                                     .coerceAtLeast(0L)
-                        }
-
-                        lote.write(primeiro)
-
-                        // Drena imediatamente tudo que já chegou,
-                        // formando um fluxo maior e reduzindo os limites
-                        // artificiais entre chunks.
-                        synchronized(outputQueue) {
-                            while (
-                                lote.size() < PLAYBACK_BATCH_BYTES
-                            ) {
-                                val proximo =
-                                    outputQueue.poll() ?: break
-
-                                outputQueueBytes =
-                                    (outputQueueBytes - proximo.size)
-                                        .coerceAtLeast(0L)
-
-                                lote.write(proximo)
-                            }
-                        }
-
-                        val dados = lote.toByteArray()
-
-                        if (dados.isNotEmpty()) {
-                            reproduzirLote(dados)
-                        }
-
-                    } catch (_: InterruptedException) {
-                        break
-
-                    } catch (e: Exception) {
-                        playbackWriteErrors++
-                        Log.e(
-                            TAG,
-                            "Erro playback contínuo",
-                            e
-                        )
-
-                        try {
-                            Thread.sleep(50)
-                        } catch (_: Exception) {
+                        } else {
+                            // Sem áudio neste instante: espera ser
+                            // acordado por adicionarNaFilaSaida().
+                            outputQueue.wait(1000L)
                         }
                     }
-                }
 
-                Log.d(
-                    TAG,
-                    "THREAD PLAYBACK CONTÍNUA FINALIZADA"
-                )
+                    if (proximo == null) {
+                        continue
+                    }
+
+                    reproduzirLote(proximo)
+
+                } catch (_: InterruptedException) {
+                    break
+
+                } catch (e: Exception) {
+                    playbackWriteErrors++
+                    Log.e(TAG, "Erro playback contínuo", e)
+
+                    try {
+                        Thread.sleep(20L)
+                    } catch (_: Exception) {
+                    }
+                }
             }
+
+            Log.d(TAG, "THREAD PLAYBACK CONTÍNUA FINALIZADA")
+        }
 
         playbackThread?.start()
-    }
-
-    // =========================================================
-    // BATCH DE BYTES
-    // =========================================================
-
-    private class ByteArrayBatch(
-        private val limite: Int
-    ) {
-
-        private val partes =
-            ArrayList<ByteArray>()
-
-        private var total =
-            0
-
-        fun write(
-            dados: ByteArray
-        ) {
-
-            if (
-                total >= limite
-            ) {
-                return
-            }
-
-            val restante =
-                limite -
-                    total
-
-            if (
-                dados.size <= restante
-            ) {
-
-                partes.add(
-                    dados
-                )
-
-                total +=
-                    dados.size
-
-            } else {
-
-                partes.add(
-                    dados.copyOf(
-                        restante
-                    )
-                )
-
-                total +=
-                    restante
-            }
-        }
-
-        fun size(): Int =
-            total
-
-        fun toByteArray(): ByteArray {
-
-            if (
-                partes.isEmpty()
-            ) {
-                return ByteArray(0)
-            }
-
-            val resultado =
-                ByteArray(
-                    total
-                )
-
-            var pos =
-                0
-
-            for (
-                parte in partes
-            ) {
-
-                System.arraycopy(
-                    parte,
-                    0,
-                    resultado,
-                    pos,
-                    parte.size
-                )
-
-                pos +=
-                    parte.size
-            }
-
-            return resultado
-        }
     }
 
     // =========================================================
