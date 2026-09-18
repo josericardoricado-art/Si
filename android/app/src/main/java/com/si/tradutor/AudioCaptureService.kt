@@ -156,14 +156,14 @@ class AudioCaptureService : Service() {
          * Primeiro acumula vários pedaços.
          */
         private const val PREBUFFER_CHUNKS =
-            5
+            12
 
         /*
          * Aproximadamente 1 segundo de PCM16
          * mono 24 kHz.
          */
         private const val PREBUFFER_BYTES =
-            48000
+            144000
 
         /*
          * A cada ciclo, junta até aproximadamente
