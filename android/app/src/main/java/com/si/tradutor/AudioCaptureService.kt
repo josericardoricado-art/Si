@@ -156,14 +156,14 @@ class AudioCaptureService : Service() {
          * Primeiro acumula vários pedaços.
          */
         private const val PREBUFFER_CHUNKS =
-            12
+            24
 
         /*
          * Aproximadamente 1 segundo de PCM16
          * mono 24 kHz.
          */
         private const val PREBUFFER_BYTES =
-            144000
+            288000
 
         /*
          * A cada ciclo, junta até aproximadamente
@@ -2113,200 +2113,112 @@ class AudioCaptureService : Service() {
 
                 Log.d(
                     TAG,
-                    "THREAD PLAYBACK INICIADA"
+                    "THREAD PLAYBACK CONTÍNUA INICIADA"
                 )
 
-                /*
-                 * =============================================
-                 * ETAPA 1
-                 * Esperar pré-buffer.
-                 * =============================================
-                 */
-
+                // ---------------------------------------------------------
+                // PRÉ-BUFFER INICIAL
+                // ---------------------------------------------------------
                 while (
                     running.get() &&
                     !playbackPrebufferReady
                 ) {
-
                     try {
-
-                        Thread.sleep(
-                            20
-                        )
-
-                    } catch (
-                        e: InterruptedException
-                    ) {
-
+                        Thread.sleep(20)
+                    } catch (_: InterruptedException) {
                         return@Thread
                     }
                 }
 
-                if (
-                    !running.get()
-                ) {
+                if (!running.get()) {
                     return@Thread
                 }
 
-                playbackStarted =
-                    true
-
-                lastStage =
-                    "playback_started"
+                playbackStarted = true
+                lastStage = "playback_started"
 
                 Log.d(
                     TAG,
-                    "================================"
+                    "PLAYBACK CONTÍNUA DE DUBLAGEM INICIADA"
                 )
 
-                Log.d(
-                    TAG,
-                    "PLAYBACK DE DUBLAGEM INICIADO"
-                )
-
-                Log.d(
-                    TAG,
-                    "================================"
-                )
-
-                /*
-                 * =============================================
-                 * ETAPA 2
-                 * Reprodução contínua.
-                 * =============================================
-                 */
-
-                while (
-                    running.get()
-                ) {
-
+                // ---------------------------------------------------------
+                // REPRODUÇÃO CONTÍNUA
+                //
+                // Não recria o AudioTrack entre frases.
+                // Junta vários chunks antes de cada write e mantém
+                // o AudioTrack alimentado enquanto houver dados.
+                // ---------------------------------------------------------
+                while (running.get()) {
                     try {
 
-                        val lote =
-                            ByteArrayBatch(
-                                PLAYBACK_BATCH_BYTES
-                            )
+                        val lote = ByteArrayBatch(PLAYBACK_BATCH_BYTES)
 
-                        /*
-                         * Primeiro chunk:
-                         *
-                         * espera até chegar algum áudio.
-                         */
-                        val primeiro =
-                            outputQueue.poll(
-                                500,
-                                java.util.concurrent.TimeUnit.MILLISECONDS
-                            )
+                        // Se houver dados, pega imediatamente.
+                        // Se a fila estiver temporariamente vazia, espera
+                        // até 1500 ms antes de desistir deste ciclo.
+                        val primeiro = outputQueue.poll(
+                            1500,
+                            java.util.concurrent.TimeUnit.MILLISECONDS
+                        )
 
-                        if (
-                            primeiro == null
-                        ) {
-
-                            /*
-                             * A fila ficou vazia.
-                             *
-                             * Não reiniciamos o AudioTrack.
-                             * Apenas esperamos o próximo áudio.
-                             */
+                        if (primeiro == null) {
                             continue
                         }
 
-                        synchronized(
-                            outputQueue
-                        ) {
-
+                        synchronized(outputQueue) {
                             outputQueueBytes =
-                                (
-                                    outputQueueBytes -
-                                        primeiro.size
-                                    )
-                                    .coerceAtLeast(
-                                        0L
-                                    )
+                                (outputQueueBytes - primeiro.size)
+                                    .coerceAtLeast(0L)
                         }
 
-                        lote.write(
-                            primeiro
-                        )
+                        lote.write(primeiro)
 
-                        /*
-                         * Junta mais chunks imediatamente
-                         * disponíveis.
-                         */
-                        synchronized(
-                            outputQueue
-                        ) {
-
+                        // Drena imediatamente tudo que já chegou,
+                        // formando um fluxo maior e reduzindo os limites
+                        // artificiais entre chunks.
+                        synchronized(outputQueue) {
                             while (
-                                lote.size() <
-                                    PLAYBACK_BATCH_BYTES
+                                lote.size() < PLAYBACK_BATCH_BYTES
                             ) {
-
                                 val proximo =
-                                    outputQueue.poll()
-                                        ?: break
+                                    outputQueue.poll() ?: break
 
                                 outputQueueBytes =
-                                    (
-                                        outputQueueBytes -
-                                            proximo.size
-                                        )
-                                        .coerceAtLeast(
-                                            0L
-                                        )
+                                    (outputQueueBytes - proximo.size)
+                                        .coerceAtLeast(0L)
 
-                                lote.write(
-                                    proximo
-                                )
+                                lote.write(proximo)
                             }
                         }
 
-                        val dados =
-                            lote.toByteArray()
+                        val dados = lote.toByteArray()
 
-                        if (
-                            dados.isNotEmpty()
-                        ) {
-
-                            reproduzirLote(
-                                dados
-                            )
+                        if (dados.isNotEmpty()) {
+                            reproduzirLote(dados)
                         }
 
-                    } catch (
-                        e: InterruptedException
-                    ) {
-
+                    } catch (_: InterruptedException) {
                         break
 
-                    } catch (
-                        e: Exception
-                    ) {
-
+                    } catch (e: Exception) {
+                        playbackWriteErrors++
                         Log.e(
                             TAG,
-                            "Erro playback",
+                            "Erro playback contínuo",
                             e
                         )
 
-                        playbackWriteErrors++
-
                         try {
-
-                            Thread.sleep(
-                                50
-                            )
-
-                        } catch (
-                            _: Exception
-                        ) {
+                            Thread.sleep(50)
+                        } catch (_: Exception) {
                         }
                     }
                 }
 
                 Log.d(
                     TAG,
-                    "THREAD PLAYBACK FINALIZADA"
+                    "THREAD PLAYBACK CONTÍNUA FINALIZADA"
                 )
             }
 
