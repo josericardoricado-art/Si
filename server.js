@@ -2973,38 +2973,3 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 
-// ============================================================
-// INICIAR SERVIDOR
-// ============================================================
-
-app.listen(
-  PORT,
-  "0.0.0.0",
-  () => {
-
-    console.log(
-      "============================================================"
-    );
-
-    console.log(
-      `SI Tradutor Live iniciado na porta ${PORT}`
-    );
-
-    console.log(
-      `Gemini configurado: ${!!GEMINI_API_KEY}`
-    );
-
-    console.log(
-      `Modelo Gemini: ${GEMINI_MODEL}`
-    );
-
-    console.log(
-      "Servidor pronto."
-    );
-
-    console.log(
-      "============================================================"
-    );
-
-  }
-);
