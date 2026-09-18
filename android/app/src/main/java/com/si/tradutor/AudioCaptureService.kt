@@ -280,7 +280,7 @@ class AudioCaptureService : Service() {
 
     // Lock separado da fila para controlar o despertar da thread de playback.
     // LinkedBlockingQueue não expõe wait()/notifyAll() em Kotlin.
-    private val playbackLock = Any()
+    private val playbackLock = java.lang.Object()
 
     @Volatile
     private var outputQueueBytes =
@@ -2099,19 +2099,18 @@ class AudioCaptureService : Service() {
             while (running.get()) {
                 try {
 
-                    val proximo: ByteArray?
+                    var proximo: ByteArray? = null
 
                     synchronized(playbackLock) {
                         proximo = outputQueue.poll()
 
                         if (proximo != null) {
                             outputQueueBytes =
-                                (outputQueueBytes - proximo.size)
+                                (outputQueueBytes - proximo!!.size)
                                     .coerceAtLeast(0L)
-                        } else {
-                            // Sem áudio neste instante: espera ser
-                            // acordado por adicionarNaFilaSaida().
-                            playbackLock.wait(1000L)
+                        } else if (running.get()) {
+                            // Aguarda somente até chegar áudio novo ou o serviço parar.
+                            playbackLock.wait(250L)
                         }
                     }
 
@@ -2119,7 +2118,7 @@ class AudioCaptureService : Service() {
                         continue
                     }
 
-                    reproduzirLote(proximo)
+                    reproduzirLote(proximo!!)
 
                 } catch (_: InterruptedException) {
                     break
