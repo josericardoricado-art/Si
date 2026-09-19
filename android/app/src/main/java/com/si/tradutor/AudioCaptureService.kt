@@ -199,6 +199,12 @@ class AudioCaptureService : Service() {
     private var audioTrack:
         AudioTrack? = null
 
+    // Player dedicado para a voz traduzida do Gemini.
+    // O AudioCaptureService continua responsável pela captura;
+    // o GeminiAudioPlayer fica responsável pela reprodução.
+    private var geminiAudioPlayer:
+        GeminiAudioPlayer? = null
+
     private var audioManager:
         AudioManager? = null
 
@@ -694,10 +700,18 @@ class AudioCaptureService : Service() {
             criarAudioRecord()
 
             // =================================================
-            // AUDIO TRACK
+            // GEMINI AUDIO PLAYER
             // =================================================
 
-            criarAudioTrack()
+            geminiAudioPlayer =
+                GeminiAudioPlayer(
+                    this,
+                    BACKEND_URL
+                )
+
+            geminiAudioPlayer?.start(
+                jobId!!
+            )
 
             // =================================================
             // THREADS
@@ -707,9 +721,8 @@ class AudioCaptureService : Service() {
 
             iniciarThreadEnvio()
 
-            iniciarThreadPollingSaida()
-
-            iniciarThreadPlayback()
+            // A reprodução da voz traduzida agora é feita
+            // exclusivamente pelo GeminiAudioPlayer.
 
             iniciarThreadDiagnostico()
 
@@ -2583,6 +2596,18 @@ class AudioCaptureService : Service() {
             TAG,
             "================================"
         )
+
+        // =====================================================
+        // GEMINI AUDIO PLAYER
+        // =====================================================
+
+        try {
+            geminiAudioPlayer?.stop()
+        } catch (_: Exception) {
+        }
+
+        geminiAudioPlayer =
+            null
 
         // =====================================================
         // THREADS
