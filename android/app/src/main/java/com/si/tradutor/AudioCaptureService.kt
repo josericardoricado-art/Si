@@ -30,6 +30,7 @@ import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 class AudioCaptureService : Service() {
@@ -277,10 +278,6 @@ class AudioCaptureService : Service() {
         LinkedBlockingQueue<ByteArray>(
             400
         )
-
-    // Lock separado da fila para controlar o despertar da thread de playback.
-    // LinkedBlockingQueue não expõe wait()/notifyAll() em Kotlin.
-    private val playbackLock = java.lang.Object()
 
     @Volatile
     private var outputQueueBytes =
@@ -1955,10 +1952,6 @@ class AudioCaptureService : Service() {
                     Log.d(TAG, "================================")
                 }
 
-                // Acorda imediatamente a thread de playback.
-                synchronized(playbackLock) {
-                    playbackLock.notifyAll()
-                }
             }
         }
     }
@@ -2066,16 +2059,18 @@ class AudioCaptureService : Service() {
             // ---------------------------------------------------------
             // PRÉ-BUFFER INICIAL
             // ---------------------------------------------------------
-            synchronized(playbackLock) {
-                while (
-                    running.get() &&
-                    !playbackPrebufferReady
-                ) {
-                    try {
-                        playbackLock.wait(1000L)
-                    } catch (_: InterruptedException) {
-                        return@Thread
-                    }
+            // Espera até existir uma reserva de áudio antes de iniciar
+            // o AudioTrack. Não usamos wait()/notifyAll(): a própria
+            // LinkedBlockingQueue controla a espera com poll(timeout).
+            // ---------------------------------------------------------
+            while (
+                running.get() &&
+                !playbackPrebufferReady
+            ) {
+                try {
+                    Thread.sleep(20L)
+                } catch (_: InterruptedException) {
+                    return@Thread
                 }
             }
 
@@ -2091,34 +2086,27 @@ class AudioCaptureService : Service() {
             // ---------------------------------------------------------
             // FLUXO CONTÍNUO
             // ---------------------------------------------------------
-            // Não cria um AudioTrack novo entre frases.
-            // Não usa poll com timeout longo.
-            // O AudioTrack recebe cada bloco diretamente e a thread
-            // é acordada assim que um novo bloco chega.
+            // Cada chunk recebido fica na fila. A thread retira um
+            // chunk por vez e o mesmo AudioTrack permanece aberto.
+            // Quando a fila fica momentaneamente vazia, poll() espera
+            // pouco tempo em vez de encerrar/recriar a reprodução.
             // ---------------------------------------------------------
             while (running.get()) {
                 try {
 
-                    var proximo: ByteArray? = null
-
-                    synchronized(playbackLock) {
-                        proximo = outputQueue.poll()
-
-                        if (proximo != null) {
-                            outputQueueBytes =
-                                (outputQueueBytes - proximo!!.size)
-                                    .coerceAtLeast(0L)
-                        } else if (running.get()) {
-                            // Aguarda somente até chegar áudio novo ou o serviço parar.
-                            playbackLock.wait(250L)
-                        }
-                    }
+                    val proximo = outputQueue.poll(100L, TimeUnit.MILLISECONDS)
 
                     if (proximo == null) {
                         continue
                     }
 
-                    reproduzirLote(proximo!!)
+                    synchronized(outputQueue) {
+                        outputQueueBytes =
+                            (outputQueueBytes - proximo.size)
+                                .coerceAtLeast(0L)
+                    }
+
+                    reproduzirLote(proximo)
 
                 } catch (_: InterruptedException) {
                     break
@@ -2716,12 +2704,6 @@ class AudioCaptureService : Service() {
 
             outputQueueBytes =
                 0L
-        }
-
-        // Acorda imediatamente a thread de playback caso ela esteja
-        // esperando por novos dados.
-        synchronized(playbackLock) {
-            playbackLock.notifyAll()
         }
 
         captureStarted =
