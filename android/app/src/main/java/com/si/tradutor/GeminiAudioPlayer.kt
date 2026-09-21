@@ -3,9 +3,8 @@ package com.si.tradutor
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioTrack
-import android.os.Handler
-import android.os.Looper
 import android.util.Base64
 import android.util.Log
 import org.json.JSONObject
@@ -22,31 +21,29 @@ class GeminiAudioPlayer(
     companion object {
         private const val TAG = "GeminiAudioPlayer"
 
-        // Gemini Live devolve PCM 16-bit, mono, 24 kHz
+        // Áudio enviado pelo Gemini Live
         private const val SAMPLE_RATE = 24000
         private const val CHANNEL_MASK = AudioFormat.CHANNEL_OUT_MONO
         private const val ENCODING = AudioFormat.ENCODING_PCM_16BIT
 
-        // Consulta rápida ao Render
+        // Consulta o Render rapidamente
         private const val POLL_INTERVAL_MS = 80L
 
-        // Quantidade máxima de áudio mantida na memória
+        // Limite máximo da fila de áudio
         private const val MAX_QUEUE_BYTES = 10 * 1024 * 1024
 
-        // Tamanho aproximado de um segundo de áudio
+        // Aproximadamente 1 segundo de PCM 24 kHz / 16 bit / mono
         private const val BYTES_PER_SECOND = SAMPLE_RATE * 2
 
-        // Começa praticamente imediatamente
-        private const val MIN_START_BYTES = BYTES_PER_SECOND / 2
-
-        // Tamanho usado para alimentar o AudioTrack
+        // Tamanho usado em cada escrita no AudioTrack
         private const val WRITE_CHUNK_BYTES = 48000
 
-        // Ganho da voz traduzida
+        // Volume da voz traduzida
         private const val VOLUME = 1.0f
     }
 
-    private val running = AtomicBoolean(false)
+    private val running =
+        AtomicBoolean(false)
 
     private var jobId: String? = null
 
@@ -67,7 +64,10 @@ class GeminiAudioPlayer(
     fun start(jobId: String) {
 
         if (running.get()) {
-            Log.d(TAG, "Player já estava funcionando")
+            Log.d(
+                TAG,
+                "Player já estava funcionando"
+            )
             return
         }
 
@@ -93,7 +93,10 @@ class GeminiAudioPlayer(
             return
         }
 
-        Log.d(TAG, "Parando GeminiAudioPlayer")
+        Log.d(
+            TAG,
+            "Parando GeminiAudioPlayer"
+        )
 
         try {
             pollThread?.interrupt()
@@ -109,7 +112,9 @@ class GeminiAudioPlayer(
         playbackThread = null
 
         synchronized(lock) {
+
             audioQueue.clear()
+
             queuedBytes = 0
         }
 
@@ -157,7 +162,9 @@ class GeminiAudioPlayer(
 
         Log.d(
             TAG,
-            "Criando AudioTrack. minBuffer=$minBuffer buffer=$bufferSize"
+            "Criando AudioTrack. " +
+                    "minBuffer=$minBuffer " +
+                    "buffer=$bufferSize"
         )
 
         val attributes =
@@ -172,9 +179,15 @@ class GeminiAudioPlayer(
 
         val format =
             AudioFormat.Builder()
-                .setSampleRate(SAMPLE_RATE)
-                .setEncoding(ENCODING)
-                .setChannelMask(CHANNEL_MASK)
+                .setSampleRate(
+                    SAMPLE_RATE
+                )
+                .setEncoding(
+                    ENCODING
+                )
+                .setChannelMask(
+                    CHANNEL_MASK
+                )
                 .build()
 
         audioTrack =
@@ -183,12 +196,15 @@ class GeminiAudioPlayer(
                 format,
                 bufferSize,
                 AudioTrack.MODE_STREAM,
-                AudioTrack.AUDIO_SESSION_ID_GENERATE
+                AudioManager.AUDIO_SESSION_ID_GENERATE
             )
 
-        audioTrack?.setVolume(VOLUME)
+        audioTrack?.setVolume(
+            VOLUME
+        )
 
         try {
+
             audioTrack?.play()
 
             Log.d(
@@ -224,16 +240,22 @@ class GeminiAudioPlayer(
                             audioQueue.take()
 
                         synchronized(lock) {
-                            queuedBytes -= data.size.toLong()
+
+                            queuedBytes -=
+                                data.size.toLong()
 
                             if (queuedBytes < 0) {
                                 queuedBytes = 0
                             }
                         }
 
-                        tocarAudio(data)
+                        tocarAudio(
+                            data
+                        )
 
-                    } catch (e: InterruptedException) {
+                    } catch (
+                        e: InterruptedException
+                    ) {
 
                         break
 
@@ -253,19 +275,25 @@ class GeminiAudioPlayer(
                 )
 
             }.apply {
-                name = "SI-Gemini-AudioPlayback"
+
+                name =
+                    "SI-Gemini-AudioPlayback"
+
                 start()
             }
     }
 
-    private fun tocarAudio(data: ByteArray) {
+    private fun tocarAudio(
+        data: ByteArray
+    ) {
 
         if (!running.get()) {
             return
         }
 
-        val track = audioTrack
-            ?: return
+        val track =
+            audioTrack
+                ?: return
 
         var offset = 0
 
@@ -336,7 +364,9 @@ class GeminiAudioPlayer(
 
                         buscarAudioTraduzido()
 
-                    } catch (e: InterruptedException) {
+                    } catch (
+                        e: InterruptedException
+                    ) {
 
                         break
 
@@ -355,7 +385,9 @@ class GeminiAudioPlayer(
                             POLL_INTERVAL_MS
                         )
 
-                    } catch (_: InterruptedException) {
+                    } catch (
+                        _: InterruptedException
+                    ) {
 
                         break
                     }
@@ -367,7 +399,10 @@ class GeminiAudioPlayer(
                 )
 
             }.apply {
-                name = "SI-Gemini-AudioPoll"
+
+                name =
+                    "SI-Gemini-AudioPoll"
+
                 start()
             }
     }
@@ -382,7 +417,8 @@ class GeminiAudioPlayer(
             "$backendUrl/api/audio/output/$id" +
                     "?after=$lastOutputSeq&limit=30"
 
-        var connection: HttpURLConnection? = null
+        var connection:
+            HttpURLConnection? = null
 
         try {
 
@@ -391,7 +427,7 @@ class GeminiAudioPlayer(
 
             connection =
                 url.openConnection()
-                        as HttpURLConnection
+                    as HttpURLConnection
 
             connection.requestMethod =
                 "GET"
@@ -402,7 +438,8 @@ class GeminiAudioPlayer(
             connection.readTimeout =
                 5000
 
-            connection.useCaches = false
+            connection.useCaches =
+                false
 
             val code =
                 connection.responseCode
@@ -420,13 +457,17 @@ class GeminiAudioPlayer(
             val text =
                 connection.inputStream
                     .bufferedReader()
-                    .use { it.readText() }
+                    .use {
+                        it.readText()
+                    }
 
             if (text.isBlank()) {
                 return
             }
 
-            processarResposta(text)
+            processarResposta(
+                text
+            )
 
         } catch (e: Exception) {
 
@@ -445,12 +486,18 @@ class GeminiAudioPlayer(
         }
     }
 
-    private fun processarResposta(text: String) {
+    private fun processarResposta(
+        text: String
+    ) {
 
         val root =
             JSONObject(text)
 
-        if (!root.optBoolean("ok", true)) {
+        if (!root.optBoolean(
+                "ok",
+                true
+            )
+        ) {
 
             Log.w(
                 TAG,
@@ -461,7 +508,9 @@ class GeminiAudioPlayer(
         }
 
         val chunks =
-            root.optJSONArray("chunks")
+            root.optJSONArray(
+                "chunks"
+            )
                 ?: return
 
         if (chunks.length() == 0) {
@@ -470,7 +519,9 @@ class GeminiAudioPlayer(
 
         var novos = 0
 
-        for (i in 0 until chunks.length()) {
+        for (
+            i in 0 until chunks.length()
+        ) {
 
             val chunk =
                 chunks.optJSONObject(i)
@@ -527,8 +578,13 @@ class GeminiAudioPlayer(
                 audio
             )
 
-            if (seq > lastOutputSeq) {
-                lastOutputSeq = seq
+            if (
+                seq >
+                lastOutputSeq
+            ) {
+
+                lastOutputSeq =
+                    seq
             }
 
             novos++
@@ -566,7 +622,8 @@ class GeminiAudioPlayer(
 
                 Log.w(
                     TAG,
-                    "Fila cheia. Descartando áudio antigo."
+                    "Fila cheia. " +
+                            "Descartando áudio antigo."
                 )
 
                 while (
@@ -587,7 +644,9 @@ class GeminiAudioPlayer(
                 }
             }
 
-            audioQueue.offer(audio)
+            audioQueue.offer(
+                audio
+            )
 
             queuedBytes +=
                 audio.size.toLong()
