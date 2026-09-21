@@ -4,15 +4,14 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.os.Handler
+import android.os.Looper
 import android.util.Base64
 import android.util.Log
 import org.json.JSONObject
-import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.LinkedBlockingQueue
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 class GeminiAudioPlayer(
@@ -21,138 +20,83 @@ class GeminiAudioPlayer(
 ) {
 
     companion object {
+        private const val TAG = "GeminiAudioPlayer"
 
-        private const val TAG =
-            "SI_GEMINI_AUDIO_PLAYER"
+        // Gemini Live devolve PCM 16-bit, mono, 24 kHz
+        private const val SAMPLE_RATE = 24000
+        private const val CHANNEL_MASK = AudioFormat.CHANNEL_OUT_MONO
+        private const val ENCODING = AudioFormat.ENCODING_PCM_16BIT
 
-        private const val SAMPLE_RATE =
-            24000
+        // Consulta rápida ao Render
+        private const val POLL_INTERVAL_MS = 80L
 
-        private const val CHANNEL =
-            AudioFormat.CHANNEL_OUT_MONO
+        // Quantidade máxima de áudio mantida na memória
+        private const val MAX_QUEUE_BYTES = 10 * 1024 * 1024
 
-        private const val FORMAT =
-            AudioFormat.ENCODING_PCM_16BIT
+        // Tamanho aproximado de um segundo de áudio
+        private const val BYTES_PER_SECOND = SAMPLE_RATE * 2
 
-        /*
-         * 24 kHz / mono / PCM16
-         *
-         * 48.000 bytes = 1 segundo
-         * 192.000 bytes = 4 segundos
-         */
-        private const val BYTES_PER_SECOND =
-            SAMPLE_RATE * 2
+        // Começa praticamente imediatamente
+        private const val MIN_START_BYTES = BYTES_PER_SECOND / 2
 
-        /*
-         * Espera aproximadamente 6 segundos
-         * antes de começar a reprodução.
-         */
-        private const val PREBUFFER_BYTES =
-            BYTES_PER_SECOND * 6
+        // Tamanho usado para alimentar o AudioTrack
+        private const val WRITE_CHUNK_BYTES = 48000
 
-        /*
-         * Limite máximo da fila:
-         * aproximadamente 20 segundos.
-         */
-        private const val MAX_QUEUE_BYTES =
-            BYTES_PER_SECOND * 20
-
-        /*
-         * Busca novos blocos rapidamente.
-         */
-        private const val POLL_MS =
-            60L
-
-        private const val HTTP_LIMIT =
-            30
-
-        /*
-         * Cada write envia no máximo 1 segundo.
-         */
-        private const val WRITE_BLOCK_BYTES =
-            BYTES_PER_SECOND
+        // Ganho da voz traduzida
+        private const val VOLUME = 1.0f
     }
 
-    private val running =
-        AtomicBoolean(false)
+    private val running = AtomicBoolean(false)
 
-    /*
-     * Fila exclusiva da voz traduzida.
-     */
+    private var jobId: String? = null
+
+    private var audioTrack: AudioTrack? = null
+
+    private var pollThread: Thread? = null
+    private var playbackThread: Thread? = null
+
     private val audioQueue =
-        LinkedBlockingQueue<ByteArray>(500)
+        LinkedBlockingQueue<ByteArray>()
 
-    private var queueBytes =
-        0L
+    private var queuedBytes = 0L
 
-    private var audioTrack:
-        AudioTrack? = null
+    private var lastOutputSeq = 0L
 
-    private var pollingThread:
-        Thread? = null
+    private val lock = Any()
 
-    private var playbackThread:
-        Thread? = null
+    fun start(jobId: String) {
 
-    @Volatile
-    private var jobId:
-        String? = null
-
-    @Volatile
-    private var lastSeq =
-        0L
-
-    @Volatile
-    private var prebufferReady =
-        false
-
-    @Volatile
-    private var volume =
-        1.0f
-
-    fun start(
-        jobId: String
-    ) {
-
-        stop()
-
-        this.jobId =
-            jobId
-
-        lastSeq =
-            0L
-
-        prebufferReady =
-            false
-
-        synchronized(audioQueue) {
-
-            audioQueue.clear()
-
-            queueBytes =
-                0L
+        if (running.get()) {
+            Log.d(TAG, "Player já estava funcionando")
+            return
         }
+
+        this.jobId = jobId
 
         running.set(true)
 
-        criarAudioTrack()
-
-        iniciarPolling()
-
-        iniciarPlayback()
-
         Log.d(
             TAG,
-            "PLAYER START job=$jobId"
+            "Iniciando GeminiAudioPlayer. jobId=$jobId"
         )
+
+        criarAudioTrack()
+
+        iniciarPlaybackThread()
+
+        iniciarPollThread()
     }
 
     fun stop() {
 
-        running.set(false)
+        if (!running.getAndSet(false)) {
+            return
+        }
+
+        Log.d(TAG, "Parando GeminiAudioPlayer")
 
         try {
-            pollingThread?.interrupt()
+            pollThread?.interrupt()
         } catch (_: Exception) {
         }
 
@@ -161,18 +105,12 @@ class GeminiAudioPlayer(
         } catch (_: Exception) {
         }
 
-        pollingThread =
-            null
+        pollThread = null
+        playbackThread = null
 
-        playbackThread =
-            null
-
-        synchronized(audioQueue) {
-
+        synchronized(lock) {
             audioQueue.clear()
-
-            queueBytes =
-                0L
+            queuedBytes = 0
         }
 
         try {
@@ -186,230 +124,274 @@ class GeminiAudioPlayer(
         }
 
         try {
+            audioTrack?.stop()
+        } catch (_: Exception) {
+        }
+
+        try {
             audioTrack?.release()
         } catch (_: Exception) {
         }
 
-        audioTrack =
-            null
+        audioTrack = null
 
-        jobId =
-            null
+        jobId = null
 
-        lastSeq =
-            0L
-
-        prebufferReady =
-            false
-
-        Log.d(
-            TAG,
-            "PLAYER STOP"
-        )
-    }
-
-    fun setVolume(
-        value: Float
-    ) {
-
-        volume =
-            value.coerceIn(
-                0.0f,
-                1.0f
-            )
-
-        try {
-
-            audioTrack?.setVolume(
-                volume
-            )
-
-        } catch (_: Exception) {
-        }
-
-        Log.d(
-            TAG,
-            "PLAYER VOLUME=$volume"
-        )
-    }
-
-    fun getVolume():
-        Float {
-
-        return volume
+        lastOutputSeq = 0L
     }
 
     private fun criarAudioTrack() {
 
-        try {
-
-            val minBuffer =
-                AudioTrack.getMinBufferSize(
-                    SAMPLE_RATE,
-                    CHANNEL,
-                    FORMAT
-                )
-
-            val bufferSize =
-                maxOf(
-                    minBuffer * 8,
-                    BYTES_PER_SECOND * 4
-                )
-
-            val track =
-                AudioTrack.Builder()
-                    .setAudioAttributes(
-                        AudioAttributes.Builder()
-                            .setUsage(
-                                AudioAttributes.USAGE_MEDIA
-                            )
-                            .setContentType(
-                                AudioAttributes.CONTENT_TYPE_SPEECH
-                            )
-                            .build()
-                    )
-                    .setAudioFormat(
-                        AudioFormat.Builder()
-                            .setEncoding(
-                                FORMAT
-                            )
-                            .setSampleRate(
-                                SAMPLE_RATE
-                            )
-                            .setChannelMask(
-                                CHANNEL
-                            )
-                            .build()
-                    )
-                    .setBufferSizeInBytes(
-                        bufferSize
-                    )
-                    .setTransferMode(
-                        AudioTrack.MODE_STREAM
-                    )
-                    .build()
-
-            if (
-                track.state !=
-                AudioTrack.STATE_INITIALIZED
-            ) {
-
-                Log.e(
-                    TAG,
-                    "AudioTrack não inicializado"
-                )
-
-                track.release()
-
-                return
-            }
-
-            track.setVolume(
-                volume
+        val minBuffer =
+            AudioTrack.getMinBufferSize(
+                SAMPLE_RATE,
+                CHANNEL_MASK,
+                ENCODING
             )
 
-            audioTrack =
-                track
+        val bufferSize =
+            maxOf(
+                minBuffer * 4,
+                BYTES_PER_SECOND * 2
+            )
+
+        Log.d(
+            TAG,
+            "Criando AudioTrack. minBuffer=$minBuffer buffer=$bufferSize"
+        )
+
+        val attributes =
+            AudioAttributes.Builder()
+                .setUsage(
+                    AudioAttributes.USAGE_MEDIA
+                )
+                .setContentType(
+                    AudioAttributes.CONTENT_TYPE_SPEECH
+                )
+                .build()
+
+        val format =
+            AudioFormat.Builder()
+                .setSampleRate(SAMPLE_RATE)
+                .setEncoding(ENCODING)
+                .setChannelMask(CHANNEL_MASK)
+                .build()
+
+        audioTrack =
+            AudioTrack(
+                attributes,
+                format,
+                bufferSize,
+                AudioTrack.MODE_STREAM,
+                AudioTrack.AUDIO_SESSION_ID_GENERATE
+            )
+
+        audioTrack?.setVolume(VOLUME)
+
+        try {
+            audioTrack?.play()
 
             Log.d(
                 TAG,
-                "AudioTrack pronto " +
-                    "buffer=$bufferSize"
+                "AudioTrack PLAY iniciado"
             )
 
         } catch (e: Exception) {
 
             Log.e(
                 TAG,
-                "Erro criando AudioTrack",
+                "Erro ao iniciar AudioTrack",
                 e
             )
         }
     }
 
-    private fun iniciarPolling() {
+    private fun iniciarPlaybackThread() {
 
-        pollingThread =
+        playbackThread =
             Thread {
 
                 Log.d(
                     TAG,
-                    "Polling iniciado"
+                    "Playback thread iniciado"
                 )
 
-                while (
-                    running.get()
-                ) {
+                while (running.get()) {
 
                     try {
 
-                        buscarAudio()
+                        val data =
+                            audioQueue.take()
 
-                        Thread.sleep(
-                            POLL_MS
-                        )
+                        synchronized(lock) {
+                            queuedBytes -= data.size.toLong()
 
-                    } catch (
-                        _: InterruptedException
-                    ) {
+                            if (queuedBytes < 0) {
+                                queuedBytes = 0
+                            }
+                        }
+
+                        tocarAudio(data)
+
+                    } catch (e: InterruptedException) {
 
                         break
 
-                    } catch (
-                        e: Exception
-                    ) {
+                    } catch (e: Exception) {
 
-                        if (
-                            running.get()
-                        ) {
-
-                            Log.w(
-                                TAG,
-                                "Erro polling",
-                                e
-                            )
-                        }
-
-                        try {
-                            Thread.sleep(
-                                250L
-                            )
-                        } catch (_: Exception) {
-                        }
+                        Log.e(
+                            TAG,
+                            "Erro no playback",
+                            e
+                        )
                     }
                 }
 
                 Log.d(
                     TAG,
-                    "Polling finalizado"
+                    "Playback thread finalizado"
                 )
-            }
 
-        pollingThread?.start()
+            }.apply {
+                name = "SI-Gemini-AudioPlayback"
+                start()
+            }
     }
 
-    private fun buscarAudio() {
+    private fun tocarAudio(data: ByteArray) {
+
+        if (!running.get()) {
+            return
+        }
+
+        val track = audioTrack
+            ?: return
+
+        var offset = 0
+
+        while (
+            offset < data.size &&
+            running.get()
+        ) {
+
+            val restante =
+                data.size - offset
+
+            val tamanho =
+                minOf(
+                    restante,
+                    WRITE_CHUNK_BYTES
+                )
+
+            try {
+
+                val escritos =
+                    track.write(
+                        data,
+                        offset,
+                        tamanho,
+                        AudioTrack.WRITE_BLOCKING
+                    )
+
+                if (escritos > 0) {
+
+                    offset += escritos
+
+                } else {
+
+                    Log.w(
+                        TAG,
+                        "AudioTrack.write retornou $escritos"
+                    )
+
+                    break
+                }
+
+            } catch (e: Exception) {
+
+                Log.e(
+                    TAG,
+                    "Erro escrevendo áudio",
+                    e
+                )
+
+                break
+            }
+        }
+    }
+
+    private fun iniciarPollThread() {
+
+        pollThread =
+            Thread {
+
+                Log.d(
+                    TAG,
+                    "Poll thread iniciado"
+                )
+
+                while (running.get()) {
+
+                    try {
+
+                        buscarAudioTraduzido()
+
+                    } catch (e: InterruptedException) {
+
+                        break
+
+                    } catch (e: Exception) {
+
+                        Log.e(
+                            TAG,
+                            "Erro buscando áudio traduzido",
+                            e
+                        )
+                    }
+
+                    try {
+
+                        Thread.sleep(
+                            POLL_INTERVAL_MS
+                        )
+
+                    } catch (_: InterruptedException) {
+
+                        break
+                    }
+                }
+
+                Log.d(
+                    TAG,
+                    "Poll thread finalizado"
+                )
+
+            }.apply {
+                name = "SI-Gemini-AudioPoll"
+                start()
+            }
+    }
+
+    private fun buscarAudioTraduzido() {
 
         val id =
             jobId
                 ?: return
 
-        var connection:
-            HttpURLConnection? =
-            null
+        val urlString =
+            "$backendUrl/api/audio/output/$id" +
+                    "?after=$lastOutputSeq&limit=30"
+
+        var connection: HttpURLConnection? = null
 
         try {
 
             val url =
-                URL(
-                    "$backendUrl/api/audio/output/$id" +
-                        "?after=$lastSeq" +
-                        "&limit=$HTTP_LIMIT"
-                )
+                URL(urlString)
 
             connection =
                 url.openConnection()
-                    as HttpURLConnection
+                        as HttpURLConnection
 
             connection.requestMethod =
                 "GET"
@@ -420,460 +402,202 @@ class GeminiAudioPlayer(
             connection.readTimeout =
                 5000
 
-            connection.useCaches =
-                false
+            connection.useCaches = false
 
-            connection.setRequestProperty(
-                "Connection",
-                "close"
-            )
+            val code =
+                connection.responseCode
 
-            if (
-                connection.responseCode !=
-                HttpURLConnection.HTTP_OK
-            ) {
-                return
-            }
-
-            val resposta =
-                BufferedReader(
-                    InputStreamReader(
-                        connection.inputStream
-                    )
-                ).use {
-                    it.readText()
-                }
-
-            if (
-                resposta.isNotBlank()
-            ) {
-
-                processarResposta(
-                    resposta
-                )
-            }
-
-        } catch (e: Exception) {
-
-            if (
-                running.get()
-            ) {
+            if (code != 200) {
 
                 Log.w(
                     TAG,
-                    "Erro buscando áudio",
+                    "Render respondeu HTTP $code"
+                )
+
+                return
+            }
+
+            val text =
+                connection.inputStream
+                    .bufferedReader()
+                    .use { it.readText() }
+
+            if (text.isBlank()) {
+                return
+            }
+
+            processarResposta(text)
+
+        } catch (e: Exception) {
+
+            if (running.get()) {
+
+                Log.e(
+                    TAG,
+                    "Erro HTTP buscando áudio",
                     e
                 )
             }
 
         } finally {
 
-            try {
-                connection?.disconnect()
-            } catch (_: Exception) {
-            }
+            connection?.disconnect()
         }
     }
 
-    private fun processarResposta(
-        resposta: String
-    ) {
+    private fun processarResposta(text: String) {
 
-        try {
+        val root =
+            JSONObject(text)
 
-            val root =
-                JSONObject(
-                    resposta
+        if (!root.optBoolean("ok", true)) {
+
+            Log.w(
+                TAG,
+                "Backend informou ok=false"
+            )
+
+            return
+        }
+
+        val chunks =
+            root.optJSONArray("chunks")
+                ?: return
+
+        if (chunks.length() == 0) {
+            return
+        }
+
+        var novos = 0
+
+        for (i in 0 until chunks.length()) {
+
+            val chunk =
+                chunks.optJSONObject(i)
+                    ?: continue
+
+            val seq =
+                chunk.optLong(
+                    "seq",
+                    -1
                 )
 
-            val chunks =
-                root.optJSONArray(
-                    "chunks"
-                )
-
-            if (
-                chunks != null
-            ) {
-
-                for (
-                    i in 0 until chunks.length()
-                ) {
-
-                    val item =
-                        chunks.optJSONObject(
-                            i
-                        )
-                            ?: continue
-
-                    val seq =
-                        item.optLong(
-                            "seq",
-                            -1L
-                        )
-
-                    if (
-                        seq <= lastSeq
-                    ) {
-                        continue
-                    }
-
-                    val base64 =
-                        item.optString(
-                            "audio",
-                            ""
-                        )
-
-                    if (
-                        base64.isBlank()
-                    ) {
-                        continue
-                    }
-
-                    val audio =
-                        decodificar(
-                            base64
-                        )
-
-                    if (
-                        audio.isEmpty()
-                    ) {
-                        continue
-                    }
-
-                    adicionarAudio(
-                        audio
-                    )
-
-                    lastSeq =
-                        seq
-                }
-
-                return
+            if (seq < 0) {
+                continue
             }
 
-            /*
-             * Compatibilidade com resposta
-             * contendo apenas "audio".
-             */
-            val base64 =
-                root.optString(
+            if (seq <= lastOutputSeq) {
+                continue
+            }
+
+            val audioBase64 =
+                chunk.optString(
                     "audio",
                     ""
                 )
 
-            if (
-                base64.isNotBlank()
-            ) {
-
-                val audio =
-                    decodificar(
-                        base64
-                    )
-
-                if (
-                    audio.isNotEmpty()
-                ) {
-
-                    adicionarAudio(
-                        audio
-                    )
-                }
+            if (audioBase64.isBlank()) {
+                continue
             }
 
-        } catch (e: Exception) {
-
-            Log.e(
-                TAG,
-                "Erro JSON do áudio",
-                e
-            )
-        }
-    }
-
-    private fun decodificar(
-        textoOriginal: String
-    ): ByteArray {
-
-        return try {
-
-            var texto =
-                textoOriginal.trim()
-
-            if (
-                texto.startsWith(
-                    "data:"
-                )
-            ) {
-
-                val comma =
-                    texto.indexOf(",")
-
-                if (
-                    comma >= 0
-                ) {
-
-                    texto =
-                        texto.substring(
-                            comma + 1
-                        )
-                }
-            }
-
-            Base64.decode(
-                texto,
-                Base64.DEFAULT
-            )
-
-        } catch (e: Exception) {
-
-            Log.e(
-                TAG,
-                "Erro decodificando Base64",
-                e
-            )
-
-            ByteArray(0)
-        }
-    }
-
-    private fun adicionarAudio(
-        audio: ByteArray
-    ) {
-
-        if (
-            !running.get() ||
-            audio.isEmpty()
-        ) {
-            return
-        }
-
-        synchronized(audioQueue) {
-
-            /*
-             * Se a fila estiver muito cheia,
-             * descarta os blocos mais antigos
-             * para evitar memória excessiva.
-             */
-            while (
-                queueBytes +
-                    audio.size >
-                MAX_QUEUE_BYTES
-            ) {
-
-                val antigo =
-                    audioQueue.poll()
-                        ?: break
-
-                queueBytes =
-                    (
-                        queueBytes -
-                            antigo.size
-                        )
-                        .coerceAtLeast(
-                            0L
-                        )
-            }
-
-            if (
-                audioQueue.offer(
-                    audio
-                )
-            ) {
-
-                queueBytes +=
-                    audio.size.toLong()
-
-                if (
-                    !prebufferReady &&
-                    queueBytes >=
-                    PREBUFFER_BYTES
-                ) {
-
-                    prebufferReady =
-                        true
-
-                    Log.d(
-                        TAG,
-                        "PREBUFFER OK " +
-                            "bytes=$queueBytes"
-                    )
-                }
-            }
-        }
-    }
-
-    private fun iniciarPlayback() {
-
-        playbackThread =
-            Thread {
-
-                Log.d(
-                    TAG,
-                    "Playback aguardando buffer"
-                )
-
-                /*
-                 * Não começa com poucos bytes.
-                 */
-                while (
-                    running.get() &&
-                    !prebufferReady
-                ) {
-
-                    try {
-
-                        Thread.sleep(
-                            20L
-                        )
-
-                    } catch (
-                        _: InterruptedException
-                    ) {
-
-                        return@Thread
-                    }
-                }
-
-                if (
-                    !running.get()
-                ) {
-                    return@Thread
-                }
-
-                val track =
-                    audioTrack
-                        ?: return@Thread
-
+            val audio =
                 try {
 
-                    /*
-                     * COMEÇA UMA ÚNICA VEZ.
-                     *
-                     * O AudioTrack permanece em PLAY
-                     * durante toda a sessão.
-                     */
-                    track.play()
-
-                    Log.d(
-                        TAG,
-                        "AudioTrack PLAY CONTÍNUO"
+                    Base64.decode(
+                        audioBase64,
+                        Base64.DEFAULT
                     )
 
-                    while (
-                        running.get()
-                    ) {
-
-                        /*
-                         * Retira um bloco da fila.
-                         */
-                        val audio =
-                            audioQueue.poll(
-                                300L,
-                                TimeUnit.MILLISECONDS
-                            )
-
-                        if (
-                            audio == null
-                        ) {
-
-                            /*
-                             * Não para o AudioTrack.
-                             * Apenas continua esperando.
-                             */
-                            continue
-                        }
-
-                        synchronized(
-                            audioQueue
-                        ) {
-
-                            queueBytes =
-                                (
-                                    queueBytes -
-                                        audio.size
-                                    )
-                                    .coerceAtLeast(
-                                        0L
-                                    )
-                        }
-
-                        escreverAudio(
-                            track,
-                            audio
-                        )
-                    }
-
-                } catch (
-                    _: InterruptedException
-                ) {
-
-                    return@Thread
-
-                } catch (
-                    e: Exception
-                ) {
+                } catch (e: Exception) {
 
                     Log.e(
                         TAG,
-                        "Erro playback",
+                        "Erro decodificando Base64 seq=$seq",
                         e
                     )
+
+                    continue
                 }
 
-                Log.d(
-                    TAG,
-                    "Playback finalizado"
-                )
+            if (audio.isEmpty()) {
+                continue
             }
 
-        playbackThread?.start()
+            adicionarAudioNaFila(
+                audio
+            )
+
+            if (seq > lastOutputSeq) {
+                lastOutputSeq = seq
+            }
+
+            novos++
+        }
+
+        if (novos > 0) {
+
+            Log.d(
+                TAG,
+                "Recebidos $novos chunks novos. " +
+                        "seq=$lastOutputSeq " +
+                        "fila=${getQueuedBytes()} bytes"
+            )
+        }
     }
 
-    private fun escreverAudio(
-        track: AudioTrack,
+    private fun adicionarAudioNaFila(
         audio: ByteArray
     ) {
 
-        var offset =
-            0
+        synchronized(lock) {
 
-        while (
-            offset < audio.size &&
-            running.get()
-        ) {
+            if (!running.get()) {
+                return
+            }
 
-            val restante =
-                audio.size -
-                    offset
-
-            val tamanho =
-                minOf(
-                    restante,
-                    WRITE_BLOCK_BYTES
-                )
-
-            val escritos =
-                track.write(
-                    audio,
-                    offset,
-                    tamanho,
-                    AudioTrack.WRITE_BLOCKING
-                )
+            val novoTotal =
+                queuedBytes +
+                        audio.size
 
             if (
-                escritos <= 0
+                novoTotal >
+                MAX_QUEUE_BYTES
             ) {
 
                 Log.w(
                     TAG,
-                    "AudioTrack.write=$escritos"
+                    "Fila cheia. Descartando áudio antigo."
                 )
 
-                break
+                while (
+                    queuedBytes + audio.size >
+                    MAX_QUEUE_BYTES
+                ) {
+
+                    val antigo =
+                        audioQueue.poll()
+                            ?: break
+
+                    queuedBytes -=
+                        antigo.size.toLong()
+
+                    if (queuedBytes < 0) {
+                        queuedBytes = 0
+                    }
+                }
             }
 
-            offset +=
-                escritos
+            audioQueue.offer(audio)
+
+            queuedBytes +=
+                audio.size.toLong()
+        }
+    }
+
+    private fun getQueuedBytes(): Long {
+
+        synchronized(lock) {
+            return queuedBytes
         }
     }
 }
