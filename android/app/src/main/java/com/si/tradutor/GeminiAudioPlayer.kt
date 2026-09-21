@@ -8,9 +8,12 @@ import android.media.AudioTrack
 import android.util.Base64
 import android.util.Log
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
 import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 class GeminiAudioPlayer(
@@ -22,26 +25,23 @@ class GeminiAudioPlayer(
 
         private const val TAG = "GeminiAudioPlayer"
 
-        // Gemini Live:
+        // Gemini Live envia:
         // PCM 16-bit / mono / 24 kHz
         private const val SAMPLE_RATE = 24000
+
         private const val CHANNEL_MASK =
             AudioFormat.CHANNEL_OUT_MONO
+
         private const val ENCODING =
             AudioFormat.ENCODING_PCM_16BIT
 
-        // 150 ms entre consultas
-        private const val POLL_INTERVAL_MS = 150L
+        // Aproximadamente 300 ms.
+        // 24000 samples/s * 2 bytes = 48000 bytes/s
+        private const val PREBUFFER_BYTES = 14400
 
-        // Aproximadamente 300 ms antes de iniciar/retomar
-        private const val PREBUFFER_BYTES =
-            14400
+        // Aproximadamente 200 ms.
+        private const val WRITE_CHUNK_BYTES = 9600
 
-        // Aproximadamente 200 ms por escrita
-        private const val WRITE_CHUNK_BYTES =
-            9600
-
-        // Máximo de áudio guardado na memória
         private const val MAX_QUEUE_BYTES =
             10 * 1024 * 1024
 
@@ -55,20 +55,26 @@ class GeminiAudioPlayer(
 
     private var audioTrack: AudioTrack? = null
 
-    private var pollThread: Thread? = null
-
     private var playbackThread: Thread? = null
+
+    private var webSocket: WebSocket? = null
 
     private val audioQueue =
         LinkedBlockingQueue<ByteArray>()
 
     private var queuedBytes = 0L
 
-    private var lastOutputSeq = 0L
-
     private var playbackStarted = false
 
     private val lock = Any()
+
+    private val httpClient =
+        OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(0, TimeUnit.MILLISECONDS)
+            .writeTimeout(10, TimeUnit.SECONDS)
+            .pingInterval(20, TimeUnit.SECONDS)
+            .build()
 
 
     // ============================================================
@@ -89,22 +95,27 @@ class GeminiAudioPlayer(
 
         this.jobId = jobId
 
-        lastOutputSeq = 0L
-
-        playbackStarted = false
-
         running.set(true)
+
+        synchronized(lock) {
+
+            audioQueue.clear()
+
+            queuedBytes = 0L
+
+            playbackStarted = false
+        }
 
         Log.d(
             TAG,
-            "Iniciando player. jobId=$jobId"
+            "Iniciando player WebSocket. jobId=$jobId"
         )
 
         criarAudioTrack()
 
         iniciarPlaybackThread()
 
-        iniciarPollThread()
+        conectarWebSocket()
     }
 
 
@@ -120,20 +131,23 @@ class GeminiAudioPlayer(
 
         Log.d(
             TAG,
-            "Parando player"
+            "Parando player WebSocket"
         )
 
         try {
-            pollThread?.interrupt()
+            webSocket?.close(
+                1000,
+                "Player parado"
+            )
         } catch (_: Exception) {
         }
+
+        webSocket = null
 
         try {
             playbackThread?.interrupt()
         } catch (_: Exception) {
         }
-
-        pollThread = null
 
         playbackThread = null
 
@@ -169,8 +183,6 @@ class GeminiAudioPlayer(
         audioTrack = null
 
         jobId = null
-
-        lastOutputSeq = 0L
     }
 
 
@@ -243,6 +255,292 @@ class GeminiAudioPlayer(
 
 
     // ============================================================
+    // WEBSOCKET
+    // ============================================================
+
+    private fun conectarWebSocket() {
+
+        val id =
+            jobId
+                ?: return
+
+        if (!running.get()) {
+            return
+        }
+
+        val wsUrl =
+            backendUrl
+                .replace(
+                    "https://",
+                    "wss://"
+                )
+                .replace(
+                    "http://",
+                    "ws://"
+                ) +
+                "/ws"
+
+        Log.d(
+            TAG,
+            "Conectando WebSocket: $wsUrl"
+        )
+
+        val request =
+            Request.Builder()
+                .url(wsUrl)
+                .build()
+
+        webSocket =
+            httpClient.newWebSocket(
+                request,
+                object : WebSocketListener() {
+
+                    override fun onOpen(
+                        webSocket: WebSocket,
+                        response: okhttp3.Response
+                    ) {
+
+                        if (!running.get()) {
+                            return
+                        }
+
+                        Log.d(
+                            TAG,
+                            "WebSocket conectado"
+                        )
+
+                        val subscribe =
+                            JSONObject().apply {
+
+                                put(
+                                    "type",
+                                    "subscribe"
+                                )
+
+                                put(
+                                    "jobId",
+                                    id
+                                )
+                            }
+
+                        val enviado =
+                            webSocket.send(
+                                subscribe.toString()
+                            )
+
+                        Log.d(
+                            TAG,
+                            "Subscribe enviado=$enviado jobId=$id"
+                        )
+                    }
+
+
+                    override fun onMessage(
+                        webSocket: WebSocket,
+                        text: String
+                    ) {
+
+                        if (!running.get()) {
+                            return
+                        }
+
+                        try {
+
+                            processarMensagemWebSocket(
+                                text
+                            )
+
+                        } catch (e: Exception) {
+
+                            Log.e(
+                                TAG,
+                                "Erro processando WebSocket",
+                                e
+                            )
+                        }
+                    }
+
+
+                    override fun onFailure(
+                        webSocket: WebSocket,
+                        t: Throwable,
+                        response: okhttp3.Response?
+                    ) {
+
+                        Log.e(
+                            TAG,
+                            "Falha WebSocket: ${t.message}",
+                            t
+                        )
+
+                        if (
+                            running.get()
+                        ) {
+
+                            Log.d(
+                                TAG,
+                                "WebSocket falhou"
+                            )
+                        }
+                    }
+
+
+                    override fun onClosed(
+                        webSocket: WebSocket,
+                        code: Int,
+                        reason: String
+                    ) {
+
+                        Log.d(
+                            TAG,
+                            "WebSocket fechado. code=$code reason=$reason"
+                        )
+                    }
+                }
+            )
+    }
+
+
+    // ============================================================
+    // PROCESSAR MENSAGEM WEBSOCKET
+    // ============================================================
+
+    private fun processarMensagemWebSocket(
+        text: String
+    ) {
+
+        if (text.isBlank()) {
+            return
+        }
+
+        val root =
+            JSONObject(text)
+
+        val type =
+            root.optString(
+                "type",
+                ""
+            )
+
+        when (type) {
+
+            "subscribed" -> {
+
+                Log.d(
+                    TAG,
+                    "WebSocket inscrito no jobId=" +
+                            root.optString(
+                                "jobId",
+                                ""
+                            )
+                )
+            }
+
+            "audio" -> {
+
+                val messageJobId =
+                    root.optString(
+                        "jobId",
+                        ""
+                    )
+
+                val currentJobId =
+                    jobId ?: ""
+
+                if (
+                    messageJobId != currentJobId
+                ) {
+
+                    Log.w(
+                        TAG,
+                        "Áudio de outro job ignorado"
+                    )
+
+                    return
+                }
+
+                val seq =
+                    root.optLong(
+                        "seq",
+                        -1L
+                    )
+
+                val audioBase64 =
+                    root.optString(
+                        "audio",
+                        ""
+                    )
+
+                if (
+                    audioBase64.isBlank()
+                ) {
+
+                    return
+                }
+
+                val audio =
+                    try {
+
+                        Base64.decode(
+                            audioBase64,
+                            Base64.DEFAULT
+                        )
+
+                    } catch (e: Exception) {
+
+                        Log.e(
+                            TAG,
+                            "Erro Base64 seq=$seq",
+                            e
+                        )
+
+                        return
+                    }
+
+                if (
+                    audio.isEmpty()
+                ) {
+
+                    return
+                }
+
+                adicionarAudioNaFila(
+                    audio
+                )
+
+                Log.d(
+                    TAG,
+                    "Áudio WebSocket recebido: " +
+                            "seq=$seq " +
+                            "bytes=${audio.size} " +
+                            "fila=${getQueuedBytes()}"
+                )
+            }
+
+            "error" -> {
+
+                Log.e(
+                    TAG,
+                    "Erro recebido do backend: " +
+                            root.optString(
+                                "message",
+                                "erro desconhecido"
+                            )
+                )
+            }
+
+            else -> {
+
+                Log.d(
+                    TAG,
+                    "Mensagem WebSocket: type=$type"
+                )
+            }
+        }
+    }
+
+
+    // ============================================================
     // PLAYBACK THREAD
     // ============================================================
 
@@ -256,15 +554,15 @@ class GeminiAudioPlayer(
                     "Playback thread iniciado"
                 )
 
-                while (running.get()) {
+                while (
+                    running.get()
+                ) {
 
                     try {
 
-                        // ------------------------------------------------
-                        // PRÉ-BUFFER
-                        // ------------------------------------------------
-
-                        if (!playbackStarted) {
+                        if (
+                            !playbackStarted
+                        ) {
 
                             while (
                                 running.get() &&
@@ -272,17 +570,24 @@ class GeminiAudioPlayer(
                                 PREBUFFER_BYTES
                             ) {
 
-                                Thread.sleep(20)
+                                Thread.sleep(
+                                    20
+                                )
                             }
 
-                            if (!running.get()) {
+                            if (
+                                !running.get()
+                            ) {
+
                                 break
                             }
 
                             val track =
                                 audioTrack
 
-                            if (track != null) {
+                            if (
+                                track != null
+                            ) {
 
                                 try {
 
@@ -293,11 +598,13 @@ class GeminiAudioPlayer(
 
                                     Log.d(
                                         TAG,
-                                        "Playback iniciado com " +
-                                                "${getQueuedBytes()} bytes"
+                                        "Playback iniciado. " +
+                                                "fila=${getQueuedBytes()} bytes"
                                     )
 
-                                } catch (e: Exception) {
+                                } catch (
+                                    e: Exception
+                                ) {
 
                                     Log.e(
                                         TAG,
@@ -305,17 +612,14 @@ class GeminiAudioPlayer(
                                         e
                                     )
 
-                                    Thread.sleep(100)
+                                    Thread.sleep(
+                                        100
+                                    )
 
                                     continue
                                 }
                             }
                         }
-
-
-                        // ------------------------------------------------
-                        // PEGA O PRÓXIMO BLOCO
-                        // ------------------------------------------------
 
                         val data =
                             audioQueue.take()
@@ -325,36 +629,17 @@ class GeminiAudioPlayer(
                             queuedBytes -=
                                 data.size.toLong()
 
-                            if (queuedBytes < 0) {
+                            if (
+                                queuedBytes < 0
+                            ) {
+
                                 queuedBytes = 0
                             }
                         }
 
-
-                        // ------------------------------------------------
-                        // TOCA
-                        // ------------------------------------------------
-
-                        tocarAudio(data)
-
-
-                        // ------------------------------------------------
-                        // SE A FILA FICAR MUITO VAZIA,
-                        // NÃO REINICIA O AUDIO TRACK.
-                        // ESPERA NOVOS DADOS.
-                        // ------------------------------------------------
-
-                        if (
-                            getQueuedBytes() <
-                            PREBUFFER_BYTES
-                        ) {
-
-                            Log.d(
-                                TAG,
-                                "Fila baixa: " +
-                                        "${getQueuedBytes()} bytes"
-                            )
-                        }
+                        tocarAudio(
+                            data
+                        )
 
                     } catch (
                         e: InterruptedException
@@ -362,7 +647,9 @@ class GeminiAudioPlayer(
 
                         break
 
-                    } catch (e: Exception) {
+                    } catch (
+                        e: Exception
+                    ) {
 
                         Log.e(
                             TAG,
@@ -429,9 +716,12 @@ class GeminiAudioPlayer(
                         AudioTrack.WRITE_BLOCKING
                     )
 
-                if (escritos > 0) {
+                if (
+                    escritos > 0
+                ) {
 
-                    offset += escritos
+                    offset +=
+                        escritos
 
                 } else {
 
@@ -443,7 +733,9 @@ class GeminiAudioPlayer(
                     break
                 }
 
-            } catch (e: Exception) {
+            } catch (
+                e: Exception
+            ) {
 
                 Log.e(
                     TAG,
@@ -458,276 +750,6 @@ class GeminiAudioPlayer(
 
 
     // ============================================================
-    // POLLING
-    // ============================================================
-
-    private fun iniciarPollThread() {
-
-        pollThread =
-            Thread {
-
-                Log.d(
-                    TAG,
-                    "Poll thread iniciado"
-                )
-
-                while (running.get()) {
-
-                    try {
-
-                        buscarAudioTraduzido()
-
-                    } catch (
-                        e: InterruptedException
-                    ) {
-
-                        break
-
-                    } catch (e: Exception) {
-
-                        Log.e(
-                            TAG,
-                            "Erro buscando áudio",
-                            e
-                        )
-                    }
-
-                    try {
-
-                        Thread.sleep(
-                            POLL_INTERVAL_MS
-                        )
-
-                    } catch (
-                        _: InterruptedException
-                    ) {
-
-                        break
-                    }
-                }
-
-                Log.d(
-                    TAG,
-                    "Poll thread finalizado"
-                )
-
-            }.apply {
-
-                name =
-                    "SI-Gemini-AudioPoll"
-
-                start()
-            }
-    }
-
-
-    // ============================================================
-    // BUSCAR AUDIO DO RENDER
-    // ============================================================
-
-    private fun buscarAudioTraduzido() {
-
-        val id =
-            jobId
-                ?: return
-
-        val urlString =
-            "$backendUrl/api/audio/output/$id" +
-                    "?after=$lastOutputSeq&limit=30"
-
-        var connection:
-            HttpURLConnection? = null
-
-        try {
-
-            val url =
-                URL(urlString)
-
-            connection =
-                url.openConnection()
-                    as HttpURLConnection
-
-            connection.requestMethod =
-                "GET"
-
-            connection.connectTimeout =
-                5000
-
-            connection.readTimeout =
-                5000
-
-            connection.useCaches =
-                false
-
-            val code =
-                connection.responseCode
-
-            if (code != 200) {
-
-                Log.w(
-                    TAG,
-                    "Render HTTP $code"
-                )
-
-                return
-            }
-
-            val text =
-                connection.inputStream
-                    .bufferedReader()
-                    .use {
-                        it.readText()
-                    }
-
-            if (text.isBlank()) {
-                return
-            }
-
-            processarResposta(text)
-
-        } catch (e: Exception) {
-
-            if (running.get()) {
-
-                Log.e(
-                    TAG,
-                    "Erro HTTP",
-                    e
-                )
-            }
-
-        } finally {
-
-            connection?.disconnect()
-        }
-    }
-
-
-    // ============================================================
-    // PROCESSAR JSON
-    // ============================================================
-
-    private fun processarResposta(
-        text: String
-    ) {
-
-        val root =
-            JSONObject(text)
-
-        if (
-            !root.optBoolean(
-                "ok",
-                true
-            )
-        ) {
-
-            Log.w(
-                TAG,
-                "Backend retornou ok=false"
-            )
-
-            return
-        }
-
-        val chunks =
-            root.optJSONArray(
-                "chunks"
-            )
-                ?: return
-
-        if (chunks.length() == 0) {
-            return
-        }
-
-        var novos = 0
-
-        for (
-            i in 0 until chunks.length()
-        ) {
-
-            val chunk =
-                chunks.optJSONObject(i)
-                    ?: continue
-
-            val seq =
-                chunk.optLong(
-                    "seq",
-                    -1
-                )
-
-            if (seq < 0) {
-                continue
-            }
-
-            if (
-                seq <=
-                lastOutputSeq
-            ) {
-                continue
-            }
-
-            val audioBase64 =
-                chunk.optString(
-                    "audio",
-                    ""
-                )
-
-            if (audioBase64.isBlank()) {
-                continue
-            }
-
-            val audio =
-                try {
-
-                    Base64.decode(
-                        audioBase64,
-                        Base64.DEFAULT
-                    )
-
-                } catch (e: Exception) {
-
-                    Log.e(
-                        TAG,
-                        "Erro Base64 seq=$seq",
-                        e
-                    )
-
-                    continue
-                }
-
-            if (audio.isEmpty()) {
-                continue
-            }
-
-            adicionarAudioNaFila(
-                audio
-            )
-
-            if (
-                seq >
-                lastOutputSeq
-            ) {
-
-                lastOutputSeq =
-                    seq
-            }
-
-            novos++
-        }
-
-        if (novos > 0) {
-
-            Log.d(
-                TAG,
-                "Novos chunks=$novos " +
-                        "seq=$lastOutputSeq " +
-                        "fila=${getQueuedBytes()} bytes"
-            )
-        }
-    }
-
-
-    // ============================================================
     // FILA
     // ============================================================
 
@@ -737,7 +759,10 @@ class GeminiAudioPlayer(
 
         synchronized(lock) {
 
-            if (!running.get()) {
+            if (
+                !running.get()
+            ) {
+
                 return
             }
 
@@ -754,7 +779,10 @@ class GeminiAudioPlayer(
                 queuedBytes -=
                     antigo.size.toLong()
 
-                if (queuedBytes < 0) {
+                if (
+                    queuedBytes < 0
+                ) {
+
                     queuedBytes = 0
                 }
             }
@@ -776,6 +804,7 @@ class GeminiAudioPlayer(
     private fun getQueuedBytes(): Long {
 
         synchronized(lock) {
+
             return queuedBytes
         }
     }
