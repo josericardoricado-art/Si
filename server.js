@@ -13,27 +13,10 @@ app.use(
   })
 );
 
-app.use(
-  express.json({
-    limit: "25mb"
-  })
-);
+app.use(express.json({ limit: "25mb" }));
+app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
-app.use(
-  express.urlencoded({
-    extended: true,
-    limit: "25mb"
-  })
-);
-
-// ============================================================
-// CONFIGURAÇÃO
-// ============================================================
-
-const PORT =
-  Number(
-    process.env.PORT || 10000
-  );
+const PORT = Number(process.env.PORT || 10000);
 
 const GEMINI_API_KEY =
   process.env.GEMINI_API_KEY || "";
@@ -47,21 +30,19 @@ const GEMINI_WS_URL =
   "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
 
 // ============================================================
-// CONFIGURAÇÃO DO BUFFER DE ÁUDIO
+// BUFFER DE SAÍDA
 // ============================================================
 
-const GEMINI_AUDIO_FLUSH_MS =
-  1000;
+const GEMINI_AUDIO_FLUSH_MS = 250;
 
 const GEMINI_AUDIO_MAX_BUFFER_BYTES =
-  24000 * 2 * 4;
+  24000;
 
 // ============================================================
 // SESSÕES
 // ============================================================
 
-const sessions =
-  new Map();
+const sessions = new Map();
 
 // ============================================================
 // FUNÇÕES AUXILIARES
@@ -94,52 +75,116 @@ function registrarDiagnostico(
     ...extra
   });
 
-  if (
-    session.diagnostics.length >
-    300
-  ) {
+  if (session.diagnostics.length > 300) {
     session.diagnostics =
       session.diagnostics.slice(-300);
   }
 }
 
-function criarBufferAudioSession(
-  session
-) {
+function criarBufferAudioSession(session) {
+
   if (!session.pendingOutputBuffers) {
-    session.pendingOutputBuffers =
-      [];
+    session.pendingOutputBuffers = [];
   }
 
   if (
     typeof session.pendingOutputBytes !==
     "number"
   ) {
-    session.pendingOutputBytes =
-      0;
+    session.pendingOutputBytes = 0;
   }
 
   if (
     typeof session.outputFlushTimer ===
     "undefined"
   ) {
-    session.outputFlushTimer =
-      null;
+    session.outputFlushTimer = null;
   }
 
   if (
     typeof session.outputTurns !==
     "number"
   ) {
-    session.outputTurns =
-      0;
+    session.outputTurns = 0;
+  }
+
+  if (!session.audioClients) {
+    session.audioClients = new Set();
   }
 }
+
+// ============================================================
+// ENVIAR ÁUDIO PELO WEBSOCKET
+// ============================================================
+
+function enviarAudioWebSocket(
+  session,
+  seq,
+  base64
+) {
+
+  if (
+    !session ||
+    !session.audioClients
+  ) {
+    return;
+  }
+
+  const message =
+    JSON.stringify({
+      type: "audio",
+      jobId: session.jobId,
+      seq,
+      audio: base64
+    });
+
+  for (
+    const client
+    of session.audioClients
+  ) {
+
+    try {
+
+      if (
+        client.readyState ===
+        WebSocket.OPEN
+      ) {
+
+        client.send(message);
+
+      } else {
+
+        session.audioClients.delete(
+          client
+        );
+
+      }
+
+    } catch (error) {
+
+      console.error(
+        "[WS AUDIO] Erro enviando áudio:",
+        error.message
+      );
+
+      try {
+        session.audioClients.delete(
+          client
+        );
+      } catch (_) {}
+    }
+  }
+}
+
+// ============================================================
+// FLUSH DO ÁUDIO DO GEMINI
+// ============================================================
 
 function flushAudioGemini(
   session,
   reason = "manual"
 ) {
+
   if (!session) {
     return;
   }
@@ -157,11 +202,14 @@ function flushAudioGemini(
   let audioBuffer;
 
   try {
+
     audioBuffer =
       Buffer.concat(
         session.pendingOutputBuffers
       );
+
   } catch (error) {
+
     console.error(
       "[GEMINI AUDIO BUFFER] Erro:",
       error
@@ -176,10 +224,11 @@ function flushAudioGemini(
     return;
   }
 
-  // PCM16 precisa ter número par de bytes.
+  // PCM16 precisa ter quantidade par de bytes.
   if (
     audioBuffer.length % 2 !== 0
   ) {
+
     audioBuffer =
       audioBuffer.subarray(
         0,
@@ -190,6 +239,7 @@ function flushAudioGemini(
   if (
     audioBuffer.length === 0
   ) {
+
     session.pendingOutputBuffers =
       [];
 
@@ -200,10 +250,10 @@ function flushAudioGemini(
   }
 
   const seq =
-    session.nextOutputSeq || 0;
+    (session.nextOutputSeq || 0) + 1;
 
   session.nextOutputSeq =
-    seq + 1;
+    seq;
 
   const base64 =
     audioBuffer.toString(
@@ -211,31 +261,28 @@ function flushAudioGemini(
     );
 
   session.outputChunks.push({
-    seq:
-      session.nextOutputSeq,
-    audio:
-      base64
+    seq,
+    audio: base64
   });
 
   session.outputBytes =
-    (
-      session.outputBytes || 0
-    ) +
+    (session.outputBytes || 0) +
     audioBuffer.length;
 
   session.outputTurns =
-    (
-      session.outputTurns || 0
-    ) +
+    (session.outputTurns || 0) +
     1;
 
-  // Limite da fila de saída.
+  // Limite da fila.
   if (
     session.outputChunks.length >
     500
   ) {
+
     session.outputChunks =
-      session.outputChunks.slice(-500);
+      session.outputChunks.slice(
+        -500
+      );
   }
 
   registrarDiagnostico(
@@ -243,8 +290,7 @@ function flushAudioGemini(
     "audio_output_flush",
     {
       reason,
-      seq:
-        session.nextOutputSeq,
+      seq,
       bytes:
         audioBuffer.length,
       outputChunks:
@@ -255,8 +301,15 @@ function flushAudioGemini(
   console.log(
     `[GEMINI] Áudio agrupado: ` +
     `${audioBuffer.length} bytes | ` +
-    `seq=${session.nextOutputSeq} | ` +
+    `seq=${seq} | ` +
     `reason=${reason}`
+  );
+
+  // Enviar imediatamente para Android.
+  enviarAudioWebSocket(
+    session,
+    seq,
+    base64
   );
 
   session.pendingOutputBuffers =
@@ -268,6 +321,7 @@ function flushAudioGemini(
   if (
     session.outputFlushTimer
   ) {
+
     clearTimeout(
       session.outputFlushTimer
     );
@@ -277,10 +331,15 @@ function flushAudioGemini(
   }
 }
 
+// ============================================================
+// ADICIONAR ÁUDIO AO BUFFER
+// ============================================================
+
 function adicionarAudioGeminiAoBuffer(
   session,
   audioBuffer
 ) {
+
   if (!session) {
     return;
   }
@@ -296,8 +355,11 @@ function adicionarAudioGeminiAoBuffer(
   if (
     !Buffer.isBuffer(audioBuffer)
   ) {
+
     audioBuffer =
-      Buffer.from(audioBuffer);
+      Buffer.from(
+        audioBuffer
+      );
   }
 
   if (
@@ -317,6 +379,7 @@ function adicionarAudioGeminiAoBuffer(
     session.pendingOutputBytes >=
     GEMINI_AUDIO_MAX_BUFFER_BYTES
   ) {
+
     flushAudioGemini(
       session,
       "max_buffer"
@@ -328,6 +391,7 @@ function adicionarAudioGeminiAoBuffer(
   if (
     session.outputFlushTimer
   ) {
+
     clearTimeout(
       session.outputFlushTimer
     );
@@ -336,37 +400,44 @@ function adicionarAudioGeminiAoBuffer(
   session.outputFlushTimer =
     setTimeout(
       () => {
+
         try {
+
           flushAudioGemini(
             session,
             "timeout"
           );
+
         } catch (error) {
+
           console.error(
             "[GEMINI AUDIO TIMER]",
             error
           );
         }
+
       },
       GEMINI_AUDIO_FLUSH_MS
     );
 }
 
 // ============================================================
-// ROTA DE SAÚDE
+// HEALTH
 // ============================================================
 
 app.get(
   "/api/health",
   (req, res) => {
+
     return res.json({
+
       ok: true,
 
       service:
         "SI Tradutor Live",
 
       version:
-        "11.0-Gemini-Live-Buffered",
+        "12.0-Gemini-Live-WebSocket",
 
       message:
         "Backend do SI Tradutor Live funcionando",
@@ -378,19 +449,21 @@ app.get(
         GEMINI_MODEL,
 
       authentication:
-        "API key + ephemeral token"
+        "API key + Gemini Live WebSocket"
     });
   }
 );
 
 // ============================================================
-// ROTA PARA CRIAR SESSÃO
+// CRIAR SESSÃO
 // ============================================================
 
 app.post(
   "/api/audio/start",
   (req, res) => {
+
     try {
+
       const clientId =
         req.body?.clientId ||
         crypto.randomUUID();
@@ -404,6 +477,7 @@ app.post(
         novoJobId();
 
       const session = {
+
         jobId,
 
         clientId,
@@ -433,6 +507,9 @@ app.post(
 
         nextOutputSeq:
           0,
+
+        audioClients:
+          new Set(),
 
         outputBytes:
           0,
@@ -477,7 +554,10 @@ app.post(
           agora(),
 
         lastActivity:
-          agora()
+          agora(),
+
+        reconnectTimer:
+          null
       };
 
       sessions.set(
@@ -499,14 +579,17 @@ app.post(
         session
       ).catch(
         error => {
+
           console.error(
             "[GEMINI CONNECT ERROR]",
             error
           );
+
         }
       );
 
       return res.json({
+
         ok: true,
 
         jobId,
@@ -517,34 +600,46 @@ app.post(
 
         status:
           session.status
+
       });
 
     } catch (error) {
+
       console.error(
         "[AUDIO START ERROR]",
         error
       );
 
       return res.status(500).json({
+
         ok: false,
 
         error:
           error.message
+
       });
     }
   }
 );
+
 // ============================================================
 // CONEXÃO COM GEMINI LIVE
 // ============================================================
 
-async function connectGemini(session) {
+async function connectGemini(
+  session
+) {
 
-  if (!session || session.stopped) {
+  if (
+    !session ||
+    session.stopped
+  ) {
     return;
   }
 
-  if (!GEMINI_API_KEY) {
+  if (
+    !GEMINI_API_KEY
+  ) {
 
     session.lastError =
       "GEMINI_API_KEY não configurada";
@@ -560,7 +655,9 @@ async function connectGemini(session) {
     return;
   }
 
-  if (session.geminiConnecting) {
+  if (
+    session.geminiConnecting
+  ) {
     return;
   }
 
@@ -587,7 +684,9 @@ async function connectGemini(session) {
       )}`;
 
     const ws =
-      new WebSocket(wsUrl);
+      new WebSocket(
+        wsUrl
+      );
 
     session.ws =
       ws;
@@ -675,7 +774,7 @@ async function connectGemini(session) {
 
     ws.on(
       "message",
-      (data, isBinary) => {
+      data => {
 
         try {
 
@@ -889,7 +988,7 @@ async function connectGemini(session) {
 }
 
 // ============================================================
-// RECONEXÃO DO GEMINI
+// RECONEXÃO
 // ============================================================
 
 function scheduleGeminiReconnect(
@@ -900,14 +999,12 @@ function scheduleGeminiReconnect(
     !session ||
     session.stopped
   ) {
-
     return;
   }
 
   if (
     session.reconnectTimer
   ) {
-
     return;
   }
 
@@ -921,7 +1018,6 @@ function scheduleGeminiReconnect(
         if (
           session.stopped
         ) {
-
           return;
         }
 
@@ -934,6 +1030,7 @@ function scheduleGeminiReconnect(
               "[GEMINI RECONNECT ERROR]",
               error
             );
+
           }
         );
 
@@ -955,7 +1052,6 @@ function handleGeminiMessage(
     !session ||
     !message
   ) {
-
     return;
   }
 
@@ -963,7 +1059,7 @@ function handleGeminiMessage(
     Date.now();
 
   // ----------------------------------------------------------
-  // SETUP COMPLETE
+  // GEMINI PRONTO
   // ----------------------------------------------------------
 
   if (
@@ -991,19 +1087,16 @@ function handleGeminiMessage(
       `[GEMINI] Pronto: ${session.jobId}`
     );
 
-    // Enviar tudo que ficou esperando.
-
     if (
       session.pendingInputChunks &&
       session.pendingInputChunks.length
     ) {
 
       const pending =
-        session.pendingInputChunks
-          .splice(
-            0,
-            session.pendingInputChunks.length
-          );
+        session.pendingInputChunks.splice(
+          0,
+          session.pendingInputChunks.length
+        );
 
       for (
         const chunk
@@ -1021,7 +1114,7 @@ function handleGeminiMessage(
   }
 
   // ----------------------------------------------------------
-  // ERRO DEVOLVIDO PELO GEMINI
+  // ERRO
   // ----------------------------------------------------------
 
   if (
@@ -1058,36 +1151,31 @@ function handleGeminiMessage(
     return;
   }
 
+  const serverContent =
+    message.serverContent;
+
+  if (!serverContent) {
+    return;
+  }
+
   // ----------------------------------------------------------
   // TRANSCRIÇÃO DE ENTRADA
   // ----------------------------------------------------------
 
   if (
-    message.serverContent &&
-    message.serverContent.inputTranscription
+    serverContent.inputTranscription &&
+    serverContent.inputTranscription.text
   ) {
 
-    const transcript =
-      message.serverContent
+    session.inputTranscript +=
+      serverContent
         .inputTranscription
-        .text || "";
+        .text;
 
-    if (transcript) {
-
-      session.inputTranscript +=
-        transcript;
-
-      if (
-        session.inputTranscript.length >
-        10000
-      ) {
-
-        session.inputTranscript =
-          session.inputTranscript.slice(
-            -10000
-          );
-      }
-    }
+    session.inputTranscript =
+      session.inputTranscript.slice(
+        -10000
+      );
   }
 
   // ----------------------------------------------------------
@@ -1095,42 +1183,26 @@ function handleGeminiMessage(
   // ----------------------------------------------------------
 
   if (
-    message.serverContent &&
-    message.serverContent.outputTranscription
+    serverContent.outputTranscription &&
+    serverContent.outputTranscription.text
   ) {
 
-    const transcript =
-      message.serverContent
+    session.outputTranscript +=
+      serverContent
         .outputTranscription
-        .text || "";
+        .text;
 
-    if (transcript) {
-
-      session.outputTranscript +=
-        transcript;
-
-      if (
-        session.outputTranscript.length >
-        10000
-      ) {
-
-        session.outputTranscript =
-          session.outputTranscript.slice(
-            -10000
-          );
-      }
-    }
+    session.outputTranscript =
+      session.outputTranscript.slice(
+        -10000
+      );
   }
 
   // ----------------------------------------------------------
   // ÁUDIO GERADO
   // ----------------------------------------------------------
 
-  const serverContent =
-    message.serverContent;
-
   if (
-    serverContent &&
     serverContent.modelTurn &&
     Array.isArray(
       serverContent.modelTurn.parts
@@ -1185,8 +1257,8 @@ function handleGeminiMessage(
   // ----------------------------------------------------------
 
   if (
-    serverContent &&
-    serverContent.turnComplete === true
+    serverContent.turnComplete ===
+    true
   ) {
 
     flushAudioGemini(
@@ -1300,6 +1372,7 @@ function sendAudioToGemini(
     return false;
   }
 }
+
 // ============================================================
 // RECEBER CHUNK DE ÁUDIO DO ANDROID
 // ============================================================
@@ -1385,11 +1458,6 @@ app.post(
       session.lastActivity =
         Date.now();
 
-      // --------------------------------------------------------
-      // SE GEMINI AINDA NÃO ESTIVER PRONTO,
-      // COLOCAR NA FILA
-      // --------------------------------------------------------
-
       if (
         !session.geminiReady
       ) {
@@ -1427,14 +1495,9 @@ app.post(
           ok: false,
           error:
             "Gemini ainda não está pronto",
-          queued:
-            false
+          queued: false
         });
       }
-
-      // --------------------------------------------------------
-      // ENVIAR DIRETAMENTE PARA GEMINI
-      // --------------------------------------------------------
 
       const sent =
         sendAudioToGemini(
@@ -1470,14 +1533,10 @@ app.post(
 
       return res.json({
         ok: true,
-
         queued: false,
-
         sent: true,
-
         chunksReceived:
           session.chunksReceived,
-
         chunksSentToGemini:
           session.chunksSentToGemini
       });
@@ -1491,7 +1550,6 @@ app.post(
 
       return res.status(500).json({
         ok: false,
-
         error:
           error.message
       });
@@ -1500,7 +1558,7 @@ app.post(
 );
 
 // ============================================================
-// ÁUDIO DE SAÍDA - CURSOR CONTÍNUO
+// ÁUDIO DE SAÍDA - CURSOR
 // ============================================================
 
 app.get(
@@ -1519,17 +1577,11 @@ app.get(
 
         return res.status(404).json({
           ok: false,
-
           error:
             "Sessão não encontrada",
-
           jobId
         });
       }
-
-      // ------------------------------------------------------
-      // CURSOR ENVIADO PELO ANDROID
-      // ------------------------------------------------------
 
       let after =
         Number(
@@ -1543,10 +1595,6 @@ app.get(
 
         after = 0;
       }
-
-      // ------------------------------------------------------
-      // QUANTIDADE MÁXIMA DE CHUNKS
-      // ------------------------------------------------------
 
       let limit =
         Number(
@@ -1567,25 +1615,17 @@ app.get(
           50
         );
 
-      // ------------------------------------------------------
-      // NÃO APAGAR A FILA
-      // PEGAR SOMENTE O QUE É NOVO
-      // ------------------------------------------------------
-
       const chunks =
         session.outputChunks
           .filter(
             chunk =>
-              Number(chunk.seq) > after
+              Number(chunk.seq) >
+              after
           )
           .slice(
             0,
             limit
           );
-
-      // ------------------------------------------------------
-      // PRÓXIMO CURSOR
-      // ------------------------------------------------------
 
       const nextSeq =
         chunks.length > 0
@@ -1595,10 +1635,6 @@ app.get(
               ].seq
             )
           : after;
-
-      // ------------------------------------------------------
-      // CALCULAR BYTES
-      // ------------------------------------------------------
 
       let bytes = 0;
 
@@ -1617,27 +1653,6 @@ app.get(
 
         } catch (_) {}
       }
-
-      // ------------------------------------------------------
-      // LOG
-      // ------------------------------------------------------
-
-      if (
-        chunks.length > 0
-      ) {
-
-        console.log(
-          `[OUTPUT] ${jobId} | ` +
-          `after=${after} | ` +
-          `chunks=${chunks.length} | ` +
-          `bytes=${bytes} | ` +
-          `nextSeq=${nextSeq}`
-        );
-      }
-
-      // ------------------------------------------------------
-      // RESPOSTA
-      // ------------------------------------------------------
 
       return res.json({
 
@@ -1661,6 +1676,7 @@ app.get(
 
         nextOutputSeq:
           session.nextOutputSeq
+
       });
 
     } catch (error) {
@@ -1672,7 +1688,6 @@ app.get(
 
       return res.status(500).json({
         ok: false,
-
         error:
           error.message
       });
@@ -1681,7 +1696,7 @@ app.get(
 );
 
 // ============================================================
-// STATUS DA SESSÃO
+// STATUS
 // ============================================================
 
 app.get(
@@ -1700,10 +1715,8 @@ app.get(
 
         return res.status(404).json({
           ok: false,
-
           error:
             "Sessão não encontrada",
-
           jobId
         });
       }
@@ -1723,14 +1736,14 @@ app.get(
         status:
           session.status,
 
+        stopped:
+          session.stopped,
+
         geminiReady:
           session.geminiReady,
 
         geminiConnecting:
           session.geminiConnecting,
-
-        stopped:
-          session.stopped,
 
         chunksReceived:
           session.chunksReceived,
@@ -1757,22 +1770,26 @@ app.get(
           session.outputBytes,
 
         outputTurns:
-          session.outputTurns || 0,
+          session.outputTurns,
 
         inputTranscript:
-          session.inputTranscript || "",
+          session.inputTranscript,
 
         outputTranscript:
-          session.outputTranscript || "",
+          session.outputTranscript,
 
         lastError:
-          session.lastError || null,
+          session.lastError,
 
         createdAt:
           session.createdAt,
 
         lastActivity:
-          session.lastActivity
+          session.lastActivity,
+
+        websocketClients:
+          session.audioClients.size
+
       });
 
     } catch (error) {
@@ -1784,7 +1801,6 @@ app.get(
 
       return res.status(500).json({
         ok: false,
-
         error:
           error.message
       });
@@ -1793,7 +1809,7 @@ app.get(
 );
 
 // ============================================================
-// DIAGNÓSTICO COMPLETO
+// DIAGNÓSTICO
 // ============================================================
 
 app.get(
@@ -1812,10 +1828,8 @@ app.get(
 
         return res.status(404).json({
           ok: false,
-
           error:
             "Sessão não encontrada",
-
           jobId
         });
       }
@@ -1831,6 +1845,9 @@ app.get(
 
         stopped:
           session.stopped,
+
+        targetLanguage:
+          session.targetLanguage,
 
         geminiReady:
           session.geminiReady,
@@ -1863,19 +1880,29 @@ app.get(
           session.outputBytes,
 
         outputTurns:
-          session.outputTurns || 0,
+          session.outputTurns,
+
+        websocketClients:
+          session.audioClients.size,
 
         inputTranscript:
-          session.inputTranscript || "",
+          session.inputTranscript,
 
         outputTranscript:
-          session.outputTranscript || "",
+          session.outputTranscript,
 
         lastError:
-          session.lastError || null,
+          session.lastError,
+
+        createdAt:
+          session.createdAt,
+
+        lastActivity:
+          session.lastActivity,
 
         diagnostics:
-          session.diagnostics || []
+          session.diagnostics
+
       });
 
     } catch (error) {
@@ -1887,91 +1914,6 @@ app.get(
 
       return res.status(500).json({
         ok: false,
-
-        error:
-          error.message
-      });
-    }
-  }
-);
-// ============================================================
-// LISTAR SESSÕES
-// ============================================================
-
-app.get(
-  "/api/audio/sessions",
-  (req, res) => {
-
-    try {
-
-      const lista = [];
-
-      for (
-        const [jobId, session]
-        of sessions.entries()
-      ) {
-
-        lista.push({
-
-          jobId,
-
-          clientId:
-            session.clientId,
-
-          targetLanguage:
-            session.targetLanguage,
-
-          status:
-            session.status,
-
-          geminiReady:
-            session.geminiReady,
-
-          stopped:
-            session.stopped,
-
-          chunksReceived:
-            session.chunksReceived,
-
-          chunksSentToGemini:
-            session.chunksSentToGemini,
-
-          outputChunks:
-            session.outputChunks.length,
-
-          outputBytes:
-            session.outputBytes,
-
-          createdAt:
-            session.createdAt,
-
-          lastActivity:
-            session.lastActivity
-        });
-      }
-
-      return res.json({
-
-        ok: true,
-
-        count:
-          lista.length,
-
-        sessions:
-          lista
-      });
-
-    } catch (error) {
-
-      console.error(
-        "[SESSIONS ERROR]",
-        error
-      );
-
-      return res.status(500).json({
-
-        ok: false,
-
         error:
           error.message
       });
@@ -1979,542 +1921,6 @@ app.get(
   }
 );
 
-// ============================================================
-// PARAR SESSÃO DE ÁUDIO
-// ============================================================
-
-app.post(
-  "/api/audio/stop",
-  (req, res) => {
-
-    try {
-
-      const jobId =
-        req.body?.jobId;
-
-      if (!jobId) {
-
-        return res.status(400).json({
-
-          ok: false,
-
-          error:
-            "jobId obrigatório"
-        });
-      }
-
-      const session =
-        sessions.get(jobId);
-
-      if (!session) {
-
-        return res.status(404).json({
-
-          ok: false,
-
-          error:
-            "Sessão não encontrada",
-
-          jobId
-        });
-      }
-
-      if (
-        session.stopped
-      ) {
-
-        return res.json({
-
-          ok: true,
-
-          alreadyStopped:
-            true,
-
-          jobId
-        });
-      }
-
-      session.status =
-        "stopping";
-
-      session.stopped =
-        true;
-
-      session.lastActivity =
-        Date.now();
-
-      // ------------------------------------------------------
-      // TENTAR ENVIAR O ÚLTIMO ÁUDIO PENDENTE
-      // ------------------------------------------------------
-
-      try {
-
-        if (
-          session.pendingInputChunks &&
-          session.pendingInputChunks.length > 0 &&
-          session.geminiReady
-        ) {
-
-          const pending =
-            session.pendingInputChunks;
-
-          session.pendingInputChunks =
-            [];
-
-          for (
-            const chunk
-            of pending
-          ) {
-
-            sendAudioToGemini(
-              session,
-              chunk
-            );
-          }
-        }
-
-      } catch (error) {
-
-        console.error(
-          "[STOP] Erro ao enviar áudio pendente:",
-          error.message
-        );
-      }
-
-      // ------------------------------------------------------
-      // FLUSH DO ÁUDIO DE SAÍDA
-      // ------------------------------------------------------
-
-      try {
-
-        flushAudioGemini(
-          session
-        );
-
-      } catch (error) {
-
-        console.error(
-          "[STOP] Erro no flush:",
-          error.message
-        );
-      }
-
-      // ------------------------------------------------------
-      // CANCELAR TIMER DE SAÍDA
-      // ------------------------------------------------------
-
-      if (
-        session.outputFlushTimer
-      ) {
-
-        clearTimeout(
-          session.outputFlushTimer
-        );
-
-        session.outputFlushTimer =
-          null;
-      }
-
-      // ------------------------------------------------------
-      // FECHAR WEBSOCKET GEMINI
-      // ------------------------------------------------------
-
-      try {
-
-        if (
-          session.geminiWs
-        ) {
-
-          const ws =
-            session.geminiWs;
-
-          session.geminiWs =
-            null;
-
-          if (
-            ws.readyState ===
-            WebSocket.OPEN
-          ) {
-
-            ws.close(
-              1000,
-              "Sessão encerrada"
-            );
-          }
-        }
-
-      } catch (error) {
-
-        console.error(
-          "[STOP] Erro ao fechar Gemini:",
-          error.message
-        );
-      }
-
-      session.geminiReady =
-        false;
-
-      session.geminiConnecting =
-        false;
-
-      session.status =
-        "stopped";
-
-      session.stoppedAt =
-        Date.now();
-
-      console.log(
-        `[SESSION STOPPED] ${jobId}`
-      );
-
-      return res.json({
-
-        ok: true,
-
-        jobId,
-
-        status:
-          session.status,
-
-        outputChunks:
-          session.outputChunks.length,
-
-        outputBytes:
-          session.outputBytes
-      });
-
-    } catch (error) {
-
-      console.error(
-        "[STOP ERROR]",
-        error
-      );
-
-      return res.status(500).json({
-
-        ok: false,
-
-        error:
-          error.message
-      });
-    }
-  }
-);
-
-// ============================================================
-// ROTA PRINCIPAL
-// ============================================================
-
-app.get(
-  "/",
-  (req, res) => {
-
-    res.json({
-
-      ok: true,
-
-      service:
-        "SI Tradutor Live",
-
-      version:
-        "11.0-Gemini-Live-Buffered",
-
-      message:
-        "Backend do SI Tradutor Live funcionando",
-
-      endpoints: {
-
-        health:
-          "/api/health",
-
-        audioStart:
-          "POST /api/audio/start",
-
-        audioChunk:
-          "POST /api/audio/chunk",
-
-        audioOutput:
-          "GET /api/audio/output/:jobId",
-
-        audioStatus:
-          "GET /api/audio/status/:jobId",
-
-        diagnostic:
-          "GET /api/audio/diagnostic/:jobId",
-
-        audioStop:
-          "POST /api/audio/stop",
-
-        sessions:
-          "GET /api/audio/sessions"
-      }
-    });
-  }
-);
-
-// ============================================================
-// TRATAMENTO DE ERROS
-// ============================================================
-
-app.use(
-  (err, req, res, next) => {
-
-    console.error(
-      "[EXPRESS ERROR]",
-      err
-    );
-
-    if (
-      res.headersSent
-    ) {
-
-      return next(err);
-    }
-
-    return res.status(500).json({
-
-      ok: false,
-
-      error:
-        err.message ||
-        "Erro interno do servidor"
-    });
-  }
-);
-
-// ============================================================
-// LIMPEZA AUTOMÁTICA DE SESSÕES
-// ============================================================
-
-setInterval(
-  () => {
-
-    try {
-
-      const agora =
-        Date.now();
-
-      for (
-        const [jobId, session]
-        of sessions.entries()
-      ) {
-
-        const ultimaAtividade =
-          session.lastActivity ||
-          session.createdAt ||
-          agora;
-
-        const idade =
-          agora -
-          ultimaAtividade;
-
-        // ----------------------------------------------------
-        // SESSÕES PARADAS HÁ MAIS DE 10 MINUTOS
-        // ----------------------------------------------------
-
-        if (
-          session.stopped &&
-          idade >
-            10 * 60 * 1000
-        ) {
-
-          try {
-
-            if (
-              session.outputFlushTimer
-            ) {
-
-              clearTimeout(
-                session.outputFlushTimer
-              );
-
-              session.outputFlushTimer =
-                null;
-            }
-
-          } catch (_) {}
-
-          try {
-
-            if (
-              session.geminiWs
-            ) {
-
-              session.geminiWs.close(
-                1000,
-                "Limpeza automática"
-              );
-
-              session.geminiWs =
-                null;
-            }
-
-          } catch (_) {}
-
-          sessions.delete(
-            jobId
-          );
-
-          console.log(
-            `[CLEANUP] Sessão removida: ${jobId}`
-          );
-
-          continue;
-        }
-
-        // ----------------------------------------------------
-        // SESSÕES ABANDONADAS HÁ MAIS DE 30 MINUTOS
-        // ----------------------------------------------------
-
-        if (
-          !session.stopped &&
-          idade >
-            30 * 60 * 1000
-        ) {
-
-          console.log(
-            `[CLEANUP] Encerrando sessão abandonada: ${jobId}`
-          );
-
-          session.stopped =
-            true;
-
-          session.status =
-            "stopped";
-
-          try {
-
-            if (
-              session.outputFlushTimer
-            ) {
-
-              clearTimeout(
-                session.outputFlushTimer
-              );
-
-              session.outputFlushTimer =
-                null;
-            }
-
-          } catch (_) {}
-
-          try {
-
-            if (
-              session.geminiWs
-            ) {
-
-              session.geminiWs.close(
-                1000,
-                "Sessão abandonada"
-              );
-
-              session.geminiWs =
-                null;
-            }
-
-          } catch (_) {}
-        }
-      }
-
-    } catch (error) {
-
-      console.error(
-        "[CLEANUP ERROR]",
-        error
-      );
-    }
-
-  },
-  60 * 1000
-);
-
-// ============================================================
-// INICIAR SERVIDOR
-// ============================================================
-
-const server =
-  app.listen(
-    PORT,
-    "0.0.0.0",
-    () => {
-
-      console.log(
-        "=================================================="
-      );
-
-      console.log(
-        "SI Tradutor Live iniciado"
-      );
-
-      console.log(
-        `Porta: ${PORT}`
-      );
-
-      console.log(
-        `Gemini configurado: ${Boolean(GEMINI_API_KEY)}`
-      );
-
-      console.log(
-        `Modelo: ${GEMINI_MODEL}`
-      );
-
-      console.log(
-        "=================================================="
-      );
-    }
-  );
-
-// ============================================================
-// WEBSOCKET SERVER
-// ============================================================
-
-const wss =
-  new WebSocket.Server({
-    server,
-    path:
-      "/ws"
-  });
-
-wss.on(
-  "connection",
-  (ws) => {
-
-    console.log(
-      "[WS] Cliente conectado"
-    );
-
-    ws.send(
-      JSON.stringify({
-        ok: true,
-
-        message:
-          "WebSocket do SI Tradutor Live conectado"
-      })
-    );
-
-    ws.on(
-      "close",
-      () => {
-
-        console.log(
-          "[WS] Cliente desconectado"
-        );
-      }
-    );
-
-    ws.on(
-      "error",
-      (error) => {
-
-        console.error(
-          "[WS ERROR]",
-          error
-        );
-      }
-    );
-  }
-);
 // ============================================================
 // LISTAR SESSÕES
 // ============================================================
@@ -2579,7 +1985,10 @@ app.get(
             session.outputBytes,
 
           outputTurns:
-            session.outputTurns || 0,
+            session.outputTurns,
+
+          websocketClients:
+            session.audioClients.size,
 
           createdAt:
             session.createdAt,
@@ -2591,7 +2000,6 @@ app.get(
             session.lastError || null
 
         });
-
       }
 
       return res.json({
@@ -2614,19 +2022,13 @@ app.get(
       );
 
       return res.status(500).json({
-
         ok: false,
-
         error:
           error.message
-
       });
-
     }
-
   }
 );
-
 
 // ============================================================
 // PARAR SESSÃO
@@ -2647,14 +2049,10 @@ app.post(
       if (!jobId) {
 
         return res.status(400).json({
-
           ok: false,
-
           error:
             "jobId obrigatório"
-
         });
-
       }
 
       const session =
@@ -2663,56 +2061,83 @@ app.post(
       if (!session) {
 
         return res.status(404).json({
-
           ok: false,
-
           error:
             "Sessão não encontrada",
-
           jobId
-
         });
-
       }
 
-      console.log(
-        `[SESSION STOP] ${jobId}`
-      );
+      if (
+        session.stopped
+      ) {
 
-      session.stopped =
-        true;
+        return res.json({
+          ok: true,
+          alreadyStopped: true,
+          jobId
+        });
+      }
 
       session.status =
         "stopping";
 
+      session.stopped =
+        true;
+
       session.lastActivity =
         Date.now();
 
+      // Enviar áudio pendente.
+      try {
 
-      // --------------------------------------------------------
-      // FINALIZAR ÁUDIO PENDENTE
-      // --------------------------------------------------------
+        if (
+          session.pendingInputChunks &&
+          session.pendingInputChunks.length > 0 &&
+          session.geminiReady
+        ) {
 
+          const pending =
+            session.pendingInputChunks;
+
+          session.pendingInputChunks =
+            [];
+
+          for (
+            const chunk
+            of pending
+          ) {
+
+            sendAudioToGemini(
+              session,
+              chunk
+            );
+          }
+        }
+
+      } catch (error) {
+
+        console.error(
+          "[STOP] Erro ao enviar áudio pendente:",
+          error.message
+        );
+      }
+
+      // Flush final.
       try {
 
         flushAudioGemini(
           session,
-          "session_stop"
+          "stop"
         );
 
-      } catch (flushError) {
+      } catch (error) {
 
         console.error(
-          "[SESSION STOP] Erro ao finalizar buffer:",
-          flushError.message
+          "[STOP] Erro no flush:",
+          error.message
         );
-
       }
-
-
-      // --------------------------------------------------------
-      // CANCELAR TIMER
-      // --------------------------------------------------------
 
       if (
         session.outputFlushTimer
@@ -2724,53 +2149,33 @@ app.post(
 
         session.outputFlushTimer =
           null;
-
       }
 
+      if (
+        session.reconnectTimer
+      ) {
 
-      // --------------------------------------------------------
-      // LIMPAR BUFFER PENDENTE
-      // --------------------------------------------------------
+        clearTimeout(
+          session.reconnectTimer
+        );
 
-      session.pendingOutputBuffers =
-        [];
-
-      session.pendingOutputBytes =
-        0;
-
-
-      // --------------------------------------------------------
-      // FECHAR WEBSOCKET GEMINI
-      // --------------------------------------------------------
+        session.reconnectTimer =
+          null;
+      }
 
       try {
 
         if (
-          session.ws &&
-          (
-            session.ws.readyState ===
-              WebSocket.OPEN ||
-            session.ws.readyState ===
-              WebSocket.CONNECTING
-          )
+          session.ws
         ) {
 
           session.ws.close(
             1000,
-            "Sessão encerrada"
+            "Sessão encerrada pelo usuário"
           );
-
         }
 
-      } catch (wsError) {
-
-        console.error(
-          "[SESSION STOP] Erro fechando Gemini:",
-          wsError.message
-        );
-
-      }
-
+      } catch (_) {}
 
       session.ws =
         null;
@@ -2784,9 +2189,31 @@ app.post(
       session.status =
         "stopped";
 
-      session.lastActivity =
-        Date.now();
+      // Avisar o Android.
+      for (
+        const client
+        of session.audioClients
+      ) {
 
+        try {
+
+          if (
+            client.readyState ===
+            WebSocket.OPEN
+          ) {
+
+            client.send(
+              JSON.stringify({
+                type: "stopped",
+                jobId,
+                nextOutputSeq:
+                  session.nextOutputSeq
+              })
+            );
+          }
+
+        } catch (_) {}
+      }
 
       return res.json({
 
@@ -2795,7 +2222,10 @@ app.post(
         jobId,
 
         status:
-          session.status
+          session.status,
+
+        nextOutputSeq:
+          session.nextOutputSeq
 
       });
 
@@ -2807,169 +2237,626 @@ app.post(
       );
 
       return res.status(500).json({
-
         ok: false,
-
         error:
           error.message
-
       });
-
     }
-
   }
 );
 
-
 // ============================================================
-// ROTA RAIZ
+// ROTA PRINCIPAL
 // ============================================================
 
-app.get("/", (req, res) => {
+app.get(
+  "/",
+  (req, res) => {
 
-  return res.json({
+    res.json({
 
-    ok: true,
+      ok: true,
 
-    service:
-      "SI Tradutor Live",
+      service:
+        "SI Tradutor Live",
 
-    version:
-      "11.0-Gemini-Live-Buffered",
+      version:
+        "12.0-Gemini-Live-WebSocket",
 
-    message:
-      "Backend do SI Tradutor Live funcionando",
+      message:
+        "Backend do SI Tradutor Live funcionando",
 
-    gemini:
-      !!GEMINI_API_KEY,
+      endpoints: {
 
-    model:
-      GEMINI_MODEL,
+        health:
+          "/api/health",
 
-    authentication:
-      "API key + ephemeral token"
+        audioStart:
+          "POST /api/audio/start",
 
-  });
+        audioChunk:
+          "POST /api/audio/chunk",
 
-});
+        audioOutput:
+          "GET /api/audio/output/:jobId",
 
+        audioStatus:
+          "GET /api/audio/status/:jobId",
+
+        diagnostic:
+          "GET /api/audio/diagnostic/:jobId",
+
+        audioStop:
+          "POST /api/audio/stop",
+
+        sessions:
+          "GET /api/audio/sessions",
+
+        websocket:
+          "wss://si-u2ul.onrender.com/ws"
+      }
+    });
+  }
+);
 
 // ============================================================
 // TRATAMENTO DE ERROS
 // ============================================================
 
-app.use((err, req, res, next) => {
+app.use(
+  (err, req, res, next) => {
 
-  console.error(
-    "[EXPRESS ERROR]",
-    err
-  );
+    console.error(
+      "[EXPRESS ERROR]",
+      err
+    );
 
-  if (
-    res.headersSent
-  ) {
-
-    return next(err);
-
-  }
-
-  return res.status(500).json({
-
-    ok: false,
-
-    error:
-      err.message ||
-      "Erro interno do servidor"
-
-  });
-
-});
-
-
-// ============================================================
-// LIMPEZA AUTOMÁTICA DAS SESSÕES
-// ============================================================
-
-setInterval(() => {
-
-  try {
-
-    const agora =
-      Date.now();
-
-    const TEMPO_MAXIMO =
-      30 * 60 * 1000;
-
-    for (
-      const [
-        jobId,
-        session
-      ]
-      of sessions.entries()
+    if (
+      res.headersSent
     ) {
 
-      const ultimaAtividade =
-        session.lastActivity ||
-        session.createdAt ||
-        agora;
+      return next(err);
+    }
 
-      if (
-        agora -
-        ultimaAtividade >
-        TEMPO_MAXIMO
+    return res.status(500).json({
+
+      ok: false,
+
+      error:
+        err.message ||
+        "Erro interno do servidor"
+
+    });
+  }
+);
+
+// ============================================================
+// LIMPEZA AUTOMÁTICA
+// ============================================================
+
+setInterval(
+  () => {
+
+    try {
+
+      const agoraMs =
+        Date.now();
+
+      for (
+        const [jobId, session]
+        of sessions.entries()
       ) {
 
+        const ultimaAtividade =
+          session.lastActivity ||
+          session.createdAt ||
+          agoraMs;
+
+        const idade =
+          agoraMs -
+          ultimaAtividade;
+
+        // Sessões paradas há mais de 10 minutos.
+        if (
+          session.stopped &&
+          idade >
+            10 * 60 * 1000
+        ) {
+
+          try {
+
+            if (
+              session.outputFlushTimer
+            ) {
+
+              clearTimeout(
+                session.outputFlushTimer
+              );
+
+              session.outputFlushTimer =
+                null;
+            }
+
+          } catch (_) {}
+
+          try {
+
+            if (
+              session.reconnectTimer
+            ) {
+
+              clearTimeout(
+                session.reconnectTimer
+              );
+
+              session.reconnectTimer =
+                null;
+            }
+
+          } catch (_) {}
+
+          try {
+
+            if (
+              session.ws
+            ) {
+
+              session.ws.close(
+                1000,
+                "Limpeza automática"
+              );
+
+              session.ws =
+                null;
+            }
+
+          } catch (_) {}
+
+          for (
+            const client
+            of session.audioClients
+          ) {
+
+            try {
+
+              if (
+                client.readyState ===
+                WebSocket.OPEN
+              ) {
+
+                client.close(
+                  1000,
+                  "Sessão expirada"
+                );
+              }
+
+            } catch (_) {}
+          }
+
+          session.audioClients.clear();
+
+          sessions.delete(
+            jobId
+          );
+
+          console.log(
+            `[CLEANUP] Sessão removida: ${jobId}`
+          );
+
+          continue;
+        }
+
+        // Sessões ativas abandonadas por mais de 30 minutos.
+        if (
+          !session.stopped &&
+          idade >
+            30 * 60 * 1000
+        ) {
+
+          console.log(
+            `[CLEANUP] Encerrando sessão abandonada: ${jobId}`
+          );
+
+          session.stopped =
+            true;
+
+          session.status =
+            "stopped";
+
+          try {
+
+            if (
+              session.outputFlushTimer
+            ) {
+
+              clearTimeout(
+                session.outputFlushTimer
+              );
+
+              session.outputFlushTimer =
+                null;
+            }
+
+          } catch (_) {}
+
+          try {
+
+            if (
+              session.reconnectTimer
+            ) {
+
+              clearTimeout(
+                session.reconnectTimer
+              );
+
+              session.reconnectTimer =
+                null;
+            }
+
+          } catch (_) {}
+
+          try {
+
+            if (
+              session.ws
+            ) {
+
+              session.ws.close(
+                1000,
+                "Sessão abandonada"
+              );
+
+              session.ws =
+                null;
+            }
+
+          } catch (_) {}
+        }
+      }
+
+    } catch (error) {
+
+      console.error(
+        "[CLEANUP ERROR]",
+        error
+      );
+    }
+
+  },
+  60 * 1000
+);
+
+// ============================================================
+// SERVIDOR HTTP
+// ============================================================
+
+const server =
+  app.listen(
+    PORT,
+    "0.0.0.0",
+    () => {
+
+      console.log(
+        "=================================================="
+      );
+
+      console.log(
+        "SI Tradutor Live iniciado"
+      );
+
+      console.log(
+        `Porta: ${PORT}`
+      );
+
+      console.log(
+        `Gemini configurado: ${Boolean(
+          GEMINI_API_KEY
+        )}`
+      );
+
+      console.log(
+        `Modelo: ${GEMINI_MODEL}`
+      );
+
+      console.log(
+        "WebSocket: /ws"
+      );
+
+      console.log(
+        "=================================================="
+      );
+    }
+  );
+
+// ============================================================
+// WEBSOCKET DE ÁUDIO EM TEMPO REAL
+// ============================================================
+
+const wss =
+  new WebSocket.Server({
+    server,
+    path:
+      "/ws"
+  });
+
+wss.on(
+  "connection",
+  ws => {
+
+    console.log(
+      "[WS] Cliente conectado"
+    );
+
+    ws.audioSession =
+      null;
+
+    try {
+
+      ws.send(
+        JSON.stringify({
+          ok: true,
+          type:
+            "connected",
+          message:
+            "WebSocket do SI Tradutor Live conectado"
+        })
+      );
+
+    } catch (_) {}
+
+    ws.on(
+      "message",
+      data => {
+
+        try {
+
+          let text;
+
+          if (
+            typeof data ===
+            "string"
+          ) {
+
+            text =
+              data;
+
+          } else if (
+            Buffer.isBuffer(data)
+          ) {
+
+            text =
+              data.toString(
+                "utf8"
+              );
+
+          } else if (
+            data instanceof ArrayBuffer
+          ) {
+
+            text =
+              Buffer.from(
+                data
+              ).toString(
+                "utf8"
+              );
+
+          } else if (
+            ArrayBuffer.isView(data)
+          ) {
+
+            text =
+              Buffer.from(
+                data.buffer,
+                data.byteOffset,
+                data.byteLength
+              ).toString(
+                "utf8"
+              );
+
+          } else {
+
+            text =
+              String(data);
+          }
+
+          const message =
+            JSON.parse(
+              text
+            );
+
+          // ----------------------------------------------------
+          // INSCRIÇÃO NA SESSÃO
+          // ----------------------------------------------------
+
+          if (
+            message.type ===
+            "subscribe"
+          ) {
+
+            const jobId =
+              message.jobId;
+
+            const session =
+              sessions.get(
+                jobId
+              );
+
+            if (
+              !jobId ||
+              !session
+            ) {
+
+              ws.send(
+                JSON.stringify({
+                  type:
+                    "error",
+                  ok: false,
+                  error:
+                    "Sessão não encontrada",
+                  jobId:
+                    jobId || null
+                })
+              );
+
+              return;
+            }
+
+            // Remover inscrição anterior.
+            if (
+              ws.audioSession &&
+              ws.audioSession !==
+                session
+            ) {
+
+              try {
+
+                ws.audioSession
+                  .audioClients
+                  .delete(ws);
+
+              } catch (_) {}
+            }
+
+            criarBufferAudioSession(
+              session
+            );
+
+            session.audioClients.add(
+              ws
+            );
+
+            ws.audioSession =
+              session;
+
+            registrarDiagnostico(
+              session,
+              "websocket_subscribed",
+              {
+                clients:
+                  session.audioClients.size
+              }
+            );
+
+            ws.send(
+              JSON.stringify({
+                type:
+                  "subscribed",
+                ok: true,
+                jobId,
+                nextOutputSeq:
+                  session.nextOutputSeq,
+                status:
+                  session.status
+              })
+            );
+
+            console.log(
+              `[WS] Cliente inscrito na sessão ${jobId} | ` +
+              `clientes=${session.audioClients.size}`
+            );
+
+            return;
+          }
+
+          // ----------------------------------------------------
+          // PING
+          // ----------------------------------------------------
+
+          if (
+            message.type ===
+            "ping"
+          ) {
+
+            ws.send(
+              JSON.stringify({
+                type:
+                  "pong",
+                time:
+                  Date.now()
+              })
+            );
+          }
+
+        } catch (error) {
+
+          console.error(
+            "[WS MESSAGE ERROR]",
+            error.message
+          );
+
+          try {
+
+            ws.send(
+              JSON.stringify({
+                type:
+                  "error",
+                ok: false,
+                error:
+                  "Mensagem WebSocket inválida"
+              })
+            );
+
+          } catch (_) {}
+        }
+      }
+    );
+
+    ws.on(
+      "close",
+      () => {
+
+        try {
+
+          if (
+            ws.audioSession
+          ) {
+
+            ws.audioSession
+              .audioClients
+              .delete(ws);
+
+            registrarDiagnostico(
+              ws.audioSession,
+              "websocket_disconnected",
+              {
+                clients:
+                  ws.audioSession
+                    .audioClients
+                    .size
+              }
+            );
+          }
+
+        } catch (_) {}
+
         console.log(
-          `[CLEANUP] Removendo sessão antiga: ${jobId}`
+          "[WS] Cliente desconectado"
+        );
+      }
+    );
+
+    ws.on(
+      "error",
+      error => {
+
+        console.error(
+          "[WS ERROR]",
+          error.message
         );
 
         try {
 
           if (
-            session.outputFlushTimer
+            ws.audioSession
           ) {
 
-            clearTimeout(
-              session.outputFlushTimer
-            );
-
-            session.outputFlushTimer =
-              null;
-
-          }
-
-          if (
-            session.ws &&
-            session.ws.readyState ===
-              WebSocket.OPEN
-          ) {
-
-            session.ws.close(
-              1000,
-              "Sessão expirada"
-            );
-
+            ws.audioSession
+              .audioClients
+              .delete(ws);
           }
 
         } catch (_) {}
-
-        sessions.delete(
-          jobId
-        );
-
       }
-
-    }
-
-  } catch (error) {
-
-    console.error(
-      "[CLEANUP ERROR]",
-      error
     );
-
   }
-
-}, 5 * 60 * 1000);
-
-
+);
