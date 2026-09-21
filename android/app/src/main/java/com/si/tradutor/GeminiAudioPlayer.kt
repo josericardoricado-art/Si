@@ -32,8 +32,6 @@ class GeminiAudioPlayer(
         private const val MAX_QUEUE_BYTES = 10 * 1024 * 1024
         private const val BYTES_PER_SECOND = SAMPLE_RATE * 2
         private const val WRITE_CHUNK_BYTES = 4096
-
-        // Definida aqui para evitar o erro de Unresolved Reference
         private const val PREBUFFER_BYTES = (BYTES_PER_SECOND * 0.3).toInt()
 
         private const val VOLUME = 1.0f
