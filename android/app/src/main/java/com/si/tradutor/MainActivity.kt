@@ -1,415 +1,1284 @@
 package com.si.tradutor
 
+import android.Manifest
+import android.app.Activity
 import android.content.Context
-import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioManager
-import android.media.AudioTrack
-import android.util.Base64
-import android.util.Log
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.projection.MediaProjectionManager
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.Gravity
+import android.view.View
+import android.widget.ArrayAdapter
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.Spinner
+import android.widget.TextView
+import android.graphics.Color
+import android.graphics.Typeface
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.concurrent.LinkedBlockingQueue
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.UUID
+import kotlin.concurrent.thread
 
-class GeminiAudioPlayer(
-    private val context: Context,
-    private val backendUrl: String
-) {
+class MainActivity : AppCompatActivity() {
 
     companion object {
-        private const val TAG = "GeminiAudioPlayer"
 
-        // Áudio enviado pelo Gemini Live
-        private const val SAMPLE_RATE = 24000
-        private const val CHANNEL_MASK = AudioFormat.CHANNEL_OUT_MONO
-        private const val ENCODING = AudioFormat.ENCODING_PCM_16BIT
+        private const val BACKEND_URL =
+            "https://si-u2ul.onrender.com"
 
-        // Consulta o Render (100ms evita sobrecarregar requisições HTTP)
-        private const val POLL_INTERVAL_MS = 100L
+        private const val REQUEST_RECORD_AUDIO =
+            5001
 
-        // Limite máximo da fila de áudio
-        private const val MAX_QUEUE_BYTES = 10 * 1024 * 1024
+        private const val REQUEST_MEDIA_PROJECTION =
+            5002
 
-        // Aproximadamente 1 segundo de PCM 24 kHz / 16 bit / mono (48000 bytes)
-        private const val BYTES_PER_SECOND = SAMPLE_RATE * 2
+        private const val PREFS =
+            "si_preferences"
 
-        // REDUZIDO: Pedaços menores evitam gargalos na escrita do AudioTrack (ex: ~40ms de áudio)
-        private const val WRITE_CHUNK_BYTES = 4096
-
-        // NOVO: Pre-buffer necessário (~300ms de áudio acumulado) para iniciar o áudio sem engasgar
-        private const val PREBUFFER_BYTES = (BYTES_PER_SECOND * 0.3).toInt()
-
-        // Volume da voz traduzida
-        private const val VOLUME = 1.0f
+        private const val CLIENT_ID =
+            "client_id"
     }
 
-    private val running = AtomicBoolean(false)
+    private lateinit var statusText: TextView
 
-    private var jobId: String? = null
+    private lateinit var monitorButton: Button
 
-    private var audioTrack: AudioTrack? = null
+    private lateinit var stopButton: Button
 
-    private var pollThread: Thread? = null
-    private var playbackThread: Thread? = null
+    private lateinit var languageSpinner: Spinner
 
-    private val audioQueue = LinkedBlockingQueue<ByteArray>()
+    private var currentJobId: String? = null
 
-    private var queuedBytes = 0L
+    private var monitoring = false
 
-    private var lastOutputSeq = 0L
+    private val handler =
+        Handler(Looper.getMainLooper())
 
-    private val lock = Any()
 
-    fun start(jobId: String) {
+    /*
+     * =====================================================
+     * ON CREATE
+     * =====================================================
+     */
 
-        if (running.get()) {
-            Log.d(TAG, "Player já estava funcionando")
-            return
-        }
+    override fun onCreate(
+        savedInstanceState: Bundle?
+    ) {
 
-        this.jobId = jobId
-        running.set(true)
+        super.onCreate(savedInstanceState)
 
-        Log.d(TAG, "Iniciando GeminiAudioPlayer. jobId=$jobId")
+        criarTela()
 
-        criarAudioTrack()
-        iniciarPlaybackThread()
-        iniciarPollThread()
+        verificarPermissaoMicrofone()
     }
 
-    fun stop() {
 
-        if (!running.getAndSet(false)) {
-            return
-        }
+    /*
+     * =====================================================
+     * TELA
+     * =====================================================
+     */
 
-        Log.d(TAG, "Parando GeminiAudioPlayer")
+    private fun criarTela() {
 
-        try {
-            pollThread?.interrupt()
-        } catch (_: Exception) {}
+        val root =
+            LinearLayout(this)
 
-        try {
-            playbackThread?.interrupt()
-        } catch (_: Exception) {}
+        root.orientation =
+            LinearLayout.VERTICAL
 
-        pollThread = null
-        playbackThread = null
-
-        synchronized(lock) {
-            audioQueue.clear()
-            queuedBytes = 0
-        }
-
-        try {
-            audioTrack?.pause()
-        } catch (_: Exception) {}
-
-        try {
-            audioTrack?.flush()
-        } catch (_: Exception) {}
-
-        try {
-            audioTrack?.stop()
-        } catch (_: Exception) {}
-
-        try {
-            audioTrack?.release()
-        } catch (_: Exception) {}
-
-        audioTrack = null
-        jobId = null
-        lastOutputSeq = 0L
-    }
-
-    private fun criarAudioTrack() {
-
-        val minBuffer = AudioTrack.getMinBufferSize(
-            SAMPLE_RATE,
-            CHANNEL_MASK,
-            ENCODING
+        root.setPadding(
+            48,
+            60,
+            48,
+            40
         )
 
-        // Buffer interno maior para suportar oscilações de rede
-        val bufferSize = maxOf(
-            minBuffer * 4,
-            BYTES_PER_SECOND * 2
+        root.gravity =
+            Gravity.CENTER_HORIZONTAL
+
+        root.setBackgroundColor(
+            Color.rgb(
+                5,
+                21,
+                47
+            )
         )
 
-        Log.d(TAG, "Criando AudioTrack. minBuffer=$minBuffer buffer=$bufferSize")
 
-        val attributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_MEDIA)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-            .build()
+        /*
+         * LOGO
+         */
 
-        val format = AudioFormat.Builder()
-            .setSampleRate(SAMPLE_RATE)
-            .setEncoding(ENCODING)
-            .setChannelMask(CHANNEL_MASK)
-            .build()
+        val logo =
+            TextView(this)
 
-        audioTrack = AudioTrack(
-            attributes,
-            format,
-            bufferSize,
-            AudioTrack.MODE_STREAM,
-            AudioManager.AUDIO_SESSION_ID_GENERATE
+        logo.text =
+            "SI"
+
+        logo.textSize =
+            70f
+
+        logo.setTextColor(
+            Color.WHITE
         )
 
-        audioTrack?.setVolume(VOLUME)
+        logo.setTypeface(
+            null,
+            Typeface.BOLD
+        )
 
-        try {
-            audioTrack?.play()
-            Log.d(TAG, "AudioTrack PLAY iniciado")
-        } catch (e: Exception) {
-            Log.e(TAG, "Erro ao iniciar AudioTrack", e)
+        logo.gravity =
+            Gravity.CENTER
+
+        root.addView(
+            logo,
+            LinearLayout.LayoutParams(
+                -1,
+                130
+            )
+        )
+
+
+        /*
+         * TÍTULO
+         */
+
+        val title =
+            TextView(this)
+
+        title.text =
+            "SI TRADUTOR LIVE"
+
+        title.textSize =
+            30f
+
+        title.setTextColor(
+            Color.WHITE
+        )
+
+        title.setTypeface(
+            null,
+            Typeface.BOLD
+        )
+
+        title.gravity =
+            Gravity.CENTER
+
+        root.addView(title)
+
+
+        /*
+         * SUBTÍTULO
+         */
+
+        val subtitle =
+            TextView(this)
+
+        subtitle.text =
+            "Tradução e dublagem em tempo real"
+
+        subtitle.textSize =
+            18f
+
+        subtitle.setTextColor(
+            Color.LTGRAY
+        )
+
+        subtitle.gravity =
+            Gravity.CENTER
+
+        subtitle.setPadding(
+            0,
+            15,
+            0,
+            35
+        )
+
+        root.addView(subtitle)
+
+
+        /*
+         * STATUS
+         */
+
+        statusText =
+            TextView(this)
+
+        statusText.text =
+            "🔵 Verificando conexão com o servidor..."
+
+        statusText.textSize =
+            17f
+
+        statusText.setTextColor(
+            Color.WHITE
+        )
+
+        statusText.gravity =
+            Gravity.CENTER
+
+        statusText.setPadding(
+            20,
+            25,
+            20,
+            25
+        )
+
+        statusText.setBackgroundColor(
+            Color.rgb(
+                20,
+                48,
+                90
+            )
+        )
+
+        root.addView(
+            statusText,
+            LinearLayout.LayoutParams(
+                -1,
+                100
+            )
+        )
+
+
+        adicionarEspaco(
+            root,
+            25
+        )
+
+
+        /*
+         * BOTÃO MONITORAR
+         */
+
+        monitorButton =
+            Button(this)
+
+        monitorButton.text =
+            "🎬 MONITORAR TELA"
+
+        monitorButton.textSize =
+            18f
+
+        monitorButton.setTextColor(
+            Color.WHITE
+        )
+
+        monitorButton.setBackgroundColor(
+            Color.rgb(
+                25,
+                140,
+                255
+            )
+        )
+
+        monitorButton.setOnClickListener {
+
+            iniciarMonitoramento()
         }
+
+        root.addView(
+            monitorButton,
+            LinearLayout.LayoutParams(
+                -1,
+                90
+            )
+        )
+
+
+        adicionarEspaco(
+            root,
+            18
+        )
+
+
+        /*
+         * BOTÃO PARAR
+         */
+
+        stopButton =
+            Button(this)
+
+        stopButton.text =
+            "⏹ PARAR MONITORAMENTO"
+
+        stopButton.textSize =
+            17f
+
+        stopButton.setTextColor(
+            Color.WHITE
+        )
+
+        stopButton.setBackgroundColor(
+            Color.rgb(
+                40,
+                65,
+                105
+            )
+        )
+
+        stopButton.isEnabled =
+            false
+
+        stopButton.setOnClickListener {
+
+            pararMonitoramento()
+        }
+
+        root.addView(
+            stopButton,
+            LinearLayout.LayoutParams(
+                -1,
+                90
+            )
+        )
+
+
+        adicionarEspaco(
+            root,
+            25
+        )
+
+
+        /*
+         * IDIOMA
+         */
+
+        val languageTitle =
+            TextView(this)
+
+        languageTitle.text =
+            "🌎 Idioma da tradução"
+
+        languageTitle.textSize =
+            20f
+
+        languageTitle.setTextColor(
+            Color.WHITE
+        )
+
+        languageTitle.setTypeface(
+            null,
+            Typeface.BOLD
+        )
+
+        root.addView(languageTitle)
+
+
+        adicionarEspaco(
+            root,
+            10
+        )
+
+
+        /*
+         * SPINNER
+         */
+
+        languageSpinner =
+            Spinner(this)
+
+        val languages =
+            arrayOf(
+                "Português",
+                "English",
+                "Español",
+                "Français",
+                "Deutsch",
+                "Italiano",
+                "日本語",
+                "한국어",
+                "中文",
+                "Русский",
+                "العربية",
+                "हिन्दी",
+                "Türkçe",
+                "Nederlands",
+                "Polski",
+                "Українська",
+                "ไทย",
+                "Bahasa Indonesia",
+                "Tiếng Việt"
+            )
+
+        val adapter =
+            ArrayAdapter(
+                this,
+                android.R.layout.simple_spinner_dropdown_item,
+                languages
+            )
+
+        languageSpinner.adapter =
+            adapter
+
+        root.addView(
+            languageSpinner,
+            LinearLayout.LayoutParams(
+                -1,
+                70
+            )
+        )
+
+
+        adicionarEspaco(
+            root,
+            25
+        )
+
+
+        /*
+         * DUBLAGEM
+         */
+
+        val dubbing =
+            Button(this)
+
+        dubbing.text =
+            "🔊 DUBLAGEM ATIVADA"
+
+        dubbing.textSize =
+            17f
+
+        dubbing.setTextColor(
+            Color.BLACK
+        )
+
+        dubbing.setBackgroundColor(
+            Color.rgb(
+                30,
+                225,
+                120
+            )
+        )
+
+        root.addView(
+            dubbing,
+            LinearLayout.LayoutParams(
+                -1,
+                85
+            )
+        )
+
+
+        adicionarEspaco(
+            root,
+            15
+        )
+
+
+        /*
+         * TRADUÇÃO
+         */
+
+        val translation =
+            Button(this)
+
+        translation.text =
+            "🌐 TRADUÇÃO ATIVADA"
+
+        translation.textSize =
+            17f
+
+        translation.setTextColor(
+            Color.WHITE
+        )
+
+        translation.setBackgroundColor(
+            Color.rgb(
+                25,
+                140,
+                255
+            )
+        )
+
+        root.addView(
+            translation,
+            LinearLayout.LayoutParams(
+                -1,
+                85
+            )
+        )
+
+
+        setContentView(root)
     }
 
-    private fun iniciarPlaybackThread() {
 
-        playbackThread = Thread {
+    /*
+     * =====================================================
+     * ESPAÇO
+     * =====================================================
+     */
 
-            Log.d(TAG, "Playback thread iniciado")
+    private fun adicionarEspaco(
+        root: LinearLayout,
+        altura: Int
+    ) {
 
-            while (running.get()) {
+        val space =
+            View(this)
 
-                try {
-                    // PRE-BUFFER: Aguarda acumular ao menos 300ms de áudio antes de começar a tocar
-                    // Isso evita que pequenos atrasos de rede causem gargalos (cortes no áudio)
-                    while (getQueuedBytes() < PREBUFFER_BYTES && running.get()) {
-                        Thread.sleep(20)
-                    }
+        root.addView(
+            space,
+            LinearLayout.LayoutParams(
+                1,
+                altura
+            )
+        )
+    }
 
-                    // Toca todo o áudio acumulado na fila
-                    while (getQueuedBytes() > 0 && running.get()) {
 
-                        val data = audioQueue.poll() ?: break
+    /*
+     * =====================================================
+     * PERMISSÃO MICROFONE
+     * =====================================================
+     */
 
-                        synchronized(lock) {
-                            queuedBytes -= data.size.toLong()
-                            if (queuedBytes < 0) {
-                                queuedBytes = 0
-                            }
-                        }
+    private fun verificarPermissaoMicrofone() {
 
-                        tocarAudio(data)
-                    }
+        if (
+            Build.VERSION.SDK_INT >=
+            Build.VERSION_CODES.M
+        ) {
 
-                } catch (e: InterruptedException) {
-                    break
-                } catch (e: Exception) {
-                    Log.e(TAG, "Erro no playback", e)
-                }
+            if (
+                ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.RECORD_AUDIO
+                ) !=
+                PackageManager.PERMISSION_GRANTED
+            ) {
+
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(
+                        Manifest.permission.RECORD_AUDIO
+                    ),
+                    REQUEST_RECORD_AUDIO
+                )
             }
-
-            Log.d(TAG, "Playback thread finalizado")
-
-        }.apply {
-            name = "SI-Gemini-AudioPlayback"
-            start()
         }
     }
 
-    private fun tocarAudio(data: ByteArray) {
 
-        if (!running.get()) {
+    /*
+     * =====================================================
+     * INICIAR MONITORAMENTO
+     * =====================================================
+     */
+
+    private fun iniciarMonitoramento() {
+
+        if (monitoring) {
+
+            Toast.makeText(
+                this,
+                "Monitoramento já está ativo",
+                Toast.LENGTH_SHORT
+            ).show()
+
             return
         }
 
-        val track = audioTrack ?: return
-        var offset = 0
 
-        while (offset < data.size && running.get()) {
+        status(
+            "🟡 Acordando servidor..."
+        )
 
-            val restante = data.size - offset
-            val tamanho = minOf(restante, WRITE_CHUNK_BYTES)
 
-            try {
-                val escritos = track.write(
-                    data,
-                    offset,
-                    tamanho,
-                    AudioTrack.WRITE_BLOCKING
+        monitorButton.isEnabled =
+            false
+
+
+        thread {
+
+            val servidorOk =
+                esperarRender()
+
+
+            runOnUiThread {
+
+                if (!servidorOk) {
+
+                    status(
+                        "❌ Não foi possível conectar ao Render"
+                    )
+
+                    monitorButton.isEnabled =
+                        true
+
+                    Toast.makeText(
+                        this,
+                        "O servidor demorou para responder.",
+                        Toast.LENGTH_LONG
+                    ).show()
+
+                    return@runOnUiThread
+                }
+
+
+                status(
+                    "🟢 Render conectado. Criando sessão..."
                 )
 
-                if (escritos > 0) {
-                    offset += escritos
-                } else {
-                    Log.w(TAG, "AudioTrack.write retornou $escritos")
-                    break
+
+                criarSessao()
+            }
+        }
+    }
+
+
+    /*
+     * =====================================================
+     * ESPERAR RENDER
+     * =====================================================
+     */
+
+    private fun esperarRender():
+            Boolean {
+
+        for (
+            tentativa in 1..5
+        ) {
+
+            try {
+
+                println(
+                    "SI: testando Render tentativa $tentativa"
+                )
+
+
+                val connection =
+                    URL(
+                        "$BACKEND_URL/api/health"
+                    )
+                        .openConnection()
+                        as HttpURLConnection
+
+
+                connection.requestMethod =
+                    "GET"
+
+
+                connection.connectTimeout =
+                    30000
+
+
+                connection.readTimeout =
+                    30000
+
+
+                connection.useCaches =
+                    false
+
+
+                connection.setRequestProperty(
+                    "Connection",
+                    "close"
+                )
+
+
+                val code =
+                    connection.responseCode
+
+
+                println(
+                    "SI: Render health HTTP $code"
+                )
+
+
+                if (
+                    code in 200..299
+                ) {
+
+                    connection.disconnect()
+
+                    return true
                 }
 
-            } catch (e: Exception) {
-                Log.e(TAG, "Erro escrevendo áudio", e)
-                break
+
+                connection.disconnect()
+
+            } catch (
+                e: Exception
+            ) {
+
+                println(
+                    "SI: health erro: ${e.message}"
+                )
+            }
+
+
+            try {
+
+                Thread.sleep(
+                    3000
+                )
+
+            } catch (
+                _: Exception
+            ) {
             }
         }
+
+
+        return false
     }
 
-    private fun iniciarPollThread() {
 
-        pollThread = Thread {
+    /*
+     * =====================================================
+     * CRIAR SESSÃO
+     * =====================================================
+     */
 
-            Log.d(TAG, "Poll thread iniciado")
+    private fun criarSessao() {
 
-            while (running.get()) {
+        thread {
 
-                try {
-                    buscarAudioTraduzido()
-                } catch (e: InterruptedException) {
-                    break
-                } catch (e: Exception) {
-                    Log.e(TAG, "Erro buscando áudio traduzido", e)
+            try {
+
+                val clientId =
+                    obterClientId()
+
+
+                val targetLang =
+                    obterIdiomaSelecionado()
+
+
+                println(
+                    "SI: clientId = $clientId"
+                )
+
+                println(
+                    "SI: targetLang = $targetLang"
+                )
+
+
+                val connection =
+                    URL(
+                        "$BACKEND_URL/api/audio/start"
+                    )
+                        .openConnection()
+                        as HttpURLConnection
+
+
+                connection.requestMethod =
+                    "POST"
+
+
+                connection.connectTimeout =
+                    30000
+
+
+                connection.readTimeout =
+                    30000
+
+
+                connection.doOutput =
+                    true
+
+
+                connection.useCaches =
+                    false
+
+
+                connection.setRequestProperty(
+                    "Content-Type",
+                    "application/json"
+                )
+
+                connection.setRequestProperty(
+                    "Accept",
+                    "application/json"
+                )
+
+                connection.setRequestProperty(
+                    "Connection",
+                    "close"
+                )
+
+
+                val json =
+                    JSONObject()
+
+
+                json.put(
+                    "clientId",
+                    clientId
+                )
+
+
+                json.put(
+                    "targetLang",
+                    targetLang
+                )
+
+
+                println(
+                    "SI: enviando /api/audio/start"
+                )
+
+
+                OutputStreamWriter(
+                    connection.outputStream
+                ).use { writer: OutputStreamWriter ->
+
+                    writer.write(
+                        json.toString()
+                    )
+
+                    writer.flush()
                 }
 
-                try {
-                    Thread.sleep(POLL_INTERVAL_MS)
-                } catch (_: InterruptedException) {
-                    break
-                }
-            }
 
-            Log.d(TAG, "Poll thread finalizado")
+                val responseCode =
+                    connection.responseCode
 
-        }.apply {
-            name = "SI-Gemini-AudioPoll"
-            start()
-        }
-    }
 
-    private fun buscarAudioTraduzido() {
+                println(
+                    "SI: /api/audio/start HTTP $responseCode"
+                )
 
-        val id = jobId ?: return
-        val urlString = "$backendUrl/api/audio/output/$id?after=$lastOutputSeq&limit=30"
 
-        var connection: HttpURLConnection? = null
+                val stream =
+                    if (
+                        responseCode in 200..299
+                    ) {
 
-        try {
-            val url = URL(urlString)
-            connection = url.openConnection() as HttpURLConnection
-            connection.requestMethod = "GET"
-            connection.connectTimeout = 5000
-            connection.readTimeout = 5000
-            connection.useCaches = false
+                        connection.inputStream
 
-            val code = connection.responseCode
+                    } else {
 
-            if (code != 200) {
-                Log.w(TAG, "Render respondeu HTTP $code")
-                return
-            }
-
-            val text = connection.inputStream.bufferedReader().use { it.readText() }
-
-            if (text.isBlank()) {
-                return
-            }
-
-            processarResposta(text)
-
-        } catch (e: Exception) {
-            if (running.get()) {
-                Log.e(TAG, "Erro HTTP buscando áudio", e)
-            }
-        } finally {
-            connection?.disconnect()
-        }
-    }
-
-    private fun processarResposta(text: String) {
-
-        val root = JSONObject(text)
-
-        if (!root.optBoolean("ok", true)) {
-            Log.w(TAG, "Backend informou ok=false")
-            return
-        }
-
-        val chunks = root.optJSONArray("chunks") ?: return
-
-        if (chunks.length() == 0) {
-            return
-        }
-
-        var novos = 0
-
-        for (i in 0 until chunks.length()) {
-
-            val chunk = chunks.optJSONObject(i) ?: continue
-            val seq = chunk.optLong("seq", -1)
-
-            if (seq < 0 || seq <= lastOutputSeq) {
-                continue
-            }
-
-            val audioBase64 = chunk.optString("audio", "")
-
-            if (audioBase64.isBlank()) {
-                continue
-            }
-
-            val audio = try {
-                Base64.decode(audioBase64, Base64.DEFAULT)
-            } catch (e: Exception) {
-                Log.e(TAG, "Erro decodificando Base64 seq=$seq", e)
-                continue
-            }
-
-            if (audio.isEmpty()) {
-                continue
-            }
-
-            adicionarAudioNaFila(audio)
-
-            if (seq > lastOutputSeq) {
-                lastOutputSeq = seq
-            }
-
-            novos++
-        }
-
-        if (novos > 0) {
-            Log.d(
-                TAG,
-                "Recebidos $novos chunks novos. seq=$lastOutputSeq fila=${getQueuedBytes()} bytes"
-            )
-        }
-    }
-
-    private fun adicionarAudioNaFila(audio: ByteArray) {
-
-        synchronized(lock) {
-
-            if (!running.get()) {
-                return
-            }
-
-            val novoTotal = queuedBytes + audio.size
-
-            if (novoTotal > MAX_QUEUE_BYTES) {
-                Log.w(TAG, "Fila cheia. Descartando áudio antigo.")
-
-                while (queuedBytes + audio.size > MAX_QUEUE_BYTES) {
-                    val antigo = audioQueue.poll() ?: break
-                    queuedBytes -= antigo.size.toLong()
-                    if (queuedBytes < 0) {
-                        queuedBytes = 0
+                        connection.errorStream
                     }
+
+
+                val response =
+                    if (stream != null) {
+
+                        BufferedReader(
+                            InputStreamReader(
+                                stream
+                            )
+                        ).use { reader: BufferedReader ->
+
+                            reader.readText()
+                        }
+
+                    } else {
+
+                        ""
+                    }
+
+
+                connection.disconnect()
+
+
+                println(
+                    "SI: resposta start = $response"
+                )
+
+
+                if (
+                    responseCode !in 200..299
+                ) {
+
+                    runOnUiThread {
+
+                        status(
+                            "❌ Erro do Render: HTTP $responseCode"
+                        )
+
+                        monitorButton.isEnabled =
+                            true
+                    }
+
+                    return@thread
+                }
+
+
+                val result =
+                    JSONObject(
+                        response
+                    )
+
+
+                val ok =
+                    result.optBoolean(
+                        "ok",
+                        false
+                    )
+
+
+                val returnedJobId =
+                    result.optString(
+                        "jobId",
+                        ""
+                    )
+
+
+                if (
+                    !ok ||
+                    returnedJobId.isEmpty()
+                ) {
+
+                    runOnUiThread {
+
+                        status(
+                            "❌ Render não criou a sessão"
+                        )
+
+                        monitorButton.isEnabled =
+                            true
+                    }
+
+                    return@thread
+                }
+
+
+                currentJobId =
+                    returnedJobId
+
+
+                println(
+                    "SI: jobId criado = $returnedJobId"
+                )
+
+
+                runOnUiThread {
+
+                    status(
+                        "🟢 Servidor conectado. Autorize a captura..."
+                    )
+
+                    solicitarCapturadeTela()
+
+                    monitoring = true
+
+                    monitorButton.isEnabled =
+                        false
+
+                    stopButton.isEnabled =
+                        true
+                }
+
+
+            } catch (
+                e: Exception
+            ) {
+
+                println(
+                    "SI: erro ao criar sessão = ${e.message}"
+                )
+
+                runOnUiThread {
+
+                    status(
+                        "❌ Erro ao criar sessão"
+                    )
+
+                    monitorButton.isEnabled =
+                        true
                 }
             }
-
-            audioQueue.offer(audio)
-            queuedBytes += audio.size.toLong()
         }
     }
 
-    private fun getQueuedBytes(): Long {
-        synchronized(lock) {
-            return queuedBytes
+
+    /*
+     * =====================================================
+     * SOLICITAR CAPTURA DE TELA
+     * =====================================================
+     */
+
+    private fun solicitarCapturadeTela() {
+
+        val projectionManager =
+            getSystemService(
+                Context.MEDIA_PROJECTION_SERVICE
+            ) as MediaProjectionManager
+
+
+        val intent =
+            projectionManager
+                .createScreenCaptureIntent()
+
+
+        startActivityForResult(
+            intent,
+            REQUEST_MEDIA_PROJECTION
+        )
+    }
+
+
+    /*
+     * =====================================================
+     * ON ACTIVITY RESULT
+     * =====================================================
+     */
+
+    override fun onActivityResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: Intent?
+    ) {
+
+        super.onActivityResult(
+            requestCode,
+            resultCode,
+            data
+        )
+
+
+        if (
+            requestCode ==
+            REQUEST_MEDIA_PROJECTION
+        ) {
+
+            if (
+                resultCode == Activity.RESULT_OK &&
+                data != null
+            ) {
+
+                iniciarCapturaAudio(
+                    resultCode,
+                    data
+                )
+
+            } else {
+
+                status(
+                    "❌ Captura de tela não autorizada"
+                )
+
+                monitoring = false
+
+                monitorButton.isEnabled =
+                    true
+
+                stopButton.isEnabled =
+                    false
+            }
+        }
+    }
+
+
+    /*
+     * =====================================================
+     * INICIAR CAPTURA DE ÁUDIO
+     * =====================================================
+     */
+
+    private fun iniciarCapturaAudio(
+        resultCode: Int,
+        resultData: Intent
+    ) {
+
+        val intent =
+            Intent(
+                this,
+                AudioCaptureService::class.java
+            )
+
+
+        /*
+         * AQUI ESTÁ A CORREÇÃO PRINCIPAL.
+         *
+         * Antes estava usando:
+         * AudioCaptureService.companion
+         *
+         * Agora usa diretamente:
+         * AudioCaptureService.ACTION_START
+         */
+
+        intent.action =
+            AudioCaptureService.ACTION_START
+
+
+        intent.putExtra(
+            AudioCaptureService.EXTRA_JOB_ID,
+            currentJobId
+        )
+
+
+        intent.putExtra(
+            AudioCaptureService.EXTRA_RESULT_CODE,
+            resultCode
+        )
+
+
+        intent.putExtra(
+            AudioCaptureService.EXTRA_RESULT_DATA,
+            resultData
+        )
+
+
+        startService(intent)
+
+
+        status(
+            "🎤 Capturando áudio..."
+        )
+    }
+
+
+    /*
+     * =====================================================
+     * PARAR MONITORAMENTO
+     * =====================================================
+     */
+
+    private fun pararMonitoramento() {
+
+        val intent =
+            Intent(
+                this,
+                AudioCaptureService::class.java
+            )
+
+
+        intent.action =
+            AudioCaptureService.ACTION_STOP
+
+
+        startService(intent)
+
+
+        status(
+            "⏸ Monitoramento parado"
+        )
+
+
+        monitoring = false
+
+
+        monitorButton.isEnabled =
+            true
+
+
+        stopButton.isEnabled =
+            false
+
+
+        currentJobId =
+            null
+    }
+
+
+    /*
+     * =====================================================
+     * OBTER CLIENT ID
+     * =====================================================
+     */
+
+    private fun obterClientId():
+            String {
+
+        val prefs =
+            getSharedPreferences(
+                PREFS,
+                Context.MODE_PRIVATE
+            )
+
+
+        var clientId =
+            prefs.getString(
+                CLIENT_ID,
+                ""
+            ) ?: ""
+
+
+        if (
+            clientId.isEmpty()
+        ) {
+
+            clientId =
+                UUID
+                    .randomUUID()
+                    .toString()
+
+
+            prefs
+                .edit()
+                .putString(
+                    CLIENT_ID,
+                    clientId
+                )
+                .apply()
+        }
+
+
+        return clientId
+    }
+
+
+    /*
+     * =====================================================
+     * OBTER IDIOMA
+     * =====================================================
+     */
+
+    private fun obterIdiomaSelecionado():
+            String {
+
+        return when (
+            languageSpinner.selectedItemPosition
+        ) {
+
+            0 -> "pt-BR"
+            1 -> "en-US"
+            2 -> "es-ES"
+            3 -> "fr-FR"
+            4 -> "de-DE"
+            5 -> "it-IT"
+            6 -> "ja-JP"
+            7 -> "ko-KR"
+            8 -> "zh-CN"
+            9 -> "ru-RU"
+            10 -> "ar-SA"
+            11 -> "hi-IN"
+            12 -> "tr-TR"
+            13 -> "nl-NL"
+            14 -> "pl-PL"
+            15 -> "uk-UA"
+            16 -> "th-TH"
+            17 -> "id-ID"
+            18 -> "vi-VN"
+
+            else -> "pt-BR"
+        }
+    }
+
+
+    /*
+     * =====================================================
+     * STATUS
+     * =====================================================
+     */
+
+    private fun status(
+        message: String
+    ) {
+
+        runOnUiThread {
+
+            statusText.text =
+                message
         }
     }
 }
