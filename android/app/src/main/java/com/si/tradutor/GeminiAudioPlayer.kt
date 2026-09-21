@@ -19,26 +19,32 @@ class GeminiAudioPlayer(
 ) {
 
     companion object {
+
         private const val TAG = "GeminiAudioPlayer"
 
-        // Áudio enviado pelo Gemini Live
+        // Gemini Live:
+        // PCM 16-bit / mono / 24 kHz
         private const val SAMPLE_RATE = 24000
-        private const val CHANNEL_MASK = AudioFormat.CHANNEL_OUT_MONO
-        private const val ENCODING = AudioFormat.ENCODING_PCM_16BIT
+        private const val CHANNEL_MASK =
+            AudioFormat.CHANNEL_OUT_MONO
+        private const val ENCODING =
+            AudioFormat.ENCODING_PCM_16BIT
 
-        // Consulta o Render rapidamente
-        private const val POLL_INTERVAL_MS = 80L
+        // 150 ms entre consultas
+        private const val POLL_INTERVAL_MS = 150L
 
-        // Limite máximo da fila de áudio
-        private const val MAX_QUEUE_BYTES = 10 * 1024 * 1024
+        // Aproximadamente 300 ms antes de iniciar/retomar
+        private const val PREBUFFER_BYTES =
+            14400
 
-        // Aproximadamente 1 segundo de PCM 24 kHz / 16 bit / mono
-        private const val BYTES_PER_SECOND = SAMPLE_RATE * 2
+        // Aproximadamente 200 ms por escrita
+        private const val WRITE_CHUNK_BYTES =
+            9600
 
-        // Tamanho usado em cada escrita no AudioTrack
-        private const val WRITE_CHUNK_BYTES = 48000
+        // Máximo de áudio guardado na memória
+        private const val MAX_QUEUE_BYTES =
+            10 * 1024 * 1024
 
-        // Volume da voz traduzida
         private const val VOLUME = 1.0f
     }
 
@@ -50,6 +56,7 @@ class GeminiAudioPlayer(
     private var audioTrack: AudioTrack? = null
 
     private var pollThread: Thread? = null
+
     private var playbackThread: Thread? = null
 
     private val audioQueue =
@@ -59,25 +66,38 @@ class GeminiAudioPlayer(
 
     private var lastOutputSeq = 0L
 
+    private var playbackStarted = false
+
     private val lock = Any()
+
+
+    // ============================================================
+    // START
+    // ============================================================
 
     fun start(jobId: String) {
 
         if (running.get()) {
+
             Log.d(
                 TAG,
-                "Player já estava funcionando"
+                "Player já está funcionando"
             )
+
             return
         }
 
         this.jobId = jobId
 
+        lastOutputSeq = 0L
+
+        playbackStarted = false
+
         running.set(true)
 
         Log.d(
             TAG,
-            "Iniciando GeminiAudioPlayer. jobId=$jobId"
+            "Iniciando player. jobId=$jobId"
         )
 
         criarAudioTrack()
@@ -87,6 +107,11 @@ class GeminiAudioPlayer(
         iniciarPollThread()
     }
 
+
+    // ============================================================
+    // STOP
+    // ============================================================
+
     fun stop() {
 
         if (!running.getAndSet(false)) {
@@ -95,7 +120,7 @@ class GeminiAudioPlayer(
 
         Log.d(
             TAG,
-            "Parando GeminiAudioPlayer"
+            "Parando player"
         )
 
         try {
@@ -109,13 +134,16 @@ class GeminiAudioPlayer(
         }
 
         pollThread = null
+
         playbackThread = null
 
         synchronized(lock) {
 
             audioQueue.clear()
 
-            queuedBytes = 0
+            queuedBytes = 0L
+
+            playbackStarted = false
         }
 
         try {
@@ -145,6 +173,11 @@ class GeminiAudioPlayer(
         lastOutputSeq = 0L
     }
 
+
+    // ============================================================
+    // AUDIO TRACK
+    // ============================================================
+
     private fun criarAudioTrack() {
 
         val minBuffer =
@@ -157,14 +190,13 @@ class GeminiAudioPlayer(
         val bufferSize =
             maxOf(
                 minBuffer * 4,
-                BYTES_PER_SECOND * 2
+                48000
             )
 
         Log.d(
             TAG,
-            "Criando AudioTrack. " +
-                    "minBuffer=$minBuffer " +
-                    "buffer=$bufferSize"
+            "AudioTrack minBuffer=$minBuffer " +
+                    "bufferSize=$bufferSize"
         )
 
         val attributes =
@@ -203,24 +235,16 @@ class GeminiAudioPlayer(
             VOLUME
         )
 
-        try {
-
-            audioTrack?.play()
-
-            Log.d(
-                TAG,
-                "AudioTrack PLAY iniciado"
-            )
-
-        } catch (e: Exception) {
-
-            Log.e(
-                TAG,
-                "Erro ao iniciar AudioTrack",
-                e
-            )
-        }
+        Log.d(
+            TAG,
+            "AudioTrack criado"
+        )
     }
+
+
+    // ============================================================
+    // PLAYBACK THREAD
+    // ============================================================
 
     private fun iniciarPlaybackThread() {
 
@@ -236,6 +260,63 @@ class GeminiAudioPlayer(
 
                     try {
 
+                        // ------------------------------------------------
+                        // PRÉ-BUFFER
+                        // ------------------------------------------------
+
+                        if (!playbackStarted) {
+
+                            while (
+                                running.get() &&
+                                getQueuedBytes() <
+                                PREBUFFER_BYTES
+                            ) {
+
+                                Thread.sleep(20)
+                            }
+
+                            if (!running.get()) {
+                                break
+                            }
+
+                            val track =
+                                audioTrack
+
+                            if (track != null) {
+
+                                try {
+
+                                    track.play()
+
+                                    playbackStarted =
+                                        true
+
+                                    Log.d(
+                                        TAG,
+                                        "Playback iniciado com " +
+                                                "${getQueuedBytes()} bytes"
+                                    )
+
+                                } catch (e: Exception) {
+
+                                    Log.e(
+                                        TAG,
+                                        "Erro ao iniciar AudioTrack",
+                                        e
+                                    )
+
+                                    Thread.sleep(100)
+
+                                    continue
+                                }
+                            }
+                        }
+
+
+                        // ------------------------------------------------
+                        // PEGA O PRÓXIMO BLOCO
+                        // ------------------------------------------------
+
                         val data =
                             audioQueue.take()
 
@@ -249,9 +330,31 @@ class GeminiAudioPlayer(
                             }
                         }
 
-                        tocarAudio(
-                            data
-                        )
+
+                        // ------------------------------------------------
+                        // TOCA
+                        // ------------------------------------------------
+
+                        tocarAudio(data)
+
+
+                        // ------------------------------------------------
+                        // SE A FILA FICAR MUITO VAZIA,
+                        // NÃO REINICIA O AUDIO TRACK.
+                        // ESPERA NOVOS DADOS.
+                        // ------------------------------------------------
+
+                        if (
+                            getQueuedBytes() <
+                            PREBUFFER_BYTES
+                        ) {
+
+                            Log.d(
+                                TAG,
+                                "Fila baixa: " +
+                                        "${getQueuedBytes()} bytes"
+                            )
+                        }
 
                     } catch (
                         e: InterruptedException
@@ -282,6 +385,11 @@ class GeminiAudioPlayer(
                 start()
             }
     }
+
+
+    // ============================================================
+    // TOCAR PCM
+    // ============================================================
 
     private fun tocarAudio(
         data: ByteArray
@@ -339,7 +447,7 @@ class GeminiAudioPlayer(
 
                 Log.e(
                     TAG,
-                    "Erro escrevendo áudio",
+                    "Erro escrevendo PCM",
                     e
                 )
 
@@ -347,6 +455,11 @@ class GeminiAudioPlayer(
             }
         }
     }
+
+
+    // ============================================================
+    // POLLING
+    // ============================================================
 
     private fun iniciarPollThread() {
 
@@ -374,7 +487,7 @@ class GeminiAudioPlayer(
 
                         Log.e(
                             TAG,
-                            "Erro buscando áudio traduzido",
+                            "Erro buscando áudio",
                             e
                         )
                     }
@@ -406,6 +519,11 @@ class GeminiAudioPlayer(
                 start()
             }
     }
+
+
+    // ============================================================
+    // BUSCAR AUDIO DO RENDER
+    // ============================================================
 
     private fun buscarAudioTraduzido() {
 
@@ -448,7 +566,7 @@ class GeminiAudioPlayer(
 
                 Log.w(
                     TAG,
-                    "Render respondeu HTTP $code"
+                    "Render HTTP $code"
                 )
 
                 return
@@ -465,9 +583,7 @@ class GeminiAudioPlayer(
                 return
             }
 
-            processarResposta(
-                text
-            )
+            processarResposta(text)
 
         } catch (e: Exception) {
 
@@ -475,7 +591,7 @@ class GeminiAudioPlayer(
 
                 Log.e(
                     TAG,
-                    "Erro HTTP buscando áudio",
+                    "Erro HTTP",
                     e
                 )
             }
@@ -486,6 +602,11 @@ class GeminiAudioPlayer(
         }
     }
 
+
+    // ============================================================
+    // PROCESSAR JSON
+    // ============================================================
+
     private fun processarResposta(
         text: String
     ) {
@@ -493,7 +614,8 @@ class GeminiAudioPlayer(
         val root =
             JSONObject(text)
 
-        if (!root.optBoolean(
+        if (
+            !root.optBoolean(
                 "ok",
                 true
             )
@@ -501,7 +623,7 @@ class GeminiAudioPlayer(
 
             Log.w(
                 TAG,
-                "Backend informou ok=false"
+                "Backend retornou ok=false"
             )
 
             return
@@ -537,7 +659,10 @@ class GeminiAudioPlayer(
                 continue
             }
 
-            if (seq <= lastOutputSeq) {
+            if (
+                seq <=
+                lastOutputSeq
+            ) {
                 continue
             }
 
@@ -563,7 +688,7 @@ class GeminiAudioPlayer(
 
                     Log.e(
                         TAG,
-                        "Erro decodificando Base64 seq=$seq",
+                        "Erro Base64 seq=$seq",
                         e
                     )
 
@@ -594,12 +719,17 @@ class GeminiAudioPlayer(
 
             Log.d(
                 TAG,
-                "Recebidos $novos chunks novos. " +
+                "Novos chunks=$novos " +
                         "seq=$lastOutputSeq " +
                         "fila=${getQueuedBytes()} bytes"
             )
         }
     }
+
+
+    // ============================================================
+    // FILA
+    // ============================================================
 
     private fun adicionarAudioNaFila(
         audio: ByteArray
@@ -611,36 +741,21 @@ class GeminiAudioPlayer(
                 return
             }
 
-            val novoTotal =
+            while (
                 queuedBytes +
-                        audio.size
-
-            if (
-                novoTotal >
+                audio.size >
                 MAX_QUEUE_BYTES
             ) {
 
-                Log.w(
-                    TAG,
-                    "Fila cheia. " +
-                            "Descartando áudio antigo."
-                )
+                val antigo =
+                    audioQueue.poll()
+                        ?: break
 
-                while (
-                    queuedBytes + audio.size >
-                    MAX_QUEUE_BYTES
-                ) {
+                queuedBytes -=
+                    antigo.size.toLong()
 
-                    val antigo =
-                        audioQueue.poll()
-                            ?: break
-
-                    queuedBytes -=
-                        antigo.size.toLong()
-
-                    if (queuedBytes < 0) {
-                        queuedBytes = 0
-                    }
+                if (queuedBytes < 0) {
+                    queuedBytes = 0
                 }
             }
 
@@ -652,6 +767,11 @@ class GeminiAudioPlayer(
                 audio.size.toLong()
         }
     }
+
+
+    // ============================================================
+    // TAMANHO DA FILA
+    // ============================================================
 
     private fun getQueuedBytes(): Long {
 
