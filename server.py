@@ -1,1619 +1,549 @@
 import os
+import re
 import uuid
 import time
 import threading
-import base64
+from urllib.parse import urlparse, parse_qs
 
 import requests
-
-from flask import Flask, request, jsonify, Response
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 
 # =========================================================
-# SI TRADUTOR LIVE
-# Microfone / áudio da tela
-#        ↓
-# DeepL Voice
-#        ↓
-# Tradução + voz traduzida
-# =========================================================
-
-
-# =========================================================
-# FLASK
+# SI — TRADUTOR LIVE
+# Backend Flask + DeepL Voice
 # =========================================================
 
 app = Flask(__name__)
 
 CORS(
     app,
-    resources={
-        r"/*": {
-            "origins": "*"
-        }
-    }
+    resources={r"/*": {"origins": "*"}},
+    supports_credentials=False
 )
 
 
 # =========================================================
-# CONFIGURAÇÕES DEEPL
+# CONFIGURAÇÃO
 # =========================================================
 
-DEEPL_API_KEY = os.getenv(
-    "DEEPL_API_KEY",
-    ""
-).strip()
+PORT = int(os.environ.get("PORT", "10000"))
+
+DEEPL_API_KEY = os.environ.get("DEEPL_API_KEY", "").strip()
+
+DEEPL_SESSION_URL = "https://api.deepl.com/v3/voice/realtime"
 
 
-DEEPL_VOICE_URL = (
-    "https://api.deepl.com/v3/voice/realtime"
-)
-
-
-# =========================================================
-# IDIOMAS
-# =========================================================
-
+# Idiomas disponíveis no aplicativo
 ALLOWED_LANGUAGES = {
-    "pt",
-    "en",
-    "es",
-    "fr",
-    "de",
-    "it",
-    "ja",
-    "ko",
-    "zh",
-    "ar"
+    "pt": "pt-BR",
+    "en": "en",
+    "es": "es",
+    "fr": "fr",
+    "de": "de",
+    "it": "it",
+    "ja": "ja",
+    "ko": "ko",
+    "zh": "zh",
+    "ar": "ar",
 }
 
 
 # =========================================================
-# MEMÓRIA DOS TRABALHOS
+# MEMÓRIA TEMPORÁRIA
 # =========================================================
 
-jobs = {}
+live_sessions = {}
 
-jobs_lock = threading.Lock()
-
-
-# =========================================================
-# ÁUDIO
-# =========================================================
-
-audio_cache = {}
-
-audio_lock = threading.Lock()
+lock = threading.Lock()
 
 
 # =========================================================
-# VERIFICAR DEEPL
+# FUNÇÕES AUXILIARES
 # =========================================================
 
-def check_deepl_key():
-
-    if not DEEPL_API_KEY:
-
-        raise Exception(
-            "DEEPL_API_KEY não configurada no Render."
-        )
-
-
-# =========================================================
-# ATUALIZAR JOB
-# =========================================================
-
-def update_job(
-    job_id,
-    **values
-):
-
-    with jobs_lock:
-
-        if job_id in jobs:
-
-            jobs[job_id].update(
-                values
-            )
-
-            jobs[job_id][
-                "updatedAt"
-            ] = time.time()
-
-
-# =========================================================
-# CRIAR JOB
-# =========================================================
-
-def create_job(
-    youtube_url,
-    youtube_id,
-    target_lang
-):
-
-    job_id = str(
-        uuid.uuid4()
-    )
-
-    job = {
-
-        "liveId":
-            job_id,
-
-        "youtubeUrl":
-            youtube_url,
-
-        "youtubeId":
-            youtube_id,
-
-        "targetLang":
-            target_lang,
-
-        "status":
-            "waiting_audio",
-
-        "audioCapture":
-            "waiting",
-
-        "translationStatus":
-            "waiting",
-
-        "lastTranscript":
-            "",
-
-        "lastTranslation":
-            "",
-
-        "audioReady":
-            False,
-
-        "message":
-            "Aguardando áudio do navegador.",
-
-        "error":
-            None,
-
-        "createdAt":
-            time.time(),
-
-        "updatedAt":
-            time.time()
-    }
-
-    with jobs_lock:
-
-        jobs[job_id] = job
-
-    return job_id
-
-
-# =========================================================
-# EXTRAIR ID DO YOUTUBE
-# =========================================================
-
-def extract_youtube_id(url):
+def get_youtube_id(url):
+    """
+    Tenta obter o ID de um vídeo/live do YouTube.
+    Aceita:
+    https://youtu.be/VIDEO_ID
+    https://www.youtube.com/watch?v=VIDEO_ID
+    https://www.youtube.com/live/VIDEO_ID
+    """
 
     if not url:
-
         return None
 
     url = url.strip()
 
-    patterns = [
+    try:
+        parsed = urlparse(url)
+        host = parsed.netloc.lower()
 
-        "/live/",
+        # youtu.be/ID
+        if "youtu.be" in host:
+            video_id = parsed.path.strip("/").split("/")[0]
+            if video_id:
+                return video_id
 
-        "watch?v=",
+        # youtube.com/watch?v=ID
+        if "youtube.com" in host:
+            query = parse_qs(parsed.query)
 
-        "youtu.be/",
+            if "v" in query and query["v"]:
+                return query["v"][0]
 
-        "/embed/",
+            # youtube.com/live/ID
+            parts = parsed.path.strip("/").split("/")
 
-        "youtube.com/shorts/"
+            if len(parts) >= 2 and parts[0] in ["live", "embed", "shorts"]:
+                return parts[1]
 
-    ]
+    except Exception:
+        pass
 
-    for pattern in patterns:
+    # Fallback
+    match = re.search(
+        r"(?:v=|youtu\.be/|youtube\.com/live/)([A-Za-z0-9_-]{6,})",
+        url
+    )
 
-        if pattern not in url:
-
-            continue
-
-        value = url.split(
-            pattern,
-            1
-        )[1]
-
-        value = value.split(
-            "?",
-            1
-        )[0]
-
-        value = value.split(
-            "&",
-            1
-        )[0]
-
-        value = value.split(
-            "/",
-            1
-        )[0]
-
-        if value:
-
-            return value
+    if match:
+        return match.group(1)
 
     return None
 
 
-# =========================================================
-# NORMALIZAR IDIOMA DEEPL
-# =========================================================
+def normalize_language(language):
+    """
+    Converte o valor enviado pelo frontend
+    para um idioma aceito pela DeepL Voice.
+    """
 
-def normalize_target_language(
-    language
-):
+    language = (language or "pt").strip()
 
-    language = str(
-        language or "pt"
-    ).strip().lower()
-
-
-    mapping = {
-
-        "pt":
-            "PT-BR",
-
-        "pt-br":
-            "PT-BR",
-
-        "en":
-            "EN",
-
-        "en-us":
-            "EN-US",
-
-        "en-gb":
-            "EN-GB",
-
-        "es":
-            "ES",
-
-        "fr":
-            "FR",
-
-        "de":
-            "DE",
-
-        "it":
-            "IT",
-
-        "ja":
-            "JA",
-
-        "ko":
-            "KO",
-
-        "zh":
-            "ZH",
-
-        "ar":
-            "AR"
-    }
-
-
-    return mapping.get(
+    return ALLOWED_LANGUAGES.get(
         language,
-        language.upper()
+        language
     )
 
 
-# =========================================================
-# CONTENT TYPE DO ÁUDIO
-# =========================================================
-
-def get_audio_content_type():
-
-    content_type = (
-        request.headers.get(
-            "X-Audio-Content-Type"
-        )
-        or request.form.get(
-            "contentType"
-        )
-        or "audio/webm;codecs=opus"
-    )
-
-    return content_type.strip()
-
-
-# =========================================================
-# CRIAR SESSÃO DEEPL VOICE
-# =========================================================
-
-def create_deepl_voice_session(
-    target_lang,
-    source_content_type="audio/webm;codecs=opus",
-    source_lang=None
-):
-
-    check_deepl_key()
-
-
-    target_language = (
-        normalize_target_language(
-            target_lang
-        )
-    )
-
-
-    payload = {
-
-        "source_media_content_type":
-            source_content_type,
-
-        "message_format":
-            "json",
-
-        "source_language_mode":
-            "auto",
-
-        "target_languages":
-            [
-                target_language
-            ],
-
-        "target_media_languages":
-            [
-                target_language
-            ],
-
-        "target_media_content_type":
-            "audio/webm;codecs=opus",
-
-        "target_media_voice":
-            "female"
-    }
-
-
-    if source_lang:
-
-        source_lang = str(
-            source_lang
-        ).strip().upper()
-
-        if source_lang:
-
-            payload[
-                "source_language"
-            ] = source_lang
-
-            payload[
-                "source_language_mode"
-            ] = "fixed"
-
-
-    headers = {
-
-        "Authorization":
-            "DeepL-Auth-Key "
-            + DEEPL_API_KEY,
-
-        "Content-Type":
-            "application/json",
-
-        "Accept":
-            "application/json"
-    }
-
-
-    response = requests.post(
-
-        DEEPL_VOICE_URL,
-
-        headers=headers,
-
-        json=payload,
-
-        timeout=30
-    )
-
-
-    if not response.ok:
-
-        raise Exception(
-            "DeepL Voice erro "
-            + str(response.status_code)
-            + ": "
-            + response.text
-        )
-
-
-    data = response.json()
-
-
-    streaming_url = data.get(
-        "streaming_url"
-    )
-
-    token = data.get(
-        "token"
-    )
-
-    session_id = data.get(
-        "session_id"
-    )
-
-
-    if not streaming_url:
-
-        raise Exception(
-            "DeepL não retornou streaming_url."
-        )
-
-
-    if not token:
-
-        raise Exception(
-            "DeepL não retornou token."
-        )
-
-
+def deepl_headers():
     return {
-
-        "streaming_url":
-            streaming_url,
-
-        "token":
-            token,
-
-        "session_id":
-            session_id,
-
-        "target_language":
-            target_language
+        "Authorization": f"DeepL-Auth-Key {DEEPL_API_KEY}",
+        "Content-Type": "application/json",
     }
 
 
 # =========================================================
-# HOME
+# ROTAS BÁSICAS
 # =========================================================
 
-@app.get("/")
+@app.route("/", methods=["GET"])
 def home():
-
     return jsonify({
+        "ok": True,
+        "app": "SI Tradutor Live",
+        "message": "Backend do SI funcionando",
+        "version": "4.0",
+        "provider": "DeepL Voice"
+    })
 
-        "ok":
-            True,
 
-        "service":
-            "SI Tradutor Live",
-
-        "provider":
-            "DeepL Voice",
-
-        "architecture":
-            "Browser Audio → DeepL Voice → Translated Voice",
-
-        "message":
-            "Servidor funcionando."
-
+@app.route("/api/health", methods=["GET"])
+def health():
+    return jsonify({
+        "ok": True,
+        "server": "online",
+        "provider": "DeepL Voice",
+        "deepl_configured": bool(DEEPL_API_KEY)
     })
 
 
 # =========================================================
-# HEALTH
+# CRIAR LIVE
 # =========================================================
 
-@app.get("/api/health")
-def health():
+@app.route("/api/youtube-live", methods=["POST"])
+def create_live():
+
+    try:
+        data = request.get_json(silent=True) or {}
+
+        url = (
+            data.get("url")
+            or data.get("youtubeUrl")
+            or data.get("link")
+            or ""
+        ).strip()
+
+        target_language = normalize_language(
+            data.get("targetLang")
+            or data.get("targetLanguage")
+            or "pt"
+        )
+
+        if not url:
+            return jsonify({
+                "ok": False,
+                "error": "Informe o link do YouTube."
+            }), 400
+
+        youtube_id = get_youtube_id(url)
+
+        if not youtube_id:
+            return jsonify({
+                "ok": False,
+                "error": "Não consegui identificar o vídeo/live do YouTube."
+            }), 400
+
+        live_id = str(uuid.uuid4())
+
+        with lock:
+            live_sessions[live_id] = {
+                "live_id": live_id,
+                "url": url,
+                "youtube_id": youtube_id,
+                "target_language": target_language,
+                "status": "created",
+                "created_at": time.time(),
+                "translation": "",
+                "source_translation": "",
+                "error": None,
+            }
+
+        return jsonify({
+            "ok": True,
+            "live_id": live_id,
+            "youtube_id": youtube_id,
+            "target_language": target_language,
+            "status": "created"
+        })
+
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": f"Erro ao criar live: {str(e)}"
+        }), 500
+
+
+# =========================================================
+# STATUS DA LIVE
+# =========================================================
+
+@app.route("/api/youtube-live/<live_id>", methods=["GET"])
+def get_live(live_id):
+
+    with lock:
+        session = live_sessions.get(live_id)
+
+    if not session:
+        return jsonify({
+            "ok": False,
+            "error": "Live não encontrada."
+        }), 404
+
+    return jsonify({
+        "ok": True,
+        **session
+    })
+
+
+# =========================================================
+# SESSÃO DEEP L VOICE
+# =========================================================
+
+@app.route("/api/deepl/voice-session", methods=["POST"])
+def create_deepl_voice_session():
 
     if not DEEPL_API_KEY:
-
         return jsonify({
-
-            "ok":
-                False,
-
-            "server":
-                True,
-
-            "deepl":
-                False,
-
-            "provider":
-                "DeepL Voice",
-
-            "message":
-                "DEEPL_API_KEY não configurada."
-
+            "ok": False,
+            "error": "DEEPL_API_KEY não está configurada no Render."
         }), 500
-
-
-    return jsonify({
-
-        "ok":
-            True,
-
-        "server":
-            True,
-
-        "deepl":
-            True,
-
-        "provider":
-            "DeepL Voice",
-
-        "message":
-            "DeepL Voice configurado."
-
-    })
-
-
-# =========================================================
-# TESTAR DEEPL VOICE
-# =========================================================
-
-@app.get("/api/deepl/voice-test")
-def deepl_voice_test():
 
     try:
+        data = request.get_json(silent=True) or {}
 
-        check_deepl_key()
-
-
-        session = (
-            create_deepl_voice_session(
-                "pt"
-            )
+        target_language = normalize_language(
+            data.get("targetLang")
+            or data.get("targetLanguage")
+            or "pt"
         )
 
-
-        return jsonify({
-
-            "ok":
-                True,
-
-            "provider":
-                "DeepL Voice",
-
-            "session_id":
-                session.get(
-                    "session_id"
-                ),
-
-            "streaming_url":
-                session.get(
-                    "streaming_url"
-                ),
-
-            "target_language":
-                session.get(
-                    "target_language"
-                ),
-
-            "message":
-                "DeepL Voice respondeu e criou uma sessão."
-
-        })
-
-
-    except Exception as error:
-
-        return jsonify({
-
-            "ok":
-                False,
-
-            "provider":
-                "DeepL Voice",
-
-            "error":
-                str(error)
-
-        }), 500
-
-
-# =========================================================
-# CRIAR SESSÃO DEEPL VOICE
-#
-# O navegador usa o streaming_url + token
-# para abrir o WebSocket do DeepL.
-# =========================================================
-
-@app.post("/api/deepl/voice-session")
-def deepl_voice_session():
-
-    data = (
-        request.get_json(
-            silent=True
-        )
-        or {}
-    )
-
-
-    target_lang = str(
-        data.get(
-            "targetLang",
-            "pt"
-        )
-    ).strip().lower()
-
-
-    source_lang = data.get(
-        "sourceLang"
-    )
-
-
-    content_type = str(
-        data.get(
-            "contentType",
-            "audio/webm;codecs=opus"
-        )
-    ).strip()
-
-
-    if target_lang not in ALLOWED_LANGUAGES:
-
-        return jsonify({
-
-            "ok":
-                False,
-
-            "error":
-                "Idioma de destino não suportado."
-
-        }), 400
-
-
-    try:
-
-        session = (
-            create_deepl_voice_session(
-
-                target_lang,
-
-                content_type,
-
-                source_lang
-
-            )
-        )
-
-
-        return jsonify({
-
-            "ok":
-                True,
-
-            "provider":
-                "DeepL Voice",
-
-            "streaming_url":
-                session[
-                    "streaming_url"
-                ],
-
-            "token":
-                session[
-                    "token"
-                ],
-
-            "session_id":
-                session.get(
-                    "session_id"
-                ),
-
-            "target_language":
-                session[
-                    "target_language"
-                ],
-
-            "message":
-                "Sessão DeepL Voice criada."
-
-        })
-
-
-    except Exception as error:
-
-        return jsonify({
-
-            "ok":
-                False,
-
-            "error":
-                str(error)
-
-        }), 500
-
-
-# =========================================================
-# INICIAR LIVE
-# =========================================================
-
-@app.post("/api/youtube-live")
-def youtube_live():
-
-    data = (
-        request.get_json(
-            silent=True
-        )
-        or {}
-    )
-
-
-    youtube_url = str(
-        data.get(
-            "url",
-            ""
-        )
-    ).strip()
-
-
-    target_lang = str(
-        data.get(
-            "targetLang",
-            "pt"
-        )
-    ).strip().lower()
-
-
-    if not youtube_url:
-
-        return jsonify({
-
-            "ok":
-                False,
-
-            "error":
-                "Cole o link da YouTube Live."
-
-        }), 400
-
-
-    youtube_id = (
-        extract_youtube_id(
-            youtube_url
-        )
-    )
-
-
-    if not youtube_id:
-
-        return jsonify({
-
-            "ok":
-                False,
-
-            "error":
-                "Link do YouTube inválido."
-
-        }), 400
-
-
-    if target_lang not in ALLOWED_LANGUAGES:
-
-        return jsonify({
-
-            "ok":
-                False,
-
-            "error":
-                "Idioma não suportado."
-
-        }), 400
-
-
-    live_id = create_job(
-
-        youtube_url,
-
-        youtube_id,
-
-        target_lang
-
-    )
-
-
-    return jsonify({
-
-        "ok":
-            True,
-
-        "liveId":
-            live_id,
-
-        "youtubeId":
-            youtube_id,
-
-        "targetLang":
-            target_lang,
-
-        "status":
-            "waiting_audio",
-
-        "audioCapture":
-            "waiting",
-
-        "message":
-            "Live criada. Aguardando áudio."
-
-    })
-
-
-# =========================================================
-# RECEBER ÁUDIO DO NAVEGADOR
-# =========================================================
-
-@app.post(
-    "/api/youtube-live/<live_id>/audio"
-)
-def receive_audio(
-    live_id
-):
-
-    with jobs_lock:
-
-        job = jobs.get(
-            live_id
-        )
-
-        if job:
-
-            job = dict(job)
-
-
-    if not job:
-
-        return jsonify({
-
-            "ok":
-                False,
-
-            "error":
-                "Live não encontrada."
-
-        }), 404
-
-
-    # -----------------------------------------------------
-    # MULTIPART
-    # -----------------------------------------------------
-
-    audio_file = request.files.get(
-        "audio"
-    )
-
-
-    if audio_file:
-
-        try:
-
-            audio_data = (
-                audio_file.read()
-            )
-
-        except Exception as error:
-
-            return jsonify({
-
-                "ok":
-                    False,
-
-                "error":
-                    "Erro lendo áudio: "
-                    + str(error)
-
-            }), 400
-
-    else:
-
-        # -------------------------------------------------
-        # JSON BASE64
-        # -------------------------------------------------
-
-        data = (
-            request.get_json(
-                silent=True
-            )
-            or {}
-        )
-
-
-        audio_base64 = data.get(
-            "audio"
-        )
-
-
-        if not audio_base64:
-
-            return jsonify({
-
-                "ok":
-                    False,
-
-                "error":
-                    "Nenhum áudio recebido."
-
-            }), 400
-
-
-        try:
-
-            if "," in audio_base64:
-
-                audio_base64 = (
-                    audio_base64.split(
-                        ",",
-                        1
-                    )[1]
-                )
-
-
-            audio_data = (
-                base64.b64decode(
-                    audio_base64
-                )
-            )
-
-
-        except Exception as error:
-
-            return jsonify({
-
-                "ok":
-                    False,
-
-                "error":
-                    "Áudio base64 inválido: "
-                    + str(error)
-
-            }), 400
-
-
-    if not audio_data:
-
-        return jsonify({
-
-            "ok":
-                False,
-
-            "error":
-                "O áudio recebido está vazio."
-
-        }), 400
-
-
-    max_audio_size = (
-        8 * 1024 * 1024
-    )
-
-
-    if len(audio_data) > max_audio_size:
-
-        return jsonify({
-
-            "ok":
-                False,
-
-            "error":
-                "Arquivo de áudio muito grande."
-
-        }), 413
-
-
-    content_type = (
-        audio_file.content_type
-        if audio_file
-        else request.headers.get(
-            "X-Audio-Content-Type",
-            "audio/webm;codecs=opus"
-        )
-    )
-
-
-    with audio_lock:
-
-        audio_cache[live_id] = {
-
-            "data":
-                audio_data,
-
-            "content_type":
-                content_type,
-
-            "createdAt":
-                time.time()
+        # A captura do navegador será:
+        # WebM + Opus
+        source_content_type = "audio/webm;codecs=opus"
+
+        payload = {
+            "source_media_content_type": source_content_type,
+
+            # Tradução de texto
+            "target_languages": [
+                target_language
+            ],
+
+            # Síntese da voz traduzida
+            "target_media_languages": [
+                target_language
+            ],
+
+            # Voz semelhante à original quando suportado
+            "target_media_voice": "match",
+
+            # WebM/Opus para a voz devolvida
+            "target_media_content_type": "audio/webm;codecs=opus",
+
+            # JSON é o formato usado pelo navegador
+            "message_format": "json"
         }
 
-
-    update_job(
-
-        live_id,
-
-        status="audio_received",
-
-        audioCapture="running",
-
-        message=
-            "Áudio recebido.",
-
-        audioReady=True
-
-    )
-
-
-    return jsonify({
-
-        "ok":
-            True,
-
-        "liveId":
-            live_id,
-
-        "audioCapture":
-            "running",
-
-        "bytes":
-            len(audio_data),
-
-        "message":
-            "Áudio recebido."
-
-    })
-
-
-# =========================================================
-# OBTER ÚLTIMO ÁUDIO
-# =========================================================
-
-@app.get(
-    "/api/youtube-live/<live_id>/audio"
-)
-def get_audio(
-    live_id
-):
-
-    with audio_lock:
-
-        audio = audio_cache.get(
-            live_id
+        response = requests.post(
+            DEEPL_SESSION_URL,
+            headers=deepl_headers(),
+            json=payload,
+            timeout=30
         )
 
-        if audio:
+        try:
+            result = response.json()
+        except Exception:
+            result = {
+                "message": response.text
+            }
 
-            audio = dict(audio)
-
-
-    if not audio:
-
-        return jsonify({
-
-            "ok":
-                False,
-
-            "error":
-                "Nenhum áudio disponível."
-
-        }), 404
-
-
-    return Response(
-
-        audio["data"],
-
-        mimetype=audio.get(
-            "content_type",
-            "audio/webm"
-        ),
-
-        headers={
-
-            "Cache-Control":
-                "no-cache",
-
-            "X-Live-ID":
-                live_id
-
-        }
-
-    )
-
-
-# =========================================================
-# STATUS
-# =========================================================
-
-@app.get(
-    "/api/youtube-live/<live_id>"
-)
-def youtube_live_status(
-    live_id
-):
-
-    with jobs_lock:
-
-        job = jobs.get(
-            live_id
-        )
-
-        if job:
-
-            job = dict(job)
-
-
-    if not job:
-
-        return jsonify({
-
-            "ok":
-                False,
-
-            "error":
-                "Live não encontrada."
-
-        }), 404
-
-
-    return jsonify({
-
-        "ok":
-            True,
-
-        **job
-
-    })
-
-
-# =========================================================
-# ATUALIZAR TRADUÇÃO
-# =========================================================
-
-@app.post(
-    "/api/youtube-live/<live_id>/translation"
-)
-def update_translation(
-    live_id
-):
-
-    with jobs_lock:
-
-        if live_id not in jobs:
-
+        if response.status_code >= 400:
             return jsonify({
-
-                "ok":
-                    False,
-
-                "error":
-                    "Live não encontrada."
-
-            }), 404
-
-
-    data = (
-        request.get_json(
-            silent=True
-        )
-        or {}
-    )
-
-
-    transcript = str(
-        data.get(
-            "transcript",
-            ""
-        )
-    ).strip()
-
-
-    translation = str(
-        data.get(
-            "translation",
-            ""
-        )
-    ).strip()
-
-
-    if transcript:
-
-        update_job(
-
-            live_id,
-
-            lastTranscript=
-                transcript
-
-        )
-
-
-    if translation:
-
-        update_job(
-
-            live_id,
-
-            lastTranslation=
-                translation,
-
-            translationStatus=
-                "translated",
-
-            status=
-                "translating"
-
-        )
-
-
-    return jsonify({
-
-        "ok":
-            True,
-
-        "liveId":
-            live_id,
-
-        "lastTranscript":
-            transcript,
-
-        "lastTranslation":
-            translation
-
-    })
-
-
-# =========================================================
-# NOVA ROTA TTS
-#
-# ATENÇÃO:
-# DeepL Voice não funciona como um TTS tradicional.
-#
-# Esta rota cria uma sessão de voz.
-# O áudio precisa ser enviado pelo WebSocket
-# retornado pelo endpoint /api/deepl/voice-session.
-# =========================================================
-
-@app.post(
-    "/api/youtube-live/<live_id>/tts"
-)
-def text_to_speech(
-    live_id
-):
-
-    with jobs_lock:
-
-        job = jobs.get(
-            live_id
-        )
-
-        if job:
-
-            job = dict(job)
-
-
-    if not job:
-
-        return jsonify({
-
-            "ok":
-                False,
-
-            "error":
-                "Live não encontrada."
-
-        }), 404
-
-
-    try:
-
-        target_lang = job.get(
-            "targetLang",
-            "pt"
-        )
-
-
-        session = (
-            create_deepl_voice_session(
-                target_lang
-            )
-        )
-
-
-        update_job(
-
-            live_id,
-
-            status=
-                "voice_session_ready",
-
-            translationStatus=
-                "ready",
-
-            message=
-                "Sessão DeepL Voice pronta."
-
-        )
-
-
-        return jsonify({
-
-            "ok":
-                True,
-
-            "provider":
-                "DeepL Voice",
-
-            "liveId":
-                live_id,
-
-            "streaming_url":
-                session[
-                    "streaming_url"
-                ],
-
-            "token":
-                session[
-                    "token"
-                ],
-
-            "session_id":
-                session.get(
-                    "session_id"
+                "ok": False,
+                "error": (
+                    result.get("message")
+                    or result.get("error")
+                    or f"DeepL retornou HTTP {response.status_code}"
                 ),
+                "deepl_status": response.status_code,
+                "deepl_response": result
+            }), response.status_code
 
-            "target_language":
-                session[
-                    "target_language"
-                ],
+        if not result.get("streaming_url"):
+            return jsonify({
+                "ok": False,
+                "error": "A DeepL não retornou streaming_url.",
+                "deepl_response": result
+            }), 502
 
-            "message":
-                "Conecte o áudio ao WebSocket do DeepL Voice."
+        if not result.get("token"):
+            return jsonify({
+                "ok": False,
+                "error": "A DeepL não retornou o token da sessão.",
+                "deepl_response": result
+            }), 502
 
+        return jsonify({
+            "ok": True,
+            "streaming_url": result["streaming_url"],
+            "token": result["token"],
+            "session_id": result.get("session_id"),
+            "target_language": target_language,
+            "source_media_content_type": source_content_type,
+            "target_media_content_type": "audio/webm;codecs=opus"
         })
 
-
-    except Exception as error:
-
-        update_job(
-
-            live_id,
-
-            status="error",
-
-            error=str(error),
-
-            message=
-                "Erro criando sessão DeepL Voice."
-
-        )
-
-
+    except requests.exceptions.Timeout:
         return jsonify({
+            "ok": False,
+            "error": "A DeepL demorou muito para responder."
+        }), 504
 
-            "ok":
-                False,
+    except requests.exceptions.RequestException as e:
+        return jsonify({
+            "ok": False,
+            "error": f"Erro de conexão com a DeepL: {str(e)}"
+        }), 502
 
-            "error":
-                str(error)
-
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": f"Erro interno: {str(e)}"
         }), 500
 
 
 # =========================================================
-# PARAR LIVE
+# MARCAR TRADUÇÃO COMO ATIVA
 # =========================================================
 
-@app.post(
-    "/api/youtube-live/<live_id>/stop"
-)
-def stop_live(
-    live_id
-):
+@app.route("/api/youtube-live/<live_id>/translation", methods=["POST"])
+def start_translation(live_id):
 
-    with jobs_lock:
+    with lock:
+        session = live_sessions.get(live_id)
 
-        job = jobs.get(
-            live_id
-        )
-
-        if not job:
-
+        if not session:
             return jsonify({
-
-                "ok":
-                    False,
-
-                "error":
-                    "Live não encontrada."
-
+                "ok": False,
+                "error": "Live não encontrada."
             }), 404
 
-
-        job["status"] = "stopped"
-
-        job["audioCapture"] = "stopped"
-
-        job["translationStatus"] = "stopped"
-
-        job["audioReady"] = False
-
-        job["message"] = (
-            "Live parada."
-        )
-
-        job["updatedAt"] = (
-            time.time()
-        )
-
-
-    with audio_lock:
-
-        if live_id in audio_cache:
-
-            del audio_cache[
-                live_id
-            ]
-
+        session["status"] = "translating"
 
     return jsonify({
-
-        "ok":
-            True,
-
-        "liveId":
-            live_id,
-
-        "status":
-            "stopped",
-
-        "message":
-            "Live parada."
-
+        "ok": True,
+        "status": "translating"
     })
 
 
 # =========================================================
-# LIMPEZA AUTOMÁTICA
+# RECEBER ATUALIZAÇÃO DE TEXTO
 # =========================================================
 
-def cleanup_old_jobs():
+@app.route("/api/youtube-live/<live_id>/translation", methods=["PUT"])
+def update_translation(live_id):
+
+    data = request.get_json(silent=True) or {}
+
+    text = data.get("text", "")
+    source_text = data.get("source_text", "")
+
+    with lock:
+        session = live_sessions.get(live_id)
+
+        if not session:
+            return jsonify({
+                "ok": False,
+                "error": "Live não encontrada."
+            }), 404
+
+        session["translation"] = text
+        session["source_translation"] = source_text
+
+    return jsonify({
+        "ok": True
+    })
+
+
+# =========================================================
+# ÁUDIO — COMPATIBILIDADE
+# =========================================================
+
+@app.route("/api/youtube-live/<live_id>/audio", methods=["POST"])
+def audio_received(live_id):
+
+    with lock:
+        session = live_sessions.get(live_id)
+
+        if not session:
+            return jsonify({
+                "ok": False,
+                "error": "Live não encontrada."
+            }), 404
+
+        session["status"] = "translating"
+
+    return jsonify({
+        "ok": True,
+        "message": "Áudio recebido."
+    })
+
+
+@app.route("/api/youtube-live/<live_id>/audio", methods=["GET"])
+def audio_status(live_id):
+
+    with lock:
+        session = live_sessions.get(live_id)
+
+    if not session:
+        return jsonify({
+            "ok": False,
+            "error": "Live não encontrada."
+        }), 404
+
+    return jsonify({
+        "ok": True,
+        "status": session.get("status")
+    })
+
+
+# =========================================================
+# PARAR
+# =========================================================
+
+@app.route("/api/youtube-live/<live_id>/stop", methods=["POST"])
+def stop_live(live_id):
+
+    with lock:
+        session = live_sessions.get(live_id)
+
+        if not session:
+            return jsonify({
+                "ok": False,
+                "error": "Live não encontrada."
+            }), 404
+
+        session["status"] = "stopped"
+
+    return jsonify({
+        "ok": True,
+        "status": "stopped"
+    })
+
+
+# =========================================================
+# LIMPEZA DE SESSÕES ANTIGAS
+# =========================================================
+
+def cleanup_sessions():
 
     while True:
 
         try:
-
             now = time.time()
 
-            expired_jobs = []
+            with lock:
 
+                old_ids = []
 
-            with jobs_lock:
+                for live_id, session in live_sessions.items():
 
-                for job_id, job in list(
-                    jobs.items()
-                ):
+                    created = session.get("created_at", now)
 
-                    created_at = job.get(
-                        "createdAt",
-                        now
-                    )
+                    if now - created > 3600:
+                        old_ids.append(live_id)
 
-
-                    if (
-                        now - created_at
-                        > 3600
-                    ):
-
-                        expired_jobs.append(
-                            job_id
-                        )
-
-
-                for job_id in expired_jobs:
-
-                    jobs.pop(
-                        job_id,
-                        None
-                    )
-
-
-            with audio_lock:
-
-                for key, value in list(
-                    audio_cache.items()
-                ):
-
-                    created_at = value.get(
-                        "createdAt",
-                        now
-                    )
-
-
-                    if (
-                        now - created_at
-                        > 3600
-                    ):
-
-                        audio_cache.pop(
-                            key,
-                            None
-                        )
-
+                for live_id in old_ids:
+                    del live_sessions[live_id]
 
         except Exception:
-
             pass
 
-
-        time.sleep(
-            300
-        )
+        time.sleep(300)
 
 
-# =========================================================
-# THREAD DE LIMPEZA
-# =========================================================
-
-cleanup_thread = threading.Thread(
-
-    target=cleanup_old_jobs,
-
+threading.Thread(
+    target=cleanup_sessions,
     daemon=True
-
-)
-
-cleanup_thread.start()
+).start()
 
 
 # =========================================================
-# EXECUÇÃO
+# START
 # =========================================================
 
 if __name__ == "__main__":
 
-    port = int(
-        os.getenv(
-            "PORT",
-            "10000"
-        )
-    )
+    print("=" * 50)
+    print("SI TRADUTOR LIVE")
+    print("DeepL Voice")
+    print("=" * 50)
 
+    if DEEPL_API_KEY:
+        print("DEEPL_API_KEY: configurada")
+    else:
+        print("DEEPL_API_KEY: NÃO CONFIGURADA")
 
-    print(
-        "======================================"
-    )
-
-    print(
-        "SI Tradutor Live"
-    )
-
-    print(
-        "DeepL Voice"
-    )
-
-    print(
-        "Servidor iniciado"
-    )
-
-    print(
-        "Porta:",
-        port
-    )
-
-    print(
-        "======================================"
-    )
-
+    print(f"Porta: {PORT}")
 
     app.run(
-
         host="0.0.0.0",
-
-        port=port,
-
+        port=PORT,
         debug=False
-
     )
