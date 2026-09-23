@@ -3,7 +3,6 @@ import uuid
 import time
 import threading
 import base64
-import io
 
 import requests
 
@@ -13,7 +12,11 @@ from flask_cors import CORS
 
 # =========================================================
 # SI TRADUTOR LIVE
-# YouTube Live → Áudio do navegador → Tradução → ElevenLabs
+# Microfone / áudio da tela
+#        ↓
+# DeepL Voice
+#        ↓
+# Tradução + voz traduzida
 # =========================================================
 
 
@@ -34,29 +37,17 @@ CORS(
 
 
 # =========================================================
-# CONFIGURAÇÕES
+# CONFIGURAÇÕES DEEPL
 # =========================================================
 
-ELEVENLABS_API_KEY = os.getenv(
-    "ELEVENLABS_API_KEY",
+DEEPL_API_KEY = os.getenv(
+    "DEEPL_API_KEY",
     ""
 ).strip()
 
 
-AGENT_ID = os.getenv(
-    "AGENT_ID",
-    "agent_1601m1q929bhf2zvts65479fyzdw"
-).strip()
-
-
-VOICE_ID = os.getenv(
-    "VOICE_ID",
-    "cjVigY5qzO86Huf0OWal"
-).strip()
-
-
-ELEVENLABS_BASE_URL = (
-    "https://api.elevenlabs.io/v1"
+DEEPL_VOICE_URL = (
+    "https://api.deepl.com/v3/voice/realtime"
 )
 
 
@@ -88,7 +79,7 @@ jobs_lock = threading.Lock()
 
 
 # =========================================================
-# ÁUDIO GERADO
+# ÁUDIO
 # =========================================================
 
 audio_cache = {}
@@ -97,21 +88,16 @@ audio_lock = threading.Lock()
 
 
 # =========================================================
-# HEADERS ELEVENLABS
+# VERIFICAR DEEPL
 # =========================================================
 
-def elevenlabs_headers():
+def check_deepl_key():
 
-    if not ELEVENLABS_API_KEY:
+    if not DEEPL_API_KEY:
 
         raise Exception(
-            "ELEVENLABS_API_KEY não configurada no Render."
+            "DEEPL_API_KEY não configurada no Render."
         )
-
-    return {
-        "xi-api-key": ELEVENLABS_API_KEY,
-        "Content-Type": "application/json"
-    }
 
 
 # =========================================================
@@ -131,6 +117,10 @@ def update_job(
                 values
             )
 
+            jobs[job_id][
+                "updatedAt"
+            ] = time.time()
+
 
 # =========================================================
 # CRIAR JOB
@@ -148,7 +138,8 @@ def create_job(
 
     job = {
 
-        "liveId": job_id,
+        "liveId":
+            job_id,
 
         "youtubeUrl":
             youtube_url,
@@ -204,6 +195,7 @@ def create_job(
 def extract_youtube_id(url):
 
     if not url:
+
         return None
 
     url = url.strip()
@@ -256,198 +248,232 @@ def extract_youtube_id(url):
 
 
 # =========================================================
-# SIGNED URL ELEVENLABS
+# NORMALIZAR IDIOMA DEEPL
 # =========================================================
 
-def get_agent_signed_url():
-
-    if not ELEVENLABS_API_KEY:
-
-        raise Exception(
-            "ELEVENLABS_API_KEY não configurada."
-        )
-
-    if not AGENT_ID:
-
-        raise Exception(
-            "AGENT_ID não configurado."
-        )
-
-    url = (
-        ELEVENLABS_BASE_URL
-        + "/convai/conversation/get-signed-url"
-    )
-
-    response = requests.get(
-
-        url,
-
-        headers={
-            "xi-api-key":
-                ELEVENLABS_API_KEY
-        },
-
-        params={
-            "agent_id":
-                AGENT_ID
-        },
-
-        timeout=30
-    )
-
-    if not response.ok:
-
-        raise Exception(
-            "ElevenLabs erro "
-            + str(response.status_code)
-            + ": "
-            + response.text
-        )
-
-    data = response.json()
-
-    signed_url = data.get(
-        "signed_url"
-    )
-
-    if not signed_url:
-
-        raise Exception(
-            "ElevenLabs não retornou signed_url."
-        )
-
-    return signed_url
-
-
-# =========================================================
-# GERAR ÁUDIO COM ELEVENLABS
-# =========================================================
-
-def generate_elevenlabs_audio(
-    text
+def normalize_target_language(
+    language
 ):
 
-    if not text:
+    language = str(
+        language or "pt"
+    ).strip().lower()
 
-        raise Exception(
-            "Texto vazio para geração de áudio."
-        )
 
-    if not ELEVENLABS_API_KEY:
+    mapping = {
 
-        raise Exception(
-            "ELEVENLABS_API_KEY não configurada."
-        )
+        "pt":
+            "PT-BR",
 
-    if not VOICE_ID:
+        "pt-br":
+            "PT-BR",
 
-        raise Exception(
-            "VOICE_ID não configurado."
-        )
+        "en":
+            "EN",
 
-    url = (
-        ELEVENLABS_BASE_URL
-        + "/text-to-speech/"
-        + VOICE_ID
+        "en-us":
+            "EN-US",
+
+        "en-gb":
+            "EN-GB",
+
+        "es":
+            "ES",
+
+        "fr":
+            "FR",
+
+        "de":
+            "DE",
+
+        "it":
+            "IT",
+
+        "ja":
+            "JA",
+
+        "ko":
+            "KO",
+
+        "zh":
+            "ZH",
+
+        "ar":
+            "AR"
+    }
+
+
+    return mapping.get(
+        language,
+        language.upper()
     )
+
+
+# =========================================================
+# CONTENT TYPE DO ÁUDIO
+# =========================================================
+
+def get_audio_content_type():
+
+    content_type = (
+        request.headers.get(
+            "X-Audio-Content-Type"
+        )
+        or request.form.get(
+            "contentType"
+        )
+        or "audio/webm;codecs=opus"
+    )
+
+    return content_type.strip()
+
+
+# =========================================================
+# CRIAR SESSÃO DEEPL VOICE
+# =========================================================
+
+def create_deepl_voice_session(
+    target_lang,
+    source_content_type="audio/webm;codecs=opus",
+    source_lang=None
+):
+
+    check_deepl_key()
+
+
+    target_language = (
+        normalize_target_language(
+            target_lang
+        )
+    )
+
 
     payload = {
 
-        "text":
-            text,
+        "source_media_content_type":
+            source_content_type,
 
-        "model_id":
-            "eleven_multilingual_v2",
+        "message_format":
+            "json",
 
-        "voice_settings": {
+        "source_language_mode":
+            "auto",
 
-            "stability":
-                0.5,
+        "target_languages":
+            [
+                target_language
+            ],
 
-            "similarity_boost":
-                0.75
-        }
+        "target_media_languages":
+            [
+                target_language
+            ],
+
+        "target_media_content_type":
+            "audio/webm;codecs=opus",
+
+        "target_media_voice":
+            "female"
     }
 
+
+    if source_lang:
+
+        source_lang = str(
+            source_lang
+        ).strip().upper()
+
+        if source_lang:
+
+            payload[
+                "source_language"
+            ] = source_lang
+
+            payload[
+                "source_language_mode"
+            ] = "fixed"
+
+
     headers = {
-        "xi-api-key":
-            ELEVENLABS_API_KEY,
+
+        "Authorization":
+            "DeepL-Auth-Key "
+            + DEEPL_API_KEY,
 
         "Content-Type":
             "application/json",
 
         "Accept":
-            "audio/mpeg"
+            "application/json"
     }
+
 
     response = requests.post(
 
-        url,
-
-        json=payload,
+        DEEPL_VOICE_URL,
 
         headers=headers,
 
-        timeout=90
+        json=payload,
+
+        timeout=30
     )
+
 
     if not response.ok:
 
         raise Exception(
-            "ElevenLabs TTS erro "
+            "DeepL Voice erro "
             + str(response.status_code)
             + ": "
             + response.text
         )
 
-    if not response.content:
+
+    data = response.json()
+
+
+    streaming_url = data.get(
+        "streaming_url"
+    )
+
+    token = data.get(
+        "token"
+    )
+
+    session_id = data.get(
+        "session_id"
+    )
+
+
+    if not streaming_url:
 
         raise Exception(
-            "ElevenLabs não retornou áudio."
+            "DeepL não retornou streaming_url."
         )
 
-    return response.content
 
+    if not token:
 
-# =========================================================
-# TESTAR ELEVENLABS
-# =========================================================
-
-def test_elevenlabs():
-
-    if not ELEVENLABS_API_KEY:
-
-        return False, (
-            "ELEVENLABS_API_KEY não configurada."
+        raise Exception(
+            "DeepL não retornou token."
         )
 
-    try:
 
-        response = requests.get(
+    return {
 
-            ELEVENLABS_BASE_URL
-            + "/user",
+        "streaming_url":
+            streaming_url,
 
-            headers={
-                "xi-api-key":
-                    ELEVENLABS_API_KEY
-            },
+        "token":
+            token,
 
-            timeout=20
-        )
+        "session_id":
+            session_id,
 
-        if response.ok:
-
-            return True, "ElevenLabs conectado."
-
-        return False, (
-            "ElevenLabs retornou "
-            + str(response.status_code)
-        )
-
-    except Exception as error:
-
-        return False, str(error)
+        "target_language":
+            target_language
+    }
 
 
 # =========================================================
@@ -466,16 +492,10 @@ def home():
             "SI Tradutor Live",
 
         "provider":
-            "ElevenLabs",
-
-        "agent_id":
-            AGENT_ID,
-
-        "voice_id":
-            VOICE_ID,
+            "DeepL Voice",
 
         "architecture":
-            "YouTube Browser Audio → Render → ElevenLabs",
+            "Browser Audio → DeepL Voice → Translated Voice",
 
         "message":
             "Servidor funcionando."
@@ -490,64 +510,95 @@ def home():
 @app.get("/api/health")
 def health():
 
-    eleven_ok, eleven_message = (
-        test_elevenlabs()
-    )
+    if not DEEPL_API_KEY:
+
+        return jsonify({
+
+            "ok":
+                False,
+
+            "server":
+                True,
+
+            "deepl":
+                False,
+
+            "provider":
+                "DeepL Voice",
+
+            "message":
+                "DEEPL_API_KEY não configurada."
+
+        }), 500
+
 
     return jsonify({
 
         "ok":
-            eleven_ok,
+            True,
 
         "server":
             True,
 
-        "elevenlabs":
-            eleven_ok,
-
-        "message":
-            eleven_message,
+        "deepl":
+            True,
 
         "provider":
-            "ElevenLabs",
+            "DeepL Voice",
 
-        "service":
-            "SI Tradutor Live",
+        "message":
+            "DeepL Voice configurado."
 
-        "agent_id":
-            AGENT_ID,
-
-        "voice_id":
-            VOICE_ID
-
-    }), (200 if eleven_ok else 500)
+    })
 
 
 # =========================================================
-# AGENT
+# TESTAR DEEPL VOICE
 # =========================================================
 
-@app.get("/api/agent")
-def agent():
+@app.get("/api/deepl/voice-test")
+def deepl_voice_test():
 
     try:
 
-        signed_url = (
-            get_agent_signed_url()
+        check_deepl_key()
+
+
+        session = (
+            create_deepl_voice_session(
+                "pt"
+            )
         )
+
 
         return jsonify({
 
             "ok":
                 True,
 
-            "agent_id":
-                AGENT_ID,
+            "provider":
+                "DeepL Voice",
 
-            "signed_url":
-                signed_url
+            "session_id":
+                session.get(
+                    "session_id"
+                ),
+
+            "streaming_url":
+                session.get(
+                    "streaming_url"
+                ),
+
+            "target_language":
+                session.get(
+                    "target_language"
+                ),
+
+            "message":
+                "DeepL Voice respondeu e criou uma sessão."
 
         })
+
 
     except Exception as error:
 
@@ -556,6 +607,9 @@ def agent():
             "ok":
                 False,
 
+            "provider":
+                "DeepL Voice",
+
             "error":
                 str(error)
 
@@ -563,32 +617,105 @@ def agent():
 
 
 # =========================================================
-# SIGNED URL
+# CRIAR SESSÃO DEEPL VOICE
+#
+# O navegador usa o streaming_url + token
+# para abrir o WebSocket do DeepL.
 # =========================================================
 
-@app.get(
-    "/api/elevenlabs/signed-url"
-)
-def elevenlabs_signed_url():
+@app.post("/api/deepl/voice-session")
+def deepl_voice_session():
+
+    data = (
+        request.get_json(
+            silent=True
+        )
+        or {}
+    )
+
+
+    target_lang = str(
+        data.get(
+            "targetLang",
+            "pt"
+        )
+    ).strip().lower()
+
+
+    source_lang = data.get(
+        "sourceLang"
+    )
+
+
+    content_type = str(
+        data.get(
+            "contentType",
+            "audio/webm;codecs=opus"
+        )
+    ).strip()
+
+
+    if target_lang not in ALLOWED_LANGUAGES:
+
+        return jsonify({
+
+            "ok":
+                False,
+
+            "error":
+                "Idioma de destino não suportado."
+
+        }), 400
+
 
     try:
 
-        signed_url = (
-            get_agent_signed_url()
+        session = (
+            create_deepl_voice_session(
+
+                target_lang,
+
+                content_type,
+
+                source_lang
+
+            )
         )
+
 
         return jsonify({
 
             "ok":
                 True,
 
-            "agent_id":
-                AGENT_ID,
+            "provider":
+                "DeepL Voice",
 
-            "signed_url":
-                signed_url
+            "streaming_url":
+                session[
+                    "streaming_url"
+                ],
+
+            "token":
+                session[
+                    "token"
+                ],
+
+            "session_id":
+                session.get(
+                    "session_id"
+                ),
+
+            "target_language":
+                session[
+                    "target_language"
+                ],
+
+            "message":
+                "Sessão DeepL Voice criada."
 
         })
+
 
     except Exception as error:
 
@@ -617,12 +744,14 @@ def youtube_live():
         or {}
     )
 
+
     youtube_url = str(
         data.get(
             "url",
             ""
         )
     ).strip()
+
 
     target_lang = str(
         data.get(
@@ -710,8 +839,7 @@ def youtube_live():
             "waiting",
 
         "message":
-            "Live criada. "
-            "Aguardando áudio capturado pelo navegador."
+            "Live criada. Aguardando áudio."
 
     })
 
@@ -752,7 +880,7 @@ def receive_audio(
 
 
     # -----------------------------------------------------
-    # OPÇÃO 1 — arquivo multipart
+    # MULTIPART
     # -----------------------------------------------------
 
     audio_file = request.files.get(
@@ -784,7 +912,7 @@ def receive_audio(
     else:
 
         # -------------------------------------------------
-        # OPÇÃO 2 — JSON base64
+        # JSON BASE64
         # -------------------------------------------------
 
         data = (
@@ -794,9 +922,11 @@ def receive_audio(
             or {}
         )
 
+
         audio_base64 = data.get(
             "audio"
         )
+
 
         if not audio_base64:
 
@@ -810,6 +940,7 @@ def receive_audio(
 
             }), 400
 
+
         try:
 
             if "," in audio_base64:
@@ -821,11 +952,13 @@ def receive_audio(
                     )[1]
                 )
 
+
             audio_data = (
                 base64.b64decode(
                     audio_base64
                 )
             )
+
 
         except Exception as error:
 
@@ -854,13 +987,10 @@ def receive_audio(
         }), 400
 
 
-    # -----------------------------------------------------
-    # Limite de segurança
-    # -----------------------------------------------------
-
     max_audio_size = (
         8 * 1024 * 1024
     )
+
 
     if len(audio_data) > max_audio_size:
 
@@ -875,9 +1005,15 @@ def receive_audio(
         }), 413
 
 
-    # -----------------------------------------------------
-    # Guardar último áudio
-    # -----------------------------------------------------
+    content_type = (
+        audio_file.content_type
+        if audio_file
+        else request.headers.get(
+            "X-Audio-Content-Type",
+            "audio/webm;codecs=opus"
+        )
+    )
+
 
     with audio_lock:
 
@@ -887,11 +1023,7 @@ def receive_audio(
                 audio_data,
 
             "content_type":
-                request.files.get(
-                    "audio"
-                ).content_type
-                if request.files.get("audio")
-                else "audio/webm",
+                content_type,
 
             "createdAt":
                 time.time()
@@ -906,11 +1038,10 @@ def receive_audio(
 
         audioCapture="running",
 
-        message="Áudio recebido do navegador.",
+        message=
+            "Áudio recebido.",
 
-        audioReady=True,
-
-        updatedAt=time.time()
+        audioReady=True
 
     )
 
@@ -986,6 +1117,7 @@ def get_audio(
 
             "X-Live-ID":
                 live_id
+
         }
 
     )
@@ -1037,7 +1169,7 @@ def youtube_live_status(
 
 
 # =========================================================
-# ATUALIZAR TEXTO DA TRADUÇÃO
+# ATUALIZAR TRADUÇÃO
 # =========================================================
 
 @app.post(
@@ -1134,7 +1266,14 @@ def update_translation(
 
 
 # =========================================================
-# GERAR VOZ ELEVENLABS
+# NOVA ROTA TTS
+#
+# ATENÇÃO:
+# DeepL Voice não funciona como um TTS tradicional.
+#
+# Esta rota cria uma sessão de voz.
+# O áudio precisa ser enviado pelo WebSocket
+# retornado pelo endpoint /api/deepl/voice-session.
 # =========================================================
 
 @app.post(
@@ -1168,109 +1307,33 @@ def text_to_speech(
         }), 404
 
 
-    data = (
-        request.get_json(
-            silent=True
-        )
-        or {}
-    )
-
-
-    text = str(
-        data.get(
-            "text",
-            ""
-        )
-    ).strip()
-
-
-    if not text:
-
-        text = str(
-            job.get(
-                "lastTranslation",
-                ""
-            )
-        ).strip()
-
-
-    if not text:
-
-        return jsonify({
-
-            "ok":
-                False,
-
-            "error":
-                "Nenhum texto para transformar em voz."
-
-        }), 400
-
-
     try:
 
-        update_job(
-
-            live_id,
-
-            status="generating_audio",
-
-            message=
-                "Gerando voz com ElevenLabs.",
-
-            error=None
-
+        target_lang = job.get(
+            "targetLang",
+            "pt"
         )
 
 
-        audio_data = (
-            generate_elevenlabs_audio(
-                text
+        session = (
+            create_deepl_voice_session(
+                target_lang
             )
         )
 
 
-        audio_id = str(
-            uuid.uuid4()
-        )
-
-
-        with audio_lock:
-
-            audio_cache[
-                audio_id
-            ] = {
-
-                "data":
-                    audio_data,
-
-                "content_type":
-                    "audio/mpeg",
-
-                "createdAt":
-                    time.time()
-            }
-
-
         update_job(
 
             live_id,
 
-            status="ready",
-
-            audioReady=True,
+            status=
+                "voice_session_ready",
 
             translationStatus=
-                "translated",
+                "ready",
 
             message=
-                "Tradução e voz prontas.",
-
-            audioId=
-                audio_id,
-
-            updatedAt=
-                time.time()
+                "Sessão DeepL Voice pronta."
 
         )
 
@@ -1280,17 +1343,34 @@ def text_to_speech(
             "ok":
                 True,
 
+            "provider":
+                "DeepL Voice",
+
             "liveId":
                 live_id,
 
-            "audioId":
-                audio_id,
+            "streaming_url":
+                session[
+                    "streaming_url"
+                ],
 
-            "text":
-                text,
+            "token":
+                session[
+                    "token"
+                ],
+
+            "session_id":
+                session.get(
+                    "session_id"
+                ),
+
+            "target_language":
+                session[
+                    "target_language"
+                ],
 
             "message":
-                "Áudio gerado pela ElevenLabs."
+                "Conecte o áudio ao WebSocket do DeepL Voice."
 
         })
 
@@ -1306,194 +1386,10 @@ def text_to_speech(
             error=str(error),
 
             message=
-                "Erro gerando voz com ElevenLabs."
+                "Erro criando sessão DeepL Voice."
 
         )
 
-
-        return jsonify({
-
-            "ok":
-                False,
-
-            "error":
-                str(error)
-
-        }), 500
-
-
-# =========================================================
-# TOCAR ÁUDIO GERADO
-# =========================================================
-
-@app.get(
-    "/api/audio/<audio_id>"
-)
-def serve_generated_audio(
-    audio_id
-):
-
-    with audio_lock:
-
-        audio = audio_cache.get(
-            audio_id
-        )
-
-        if audio:
-
-            audio = dict(audio)
-
-
-    if not audio:
-
-        return jsonify({
-
-            "ok":
-                False,
-
-            "error":
-                "Áudio não encontrado."
-
-        }), 404
-
-
-    return Response(
-
-        audio["data"],
-
-        mimetype="audio/mpeg",
-
-        headers={
-
-            "Cache-Control":
-                "no-cache"
-        }
-
-    )
-
-
-# =========================================================
-# TESTE DA VOZ
-# =========================================================
-
-@app.get("/api/voice")
-def voice():
-
-    if not ELEVENLABS_API_KEY:
-
-        return jsonify({
-
-            "ok":
-                False,
-
-            "error":
-                "ELEVENLABS_API_KEY não configurada."
-
-        }), 500
-
-
-    if not VOICE_ID:
-
-        return jsonify({
-
-            "ok":
-                False,
-
-            "error":
-                "VOICE_ID não configurado."
-
-        }), 500
-
-
-    return jsonify({
-
-        "ok":
-            True,
-
-        "provider":
-            "ElevenLabs",
-
-        "voice_id":
-            VOICE_ID,
-
-        "message":
-            "VOICE_ID configurado."
-
-    })
-
-
-# =========================================================
-# TESTE TTS
-# =========================================================
-
-@app.post("/api/test-voice")
-def test_voice():
-
-    data = (
-        request.get_json(
-            silent=True
-        )
-        or {}
-    )
-
-
-    text = str(
-        data.get(
-            "text",
-            "Olá! Este é um teste do SI Tradutor Live."
-        )
-    ).strip()
-
-
-    try:
-
-        audio_data = (
-            generate_elevenlabs_audio(
-                text
-            )
-        )
-
-
-        audio_id = str(
-            uuid.uuid4()
-        )
-
-
-        with audio_lock:
-
-            audio_cache[
-                audio_id
-            ] = {
-
-                "data":
-                    audio_data,
-
-                "content_type":
-                    "audio/mpeg",
-
-                "createdAt":
-                    time.time()
-            }
-
-
-        return jsonify({
-
-            "ok":
-                True,
-
-            "audioId":
-                audio_id,
-
-            "voice_id":
-                VOICE_ID,
-
-            "message":
-                "Teste de voz concluído."
-
-        })
-
-
-    except Exception as error:
 
         return jsonify({
 
@@ -1593,6 +1489,7 @@ def cleanup_old_jobs():
 
             expired_jobs = []
 
+
             with jobs_lock:
 
                 for job_id, job in list(
@@ -1603,6 +1500,7 @@ def cleanup_old_jobs():
                         "createdAt",
                         now
                     )
+
 
                     if (
                         now - created_at
@@ -1632,6 +1530,7 @@ def cleanup_old_jobs():
                         "createdAt",
                         now
                     )
+
 
                     if (
                         now - created_at
@@ -1692,22 +1591,16 @@ if __name__ == "__main__":
     )
 
     print(
+        "DeepL Voice"
+    )
+
+    print(
         "Servidor iniciado"
     )
 
     print(
         "Porta:",
         port
-    )
-
-    print(
-        "Agent ID:",
-        AGENT_ID
-    )
-
-    print(
-        "Voice ID:",
-        VOICE_ID
     )
 
     print(
