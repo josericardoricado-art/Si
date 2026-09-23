@@ -2529,6 +2529,145 @@ setInterval(
 // ============================================================
 // SERVIDOR HTTP
 // ============================================================
+// TESTE DE CONEXÃO COM DEEPL
+// ============================================================
+
+app.get(
+  "/api/deepl/test",
+  async (req, res) => {
+
+    try {
+
+      const apiKey =
+        process.env.DEEPL_API_KEY;
+
+      if (!apiKey) {
+
+        return res.status(500).json({
+
+          ok: false,
+
+          provider:
+            "DeepL",
+
+          error:
+            "DEEPL_API_KEY não está configurada no Render"
+
+        });
+      }
+
+      // Chave DeepL Free normalmente termina em :fx.
+      // Caso contrário, usamos o endpoint Pro.
+
+      const host =
+        apiKey.endsWith(":fx")
+          ? "https://api-free.deepl.com"
+          : "https://api.deepl.com";
+
+      const response =
+        await fetch(
+          `${host}/v2/translate`,
+          {
+            method:
+              "POST",
+
+            headers: {
+
+              "Authorization":
+                `DeepL-Auth-Key ${apiKey}`,
+
+              "Content-Type":
+                "application/json"
+            },
+
+            body:
+              JSON.stringify({
+
+                text: [
+                  "Olá, este é um teste do SI Tradutor Live."
+                ],
+
+                target_lang:
+                  "EN-US"
+              })
+          }
+        );
+
+      const data =
+        await response.json();
+
+      if (!response.ok) {
+
+        console.error(
+          "[DEEPL TEST]",
+          response.status,
+          data
+        );
+
+        return res
+          .status(response.status)
+          .json({
+
+            ok: false,
+
+            provider:
+              "DeepL",
+
+            status:
+              response.status,
+
+            error:
+              data.message ||
+              "DeepL recusou a autenticação ou a requisição."
+
+          });
+      }
+
+      const translation =
+        data?.translations?.[0]?.text ||
+        "";
+
+      return res.json({
+
+        ok: true,
+
+        provider:
+          "DeepL",
+
+        status:
+          response.status,
+
+        translation
+
+      });
+
+    } catch (error) {
+
+      console.error(
+        "[DEEPL TEST] Erro:",
+        error
+      );
+
+      return res.status(500).json({
+
+        ok: false,
+
+        provider:
+          "DeepL",
+
+        error:
+          error.message ||
+          "Erro ao conectar ao DeepL."
+
+      });
+    }
+  }
+);
+
+
+// ============================================================
+// SERVIDOR HTTP
+// ============================================================
 
 const server =
   app.listen(
