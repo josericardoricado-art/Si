@@ -2,265 +2,231 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <title>SI Tradutor Live</title>
 
-<meta
-  name="description"
-  content="SI Tradutor Live — captura o áudio da transmissão e traduz em tempo real com DeepL Voice."
->
+<meta name="description"
+      content="SI Tradutor Live — tradução de voz em tempo real com DeepL Voice.">
 
 <style>
 
 * {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+    box-sizing: border-box;
 }
 
 body {
-  font-family: Arial, Helvetica, sans-serif;
-  background: linear-gradient(
-    135deg,
-    #0f172a,
-    #111827,
-    #1e293b
-  );
-  color: white;
-  min-height: 100vh;
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background:
+        radial-gradient(circle at top, #123d2d 0%, #07130f 35%, #020605 100%);
+    color: white;
+    min-height: 100vh;
 }
 
 .container {
-  max-width: 1100px;
-  margin: auto;
-  padding: 20px;
+    width: min(960px, 94%);
+    margin: auto;
+    padding: 25px 0 50px;
 }
 
 header {
-  text-align: center;
-  padding: 25px 10px;
+    text-align: center;
+    margin-bottom: 25px;
 }
 
 .logo {
-  font-size: 34px;
-  font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, #16c784, #087f50);
+    font-size: 30px;
+    font-weight: bold;
+    box-shadow: 0 0 30px rgba(22,199,132,.35);
+}
+
+h1 {
+    margin: 15px 0 7px;
+    font-size: clamp(28px, 6vw, 45px);
 }
 
 .subtitle {
-  margin-top: 8px;
-  color: #cbd5e1;
+    color: #a7c5b8;
+    font-size: 15px;
 }
 
 .card {
-  background: rgba(255,255,255,.08);
-  border: 1px solid rgba(255,255,255,.12);
-  border-radius: 18px;
-  padding: 20px;
-  margin-bottom: 20px;
-}
-
-.status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 18px;
-  color: #cbd5e1;
-}
-
-.dot {
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: #f59e0b;
-}
-
-.dot.online {
-  background: #22c55e;
-}
-
-.dot.error {
-  background: #ef4444;
+    background: rgba(7, 18, 14, .92);
+    border: 1px solid rgba(55, 150, 111, .28);
+    border-radius: 20px;
+    padding: 20px;
+    margin-top: 18px;
+    box-shadow: 0 15px 50px rgba(0,0,0,.25);
 }
 
 label {
-  display: block;
-  font-weight: 700;
-  margin-bottom: 8px;
+    display: block;
+    font-weight: bold;
+    margin-bottom: 8px;
 }
 
 input,
 select {
-  width: 100%;
-  padding: 14px;
-  border: none;
-  border-radius: 12px;
-  font-size: 16px;
-  margin-bottom: 14px;
+    width: 100%;
+    padding: 15px;
+    border-radius: 12px;
+    border: 1px solid #285443;
+    background: #06100c;
+    color: white;
+    outline: none;
+    font-size: 15px;
+}
+
+input:focus,
+select:focus {
+    border-color: #16c784;
+    box-shadow: 0 0 0 3px rgba(22,199,132,.12);
+}
+
+.field {
+    margin-bottom: 17px;
 }
 
 .buttons {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
 }
 
 button {
-  border: none;
-  border-radius: 12px;
-  padding: 14px 20px;
-  font-size: 16px;
-  font-weight: 700;
-  cursor: pointer;
-  flex: 1;
+    border: 0;
+    border-radius: 12px;
+    padding: 15px;
+    font-weight: bold;
+    font-size: 15px;
+    cursor: pointer;
+    background: #16c784;
+    color: #02150d;
+}
+
+button:hover {
+    filter: brightness(1.08);
 }
 
 button:disabled {
-  opacity: .5;
-  cursor: not-allowed;
+    opacity: .45;
+    cursor: not-allowed;
 }
 
-.start {
-  background: #22c55e;
-  color: white;
+.btn-stop {
+    background: #d94a4a;
+    color: white;
 }
 
-.stop {
-  background: #ef4444;
-  color: white;
+.btn-audio {
+    background: #2388ff;
+    color: white;
 }
 
-.audio {
-  background: #2563eb;
-  color: white;
+.status {
+    margin-top: 15px;
+    padding: 13px;
+    border-radius: 12px;
+    background: #071b13;
+    border: 1px solid #164d39;
+    color: #9de5c6;
+    font-size: 14px;
 }
 
-.capture {
-  background: #7c3aed;
-  color: white;
-}
-
-.video {
-  position: relative;
-  width: 100%;
-  padding-top: 56.25%;
-  background: black;
-  border-radius: 16px;
-  overflow: hidden;
-}
-
-.video iframe {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  border: none;
-}
-
-.empty {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #94a3b8;
-  text-align: center;
-  padding: 20px;
-}
-
-.translation {
-  min-height: 150px;
-  background: rgba(0,0,0,.25);
-  border-radius: 14px;
-  padding: 20px;
-}
-
-.translation-title {
-  color: #94a3b8;
-  font-size: 14px;
-  margin-bottom: 12px;
-}
-
-#translation {
-  font-size: 24px;
-  line-height: 1.5;
-  font-weight: 600;
-}
-
-.message {
-  margin-top: 15px;
-  padding: 13px;
-  background: rgba(255,255,255,.06);
-  border-radius: 10px;
-  color: #cbd5e1;
-  white-space: pre-wrap;
-}
-
-.live {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  background: rgba(239,68,68,.15);
-  color: #fca5a5;
-  padding: 7px 11px;
-  border-radius: 999px;
-  margin-bottom: 15px;
-}
-
-.live-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #ef4444;
-}
-
-.info {
-  margin-top: 15px;
-  padding: 15px;
-  background: rgba(37,99,235,.12);
-  border-radius: 12px;
-  color: #bfdbfe;
-  line-height: 1.5;
+.status.error {
+    background: #250b0b;
+    border-color: #713232;
+    color: #ffaaaa;
 }
 
 .voice-status {
-  margin-top: 15px;
-  padding: 12px;
-  background: rgba(34,197,94,.10);
-  border: 1px solid rgba(34,197,94,.20);
-  border-radius: 10px;
-  color: #bbf7d0;
+    margin-top: 10px;
+    padding: 13px;
+    border-radius: 12px;
+    background: #091321;
+    border: 1px solid #24456c;
+    color: #a9ceff;
+    font-size: 14px;
+}
+
+.video-box {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: black;
+    border-radius: 15px;
+    overflow: hidden;
+    margin-top: 15px;
+}
+
+.video-box iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+}
+
+.translation {
+    min-height: 120px;
+    background: #030806;
+    border-radius: 15px;
+    border: 1px solid #18372b;
+    padding: 18px;
+    margin-top: 15px;
+    line-height: 1.6;
+    font-size: 18px;
+}
+
+.source {
+    color: #86a99a;
+    font-size: 14px;
+    margin-bottom: 10px;
+}
+
+.target {
+    color: white;
+    font-size: 20px;
+    font-weight: bold;
+}
+
+.help {
+    color: #9db8ad;
+    font-size: 13px;
+    line-height: 1.6;
+    margin-top: 15px;
 }
 
 footer {
-  text-align: center;
-  color: #64748b;
-  padding: 20px;
+    text-align: center;
+    margin-top: 25px;
+    color: #71877e;
+    font-size: 12px;
 }
 
-@media(max-width:600px) {
+audio {
+    width: 100%;
+    margin-top: 12px;
+}
 
-  .container {
-    padding: 12px;
-  }
+@media (max-width: 650px) {
 
-  .logo {
-    font-size: 28px;
-  }
+    .buttons {
+        grid-template-columns: 1fr;
+    }
 
-  .card {
-    padding: 15px;
-  }
+    .card {
+        padding: 15px;
+    }
 
-  #translation {
-    font-size: 19px;
-  }
-
-  .buttons {
-    flex-direction: column;
-  }
-
+    h1 {
+        font-size: 30px;
+    }
 }
 
 </style>
@@ -272,214 +238,181 @@ footer {
 
 <header>
 
-<div class="logo">
-🎙️ SI Tradutor Live
-</div>
+    <div class="logo">SI</div>
 
-<div class="subtitle">
-YouTube Live → Áudio → DeepL Voice → Voz traduzida
-</div>
+    <h1>SI Tradutor Live</h1>
+
+    <div class="subtitle">
+        YouTube → DeepL Voice → tradução e voz em tempo real
+    </div>
 
 </header>
 
 
-<!-- CONTROLE -->
+<div class="card">
+
+    <div class="field">
+
+        <label for="youtubeUrl">
+            Link do YouTube Live
+        </label>
+
+        <input
+            id="youtubeUrl"
+            type="url"
+            placeholder="https://www.youtube.com/live/..."
+            autocomplete="off"
+        >
+
+    </div>
+
+
+    <div class="field">
+
+        <label for="targetLanguage">
+            Idioma da tradução
+        </label>
+
+        <select id="targetLanguage">
+
+            <option value="pt">Português (Brasil)</option>
+            <option value="en">English</option>
+            <option value="es">Español</option>
+            <option value="fr">Français</option>
+            <option value="de">Deutsch</option>
+            <option value="it">Italiano</option>
+            <option value="ja">日本語</option>
+            <option value="ko">한국어</option>
+            <option value="zh">中文</option>
+            <option value="ar">العربية</option>
+
+        </select>
+
+    </div>
+
+
+    <div class="buttons">
+
+        <button
+            id="startBtn"
+            onclick="startTranslation()">
+            ▶ Iniciar tradução
+        </button>
+
+        <button
+            id="captureBtn"
+            class="btn-audio"
+            onclick="captureAudio()"
+            disabled>
+            🎙 Capturar áudio
+        </button>
+
+        <button
+            id="audioBtn"
+            class="btn-audio"
+            onclick="enableAudio()"
+            disabled>
+            🔊 Ativar áudio
+        </button>
+
+        <button
+            id="stopBtn"
+            class="btn-stop"
+            onclick="stopTranslation()"
+            disabled>
+            ■ Parar
+        </button>
+
+    </div>
+
+
+    <div id="status" class="status">
+        🟢 Servidor conectado
+    </div>
+
+
+    <div id="voiceStatus" class="voice-status">
+        🔊 DeepL Voice aguardando conexão.
+    </div>
+
+
+    <div id="debugStatus" class="help">
+        Pronto para iniciar.
+    </div>
+
+</div>
+
 
 <div class="card">
 
-<div class="status">
+    <h3>📺 YouTube Live</h3>
 
-<span
-  id="statusDot"
-  class="dot">
-</span>
+    <div
+        id="videoContainer"
+        class="video-box">
 
-<span id="connection">
-Verificando servidor...
-</span>
+        <div
+            style="
+                display:flex;
+                height:100%;
+                align-items:center;
+                justify-content:center;
+                color:#53665e;
+            "
+        >
+            O vídeo aparecerá aqui.
+        </div>
 
-</div>
-
-
-<label>
-Cole o link da YouTube Live
-</label>
-
-<input
-  id="youtubeUrl"
-  type="url"
-  placeholder="https://www.youtube.com/live/..."
->
-
-
-<label>
-Idioma da tradução
-</label>
-
-<select id="targetLang">
-
-<option value="pt">
-🇧🇷 Português
-</option>
-
-<option value="en">
-🇺🇸 Inglês
-</option>
-
-<option value="es">
-🇪🇸 Espanhol
-</option>
-
-<option value="fr">
-🇫🇷 Francês
-</option>
-
-<option value="de">
-🇩🇪 Alemão
-</option>
-
-<option value="it">
-🇮🇹 Italiano
-</option>
-
-<option value="ja">
-🇯🇵 Japonês
-</option>
-
-<option value="ko">
-🇰🇷 Coreano
-</option>
-
-<option value="zh">
-🇨🇳 Chinês
-</option>
-
-<option value="ar">
-🇸🇦 Árabe
-</option>
-
-</select>
-
-
-<div class="buttons">
-
-<button
-  id="startButton"
-  class="start"
-  onclick="startLive()"
->
-🔴 Iniciar tradução
-</button>
-
-<button
-  id="captureButton"
-  class="capture"
-  onclick="startBrowserCapture()"
-  disabled
->
-🎙️ Capturar áudio
-</button>
-
-<button
-  id="audioButton"
-  class="audio"
-  onclick="enableAudio()"
-  disabled
->
-🔊 Ativar áudio
-</button>
-
-<button
-  id="stopButton"
-  class="stop"
-  onclick="stopLive()"
-  disabled
->
-🛑 Parar
-</button>
+    </div>
 
 </div>
 
-
-<div
-  id="message"
-  class="message"
->
-Cole o link da YouTube Live para começar.
-</div>
-
-
-<div
-  id="voiceStatus"
-  class="voice-status"
->
-🔊 DeepL Voice aguardando conexão.
-</div>
-
-
-<div class="info">
-
-<strong>Como funciona:</strong><br><br>
-
-1. Cole o link da YouTube Live.<br>
-2. Clique em <strong>Iniciar tradução</strong>.<br>
-3. Clique em <strong>Capturar áudio</strong>.<br>
-4. Na janela do navegador, escolha a aba do YouTube e marque o áudio.<br>
-5. O SI envia os blocos de áudio ao DeepL Voice em tempo real.<br>
-6. O DeepL devolve a tradução e a voz traduzida.
-
-</div>
-
-</div>
-
-
-<!-- VÍDEO -->
 
 <div class="card">
 
-<div class="live">
+    <h3>🌎 Tradução</h3>
 
-<span class="live-dot"></span>
+    <div class="translation">
 
-YouTube Live
+        <div class="source" id="sourceText">
+            O áudio original aparecerá aqui...
+        </div>
+
+        <div class="target" id="targetText">
+            A tradução aparecerá aqui...
+        </div>
+
+    </div>
+
+    <audio
+        id="translatedAudio"
+        controls
+        autoplay>
+    </audio>
 
 </div>
 
-<div
-  id="video"
-  class="video"
->
-
-<div class="empty">
-O vídeo da live aparecerá aqui.
-</div>
-
-</div>
-
-</div>
-
-
-<!-- TRADUÇÃO -->
 
 <div class="card">
 
-<div class="translation">
+    <h3>ℹ️ Como usar</h3>
 
-<div class="translation-title">
-📝 Tradução em tempo real
-</div>
+    <div class="help">
 
-<div id="translation">
-A tradução aparecerá aqui...
-</div>
+        1. Coloque o link do YouTube Live.<br>
+        2. Escolha o idioma.<br>
+        3. Toque em <b>Iniciar tradução</b>.<br>
+        4. Toque em <b>Capturar áudio</b> e compartilhe a aba/tela com áudio.<br>
+        5. A DeepL receberá o áudio e enviará a tradução e a voz traduzida.<br>
+        6. O áudio traduzido será reproduzido pelo SI.
 
-</div>
+    </div>
 
 </div>
 
 
 <footer>
-SI Tradutor Live • Powered by DeepL Voice
+    SI Tradutor Live · Powered by DeepL Voice
 </footer>
 
 </div>
@@ -487,1612 +420,1493 @@ SI Tradutor Live • Powered by DeepL Voice
 
 <script>
 
-// ========================================================
-// CONFIGURAÇÃO
-// ========================================================
-
-const BACKEND_URL =
-  "https://si-u2ul.onrender.com";
+const BACKEND =
+    "https://si-u2ul.onrender.com";
 
 
 let liveId = null;
-
-let statusTimer = null;
-
+let socket = null;
 let mediaStream = null;
+let recorder = null;
 
-let mediaRecorder = null;
-
-let audioChunks = [];
+let deeplConnected = false;
+let stopping = false;
 
 let audioEnabled = false;
 
-let deeplSocket = null;
 
-let deeplSession = null;
+/*
+=========================================================
+ELEMENTOS
+=========================================================
+*/
 
-let audioQueue = [];
+const startBtn =
+    document.getElementById("startBtn");
 
-let playingAudio = false;
+const captureBtn =
+    document.getElementById("captureBtn");
 
-let audioContext = null;
+const audioBtn =
+    document.getElementById("audioBtn");
 
+const stopBtn =
+    document.getElementById("stopBtn");
 
-// ========================================================
-// ELEMENTOS
-// ========================================================
-
-const youtubeUrl =
-  document.getElementById("youtubeUrl");
-
-const targetLang =
-  document.getElementById("targetLang");
-
-const startButton =
-  document.getElementById("startButton");
-
-const captureButton =
-  document.getElementById("captureButton");
-
-const audioButton =
-  document.getElementById("audioButton");
-
-const stopButton =
-  document.getElementById("stopButton");
-
-const message =
-  document.getElementById("message");
-
-const translation =
-  document.getElementById("translation");
-
-const video =
-  document.getElementById("video");
-
-const connection =
-  document.getElementById("connection");
-
-const statusDot =
-  document.getElementById("statusDot");
+const statusBox =
+    document.getElementById("status");
 
 const voiceStatus =
-  document.getElementById("voiceStatus");
+    document.getElementById("voiceStatus");
+
+const debugStatus =
+    document.getElementById("debugStatus");
+
+const sourceText =
+    document.getElementById("sourceText");
+
+const targetText =
+    document.getElementById("targetText");
+
+const audio =
+    document.getElementById("translatedAudio");
+
+const videoContainer =
+    document.getElementById("videoContainer");
 
 
-// ========================================================
-// MENSAGEM
-// ========================================================
+/*
+=========================================================
+STATUS
+=========================================================
+*/
 
-function showMessage(text) {
+function setStatus(message, error = false) {
 
-  message.textContent =
-    text || "";
+    statusBox.textContent = message;
 
+    if (error) {
+        statusBox.classList.add("error");
+    } else {
+        statusBox.classList.remove("error");
+    }
 }
 
 
-// ========================================================
-// STATUS DA VOZ
-// ========================================================
+function setDebug(message) {
 
-function showVoiceStatus(text) {
+    debugStatus.textContent = message;
 
-  voiceStatus.textContent =
-    text || "";
-
+    console.log("[SI]", message);
 }
 
 
-// ========================================================
-// YOUTUBE ID
-// ========================================================
+function setVoiceStatus(message) {
+
+    voiceStatus.textContent = message;
+}
+
+
+/*
+=========================================================
+YOUTUBE ID
+=========================================================
+*/
 
 function getYouTubeId(url) {
 
-  if (!url) {
-    return null;
-  }
+    try {
 
-  const patterns = [
+        const parsed =
+            new URL(url);
 
-    /youtube\.com\/live\/([^?&#/]+)/i,
+        const host =
+            parsed.hostname.toLowerCase();
 
-    /youtube\.com\/watch\?v=([^&#]+)/i,
+        if (host.includes("youtu.be")) {
 
-    /youtu\.be\/([^?&#/]+)/i,
-
-    /youtube\.com\/embed\/([^?&#/]+)/i,
-
-    /youtube\.com\/shorts\/([^?&#/]+)/i
-
-  ];
-
-  for (const pattern of patterns) {
-
-    const match =
-      url.match(pattern);
-
-    if (match) {
-
-      return match[1];
-
-    }
-
-  }
-
-  return null;
-}
-
-
-// ========================================================
-// MOSTRAR YOUTUBE
-// ========================================================
-
-function showYouTube(videoId) {
-
-  video.innerHTML = `
-
-    <iframe
-      src="https://www.youtube.com/embed/${encodeURIComponent(videoId)}?autoplay=1&rel=0"
-      title="YouTube Live"
-      allow="autoplay; encrypted-media; picture-in-picture"
-      allowfullscreen>
-    </iframe>
-
-  `;
-}
-
-
-// ========================================================
-// SERVIDOR
-// ========================================================
-
-async function checkServer() {
-
-  try {
-
-    const response =
-      await fetch(
-        BACKEND_URL + "/api/health"
-      );
-
-    const data =
-      await response.json();
-
-    if (
-      response.ok &&
-      data.ok
-    ) {
-
-      connection.textContent =
-        "🟢 Servidor conectado";
-
-      statusDot.classList.add(
-        "online"
-      );
-
-      statusDot.classList.remove(
-        "error"
-      );
-
-    } else {
-
-      throw new Error(
-        data.message ||
-        "Servidor não conectado."
-      );
-
-    }
-
-  } catch (error) {
-
-    connection.textContent =
-      "🔴 Servidor não conectado";
-
-    statusDot.classList.remove(
-      "online"
-    );
-
-    statusDot.classList.add(
-      "error"
-    );
-
-  }
-
-}
-
-
-// ========================================================
-// INICIAR LIVE
-// ========================================================
-
-async function startLive() {
-
-  const url =
-    youtubeUrl.value.trim();
-
-  if (!url) {
-
-    showMessage(
-      "Cole o link da YouTube Live."
-    );
-
-    return;
-  }
-
-
-  const videoId =
-    getYouTubeId(url);
-
-  if (!videoId) {
-
-    showMessage(
-      "❌ Link do YouTube inválido."
-    );
-
-    return;
-  }
-
-
-  startButton.disabled =
-    true;
-
-  captureButton.disabled =
-    false;
-
-  audioButton.disabled =
-    false;
-
-  stopButton.disabled =
-    false;
-
-
-  showYouTube(videoId);
-
-
-  translation.textContent =
-    "Aguardando captura de áudio...";
-
-
-  showMessage(
-    "🔴 Live preparada. Agora clique em 'Capturar áudio'."
-  );
-
-
-  try {
-
-    const response =
-      await fetch(
-        BACKEND_URL +
-        "/api/youtube-live",
-        {
-
-          method: "POST",
-
-          headers: {
-            "Content-Type":
-              "application/json"
-          },
-
-          body: JSON.stringify({
-
-            url: url,
-
-            targetLang:
-              targetLang.value
-
-          })
+            return parsed.pathname
+                .replace("/", "")
+                .split("/")[0];
 
         }
-      );
 
+        if (host.includes("youtube.com")) {
 
-    const data =
-      await response.json();
+            const v =
+                parsed.searchParams.get("v");
 
-
-    if (
-      !response.ok ||
-      !data.ok
-    ) {
-
-      throw new Error(
-        data.error ||
-        data.message ||
-        "Erro iniciando live."
-      );
-
-    }
-
-
-    liveId =
-      data.liveId;
-
-
-    showMessage(
-      "🟢 Live criada. Clique em 'Capturar áudio'."
-    );
-
-
-    startStatusPolling();
-
-
-  } catch (error) {
-
-    showMessage(
-      "❌ " +
-      error.message
-    );
-
-    resetInterface();
-
-  }
-
-}
-
-
-// ========================================================
-// CAPTURA DO ÁUDIO DO NAVEGADOR
-// ========================================================
-
-async function startBrowserCapture() {
-
-  try {
-
-    if (
-      !navigator.mediaDevices ||
-      !navigator.mediaDevices.getDisplayMedia
-    ) {
-
-      showMessage(
-        "❌ Seu navegador não oferece captura de áudio da aba. Use o Google Chrome atualizado."
-      );
-
-      return;
-    }
-
-
-    showMessage(
-      "🎙️ Escolha a aba do YouTube e marque 'Compartilhar áudio'."
-    );
-
-
-    mediaStream =
-      await navigator.mediaDevices.getDisplayMedia({
-
-        video: true,
-
-        audio: true
-
-      });
-
-
-    const audioTracks =
-      mediaStream.getAudioTracks();
-
-
-    if (
-      !audioTracks ||
-      audioTracks.length === 0
-    ) {
-
-      showMessage(
-        "❌ Nenhum áudio foi compartilhado. Escolha a aba do YouTube e marque o áudio."
-      );
-
-      mediaStream
-        .getTracks()
-        .forEach(
-          track => track.stop()
-        );
-
-      mediaStream =
-        null;
-
-      return;
-    }
-
-
-    showMessage(
-      "🟢 Áudio da aba capturado."
-    );
-
-
-    captureButton.disabled =
-      true;
-
-
-    // Primeiro cria a sessão DeepL.
-    await createDeepLSession();
-
-
-    // Depois começa a captura.
-    startRecording();
-
-
-  } catch (error) {
-
-    console.error(
-      "Captura:",
-      error
-    );
-
-
-    showMessage(
-      "❌ " +
-      (
-        error.message ||
-        "Captura cancelada."
-      )
-    );
-
-  }
-
-}
-
-
-// ========================================================
-// CRIAR SESSÃO DEEPL VOICE
-// ========================================================
-
-async function createDeepLSession() {
-
-  showVoiceStatus(
-    "🟡 Criando sessão DeepL Voice..."
-  );
-
-
-  try {
-
-    const response =
-      await fetch(
-        BACKEND_URL +
-        "/api/deepl/voice-session",
-        {
-
-          method: "POST",
-
-          headers: {
-            "Content-Type":
-              "application/json"
-          },
-
-          body: JSON.stringify({
-
-            targetLang:
-              targetLang.value,
-
-            sourceMediaContentType:
-              "audio/webm;codecs=opus",
-
-            targetMediaContentType:
-              "audio/webm;codecs=opus"
-
-          })
-
-        }
-      );
-
-
-    const data =
-      await response.json();
-
-
-    if (
-      !response.ok ||
-      !data.ok
-    ) {
-
-      throw new Error(
-        data.error ||
-        data.message ||
-        "Não foi possível criar a sessão DeepL."
-      );
-
-    }
-
-
-    deeplSession =
-      data;
-
-
-    if (
-      !data.streaming_url
-    ) {
-
-      throw new Error(
-        "O servidor não retornou a URL WebSocket do DeepL."
-      );
-
-    }
-
-
-    let wsUrl =
-      data.streaming_url;
-
-
-    /*
-     * O token é temporário e de uso único.
-     * Se o backend já devolveu a URL completa,
-     * não adicionamos novamente.
-     */
-
-    if (
-      data.token &&
-      !wsUrl.includes("token=")
-    ) {
-
-      const separator =
-        wsUrl.includes("?")
-          ? "&"
-          : "?";
-
-      wsUrl =
-        wsUrl +
-        separator +
-        "token=" +
-        encodeURIComponent(
-          data.token
-        );
-
-    }
-
-
-    showVoiceStatus(
-      "🟡 Conectando ao DeepL Voice..."
-    );
-
-
-    await connectDeepLSocket(
-      wsUrl
-    );
-
-
-  } catch (error) {
-
-    showVoiceStatus(
-      "🔴 Erro DeepL Voice: " +
-      error.message
-    );
-
-    throw error;
-
-  }
-
-}
-
-
-// ========================================================
-// WEBSOCKET DEEPL
-// ========================================================
-
-function connectDeepLSocket(
-  wsUrl
-) {
-
-  return new Promise(
-    (resolve, reject) => {
-
-      try {
-
-        deeplSocket =
-          new WebSocket(
-            wsUrl
-          );
-
-
-        deeplSocket.onopen =
-          () => {
-
-            console.log(
-              "DeepL WebSocket conectado."
-            );
-
-
-            showVoiceStatus(
-              "🟢 DeepL Voice conectado — tradução em tempo real."
-            );
-
-
-            showMessage(
-              "🟢 Áudio sendo enviado ao DeepL Voice..."
-            );
-
-
-            resolve();
-
-          };
-
-
-        deeplSocket.onmessage =
-          event => {
-
-            handleDeepLMessage(
-              event.data
-            );
-
-          };
-
-
-        deeplSocket.onerror =
-          error => {
-
-            console.error(
-              "DeepL WebSocket:",
-              error
-            );
-
-
-            showVoiceStatus(
-              "🔴 Erro na conexão DeepL Voice."
-            );
-
-          };
-
-
-        deeplSocket.onclose =
-          event => {
-
-            console.log(
-              "DeepL WebSocket fechado:",
-              event.code,
-              event.reason
-            );
-
-
-            if (
-              deeplSocket
-            ) {
-
-              showVoiceStatus(
-                "⚠️ Conexão DeepL Voice encerrada."
-              );
-
+            if (v) {
+                return v;
             }
 
-          };
+            const parts =
+                parsed.pathname
+                    .split("/")
+                    .filter(Boolean);
 
-      } catch (error) {
+            if (
+                parts.length >= 2 &&
+                (
+                    parts[0] === "live" ||
+                    parts[0] === "embed" ||
+                    parts[0] === "shorts"
+                )
+            ) {
+                return parts[1];
+            }
+        }
 
-        reject(
-          error
+    } catch (e) {}
+
+    return null;
+}
+
+
+/*
+=========================================================
+MOSTRAR YOUTUBE
+=========================================================
+*/
+
+function showYouTube(url) {
+
+    const id =
+        getYouTubeId(url);
+
+    if (!id) {
+
+        videoContainer.innerHTML = `
+            <div style="
+                display:flex;
+                height:100%;
+                align-items:center;
+                justify-content:center;
+                color:#ff9999;
+                padding:20px;
+                text-align:center;
+            ">
+                Não consegui identificar o vídeo do YouTube.
+            </div>
+        `;
+
+        return false;
+    }
+
+
+    const iframe =
+        document.createElement("iframe");
+
+    iframe.src =
+        "https://www.youtube.com/embed/" +
+        encodeURIComponent(id) +
+        "?autoplay=1";
+
+    iframe.allow =
+        "autoplay; encrypted-media; picture-in-picture";
+
+    iframe.allowFullscreen = true;
+
+
+    videoContainer.innerHTML = "";
+
+    videoContainer.appendChild(iframe);
+
+    return true;
+}
+
+
+/*
+=========================================================
+INICIAR
+=========================================================
+*/
+
+async function startTranslation() {
+
+    if (socket) {
+
+        setStatus(
+            "⚠️ A tradução já está iniciada."
         );
 
-      }
-
-    }
-  );
-
-}
-
-
-// ========================================================
-// MENSAGENS RECEBIDAS DO DEEPL
-// ========================================================
-
-function handleDeepLMessage(
-  rawData
-) {
-
-  try {
-
-    if (
-      typeof rawData !==
-      "string"
-    ) {
-
-      console.log(
-        "Mensagem binária DeepL recebida."
-      );
-
-      return;
-
+        return;
     }
 
 
-    const data =
-      JSON.parse(
-        rawData
-      );
+    const url =
+        document.getElementById("youtubeUrl")
+            .value
+            .trim();
+
+    const targetLang =
+        document.getElementById("targetLanguage")
+            .value;
 
 
-    // ----------------------------------------
-    // TRADUÇÃO
-    // ----------------------------------------
+    if (!url) {
 
-    if (
-      data.target_transcript_update
-    ) {
-
-      const update =
-        data.target_transcript_update;
-
-
-      let text =
-        "";
-
-
-      if (
-        update.concluded &&
-        update.concluded.length
-      ) {
-
-        text +=
-          update.concluded
-            .map(
-              item =>
-                item.text || ""
-            )
-            .join("");
-
-      }
-
-
-      if (
-        update.tentative &&
-        update.tentative.length
-      ) {
-
-        text +=
-          update.tentative
-            .map(
-              item =>
-                item.text || ""
-            )
-            .join("");
-
-      }
-
-
-      if (text.trim()) {
-
-        translation.textContent =
-          text.trim();
-
-      }
-
-    }
-
-
-    // ----------------------------------------
-    // TRANSCRIÇÃO ORIGINAL
-    // ----------------------------------------
-
-    if (
-      data.source_transcript_update
-    ) {
-
-      console.log(
-        "Transcrição original:",
-        data.source_transcript_update
-      );
-
-    }
-
-
-    // ----------------------------------------
-    // ÁUDIO TRADUZIDO
-    // ----------------------------------------
-
-    if (
-      data.target_media_chunk
-    ) {
-
-      const media =
-        data.target_media_chunk;
-
-
-      if (
-        media.data &&
-        media.data.length
-      ) {
-
-        queueDeepLAudio(
-          media
+        setStatus(
+            "Digite o link do YouTube.",
+            true
         );
 
-      }
-
+        return;
     }
 
 
-    // ----------------------------------------
-    // ERRO
-    // ----------------------------------------
+    if (!getYouTubeId(url)) {
 
-    if (
-      data.error
-    ) {
+        setStatus(
+            "O link informado não parece ser um link válido do YouTube.",
+            true
+        );
 
-      console.error(
-        "DeepL error:",
-        data.error
-      );
-
-
-      showVoiceStatus(
-        "🔴 DeepL: " +
-        (
-          data.error.error_message ||
-          "Erro no processamento."
-        )
-      );
-
+        return;
     }
 
-  } catch (error) {
 
-    console.log(
-      "Mensagem DeepL:",
-      rawData
+    startBtn.disabled = true;
+
+    setStatus(
+        "⏳ Criando sessão..."
     );
 
-  }
-
-}
-
-
-// ========================================================
-// BASE64 -> BLOB
-// ========================================================
-
-function base64ToBlob(
-  base64,
-  mimeType
-) {
-
-  const binary =
-    atob(base64);
-
-  const length =
-    binary.length;
-
-  const bytes =
-    new Uint8Array(
-      length
+    setVoiceStatus(
+        "🔄 Conectando à DeepL Voice..."
     );
 
+    setDebug(
+        "Enviando pedido para o servidor..."
+    );
 
-  for (
-    let i = 0;
-    i < length;
-    i++
-  ) {
-
-    bytes[i] =
-      binary.charCodeAt(i);
-
-  }
-
-
-  return new Blob(
-    [bytes],
-    {
-      type:
-        mimeType ||
-        "audio/webm"
-    }
-  );
-
-}
-
-
-// ========================================================
-// FILA DE ÁUDIO
-// ========================================================
-
-function queueDeepLAudio(
-  media
-) {
-
-  if (!audioEnabled) {
-
-    return;
-
-  }
-
-
-  const mimeType =
-    media.content_type ||
-    "audio/webm;codecs=opus";
-
-
-  for (
-    const item of media.data
-  ) {
 
     try {
 
-      const blob =
-        base64ToBlob(
-          item,
-          mimeType
+        /*
+        ---------------------------------------------
+        1. Criar live no backend
+        ---------------------------------------------
+        */
+
+        const liveResponse =
+            await fetch(
+                BACKEND + "/api/youtube-live",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        url: url,
+                        targetLang: targetLang
+                    })
+                }
+            );
+
+
+        const liveData =
+            await liveResponse.json();
+
+
+        if (!liveResponse.ok ||
+            !liveData.ok) {
+
+            throw new Error(
+                liveData.error ||
+                "Não foi possível criar a live."
+            );
+        }
+
+
+        liveId =
+            liveData.live_id;
+
+
+        /*
+        ---------------------------------------------
+        2. Mostrar YouTube
+        ---------------------------------------------
+        */
+
+        showYouTube(url);
+
+
+        /*
+        ---------------------------------------------
+        3. Criar sessão oficial DeepL Voice
+        ---------------------------------------------
+        */
+
+        setDebug(
+            "Live criada. Criando sessão DeepL Voice..."
         );
 
 
-      audioQueue.push(
-        blob
-      );
+        const deeplResponse =
+            await fetch(
+                BACKEND + "/api/deepl/voice-session",
+                {
+                    method: "POST",
 
-    } catch (error) {
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
 
-      console.error(
-        "Erro criando áudio:",
-        error
-      );
+                    body: JSON.stringify({
+                        targetLang: targetLang
+                    })
+                }
+            );
 
-    }
 
-  }
+        const deeplData =
+            await deeplResponse.json();
 
 
-  playNextDeepLAudio();
+        if (!deeplResponse.ok ||
+            !deeplData.ok) {
 
-}
+            let message =
+                deeplData.error ||
+                "A DeepL não conseguiu criar a sessão.";
 
+            if (deeplData.deepl_response) {
 
-// ========================================================
-// REPRODUZIR FILA
-// ========================================================
+                message +=
+                    " | " +
+                    JSON.stringify(
+                        deeplData.deepl_response
+                    );
+            }
 
-async function playNextDeepLAudio() {
+            throw new Error(message);
+        }
 
-  if (
-    playingAudio ||
-    !audioQueue.length ||
-    !audioEnabled
-  ) {
 
-    return;
+        /*
+        ---------------------------------------------
+        4. Abrir WebSocket DeepL
+        ---------------------------------------------
+        */
 
-  }
-
-
-  playingAudio =
-    true;
-
-
-  const blob =
-    audioQueue.shift();
-
-
-  const url =
-    URL.createObjectURL(
-      blob
-    );
-
-
-  try {
-
-    const audio =
-      new Audio(
-        url
-      );
-
-
-    audio.volume =
-      1;
-
-
-    await audio.play();
-
-
-    await new Promise(
-      resolve => {
-
-        audio.onended =
-          resolve;
-
-        audio.onerror =
-          resolve;
-
-      }
-    );
-
-
-  } catch (error) {
-
-    console.error(
-      "Erro reproduzindo DeepL:",
-      error
-    );
-
-  }
-
-
-  URL.revokeObjectURL(
-    url
-  );
-
-
-  playingAudio =
-    false;
-
-
-  playNextDeepLAudio();
-
-}
-
-
-// ========================================================
-// GRAVAÇÃO
-// ========================================================
-
-function startRecording() {
-
-  if (!mediaStream) {
-
-    return;
-
-  }
-
-
-  const audioTracks =
-    mediaStream.getAudioTracks();
-
-
-  const audioOnlyStream =
-    new MediaStream(
-      audioTracks
-    );
-
-
-  let options = {};
-
-
-  if (
-    MediaRecorder.isTypeSupported(
-      "audio/webm;codecs=opus"
-    )
-  ) {
-
-    options.mimeType =
-      "audio/webm;codecs=opus";
-
-  } else if (
-    MediaRecorder.isTypeSupported(
-      "audio/webm"
-    )
-  ) {
-
-    options.mimeType =
-      "audio/webm";
-
-  }
-
-
-  try {
-
-    mediaRecorder =
-      new MediaRecorder(
-        audioOnlyStream,
-        options
-      );
-
-  } catch (error) {
-
-    console.error(
-      error
-    );
-
-    showMessage(
-      "❌ Seu navegador não conseguiu iniciar a gravação de áudio."
-    );
-
-    return;
-
-  }
-
-
-  audioChunks = [];
-
-
-  mediaRecorder.ondataavailable =
-    event => {
-
-      if (
-        event.data &&
-        event.data.size > 0
-      ) {
-
-        audioChunks.push(
-          event.data
+        await connectDeepL(
+            deeplData.streaming_url,
+            deeplData.token
         );
 
 
         /*
-         * Envio REAL para DeepL.
-         *
-         * O navegador entrega pequenos
-         * blocos WebM/Opus.
-         */
+        ---------------------------------------------
+        5. Atualizar interface
+        ---------------------------------------------
+        */
 
-        sendAudioChunkToDeepL(
-          event.data
+        setStatus(
+            "🟢 Tradução iniciada."
         );
 
-      }
+        setVoiceStatus(
+            "🟢 DeepL Voice conectado. Agora capture o áudio."
+        );
 
-    };
-
-
-  mediaRecorder.onerror =
-    event => {
-
-      console.error(
-        "MediaRecorder:",
-        event.error
-      );
-
-    };
+        setDebug(
+            "DeepL conectada. Toque em Capturar áudio."
+        );
 
 
-  mediaRecorder.start(
-    250
-  );
+        captureBtn.disabled = false;
+
+        audioBtn.disabled = false;
+
+        stopBtn.disabled = false;
+
+        startBtn.disabled = true;
 
 
-  showMessage(
-    "🎙️ Capturando áudio da YouTube Live e enviando ao DeepL..."
-  );
+    } catch (error) {
 
+        console.error(error);
+
+        setStatus(
+            "❌ " + error.message,
+            true
+        );
+
+        setVoiceStatus(
+            "🔴 DeepL Voice não conectou."
+        );
+
+        setDebug(
+            "ERRO: " + error.message
+        );
+
+        startBtn.disabled = false;
+
+        captureBtn.disabled = true;
+
+        audioBtn.disabled = true;
+
+        stopBtn.disabled = true;
+
+        liveId = null;
+    }
 }
 
 
-// ========================================================
-// ENVIAR BLOCO AO DEEPL
-// ========================================================
+/*
+=========================================================
+DEEP L WEBSOCKET
+=========================================================
+*/
 
-async function sendAudioChunkToDeepL(
-  blob
+function connectDeepL(
+    streamingUrl,
+    token
 ) {
 
-  if (
-    !deeplSocket ||
-    deeplSocket.readyState !==
-      WebSocket.OPEN
-  ) {
+    return new Promise(
+        (resolve, reject) => {
 
-    return;
-
-  }
+            let resolved = false;
 
 
-  try {
-
-    const arrayBuffer =
-      await blob.arrayBuffer();
-
-
-    const bytes =
-      new Uint8Array(
-        arrayBuffer
-      );
+            const separator =
+                streamingUrl.includes("?")
+                    ? "&"
+                    : "?";
 
 
-    const base64 =
-      uint8ArrayToBase64(
-        bytes
-      );
+            const wsUrl =
+                streamingUrl +
+                separator +
+                "token=" +
+                encodeURIComponent(token);
 
 
-    deeplSocket.send(
-      JSON.stringify({
+            setDebug(
+                "Abrindo conexão segura com DeepL..."
+            );
 
-        source_media_chunk: {
 
-          data:
-            base64
+            socket =
+                new WebSocket(wsUrl);
+
+
+            socket.onopen = () => {
+
+                console.log(
+                    "DeepL WebSocket conectado"
+                );
+
+
+                deeplConnected = true;
+
+
+                setVoiceStatus(
+                    "🟢 DeepL Voice conectado."
+                );
+
+
+                setDebug(
+                    "WebSocket DeepL conectado com sucesso."
+                );
+
+
+                if (!resolved) {
+
+                    resolved = true;
+
+                    resolve();
+                }
+            };
+
+
+            socket.onmessage =
+                async (event) => {
+
+                    try {
+
+                        const data =
+                            JSON.parse(event.data);
+
+                        await handleDeepLMessage(
+                            data
+                        );
+
+                    } catch (error) {
+
+                        console.error(
+                            "Mensagem DeepL inválida:",
+                            error
+                        );
+
+                    }
+
+                };
+
+
+            socket.onerror =
+                (event) => {
+
+                    console.error(
+                        "DeepL WebSocket error",
+                        event
+                    );
+
+
+                    if (!resolved) {
+
+                        resolved = true;
+
+                        reject(
+                            new Error(
+                                "Falha ao conectar ao WebSocket da DeepL."
+                            )
+                        );
+
+                    }
+
+                    setVoiceStatus(
+                        "🔴 Erro na conexão DeepL Voice."
+                    );
+                };
+
+
+            socket.onclose =
+                (event) => {
+
+                    console.log(
+                        "DeepL fechado:",
+                        event.code,
+                        event.reason
+                    );
+
+
+                    deeplConnected = false;
+
+
+                    if (
+                        !stopping &&
+                        resolved
+                    ) {
+
+                        setVoiceStatus(
+                            "🟠 Conexão DeepL encerrada."
+                        );
+
+                        setDebug(
+                            "A conexão com a DeepL foi encerrada."
+                        );
+                    }
+                };
 
         }
+    );
+}
 
-      })
+
+/*
+=========================================================
+RECEBER MENSAGENS DEEP L
+=========================================================
+*/
+
+async function handleDeepLMessage(data) {
+
+    console.log(
+        "DeepL:",
+        data
     );
 
 
-  } catch (error) {
+    /*
+    ---------------------------------------------
+    ERRO
+    ---------------------------------------------
+    */
 
-    console.error(
-      "Envio DeepL:",
-      error
-    );
+    if (data.error) {
 
-  }
+        const errorMessage =
+            data.error.error_message ||
+            "Erro desconhecido da DeepL.";
+
+        setVoiceStatus(
+            "🔴 " + errorMessage
+        );
+
+        setDebug(
+            "DeepL: " + errorMessage
+        );
+
+        return;
+    }
+
+
+    /*
+    ---------------------------------------------
+    TRANSCRIÇÃO ORIGINAL
+    ---------------------------------------------
+    */
+
+    if (data.source_transcript_update) {
+
+        const update =
+            data.source_transcript_update;
+
+
+        const concluded =
+            update.concluded || [];
+
+
+        if (concluded.length) {
+
+            const text =
+                concluded
+                    .map(item => item.text || "")
+                    .join("");
+
+
+            if (text.trim()) {
+
+                sourceText.textContent =
+                    "Original: " +
+                    text;
+            }
+        }
+    }
+
+
+    /*
+    ---------------------------------------------
+    TRADUÇÃO
+    ---------------------------------------------
+    */
+
+    if (data.target_transcript_update) {
+
+        const update =
+            data.target_transcript_update;
+
+
+        const concluded =
+            update.concluded || [];
+
+
+        const tentative =
+            update.tentative || [];
+
+
+        const finalText =
+            concluded
+                .map(item => item.text || "")
+                .join("");
+
+
+        const temporaryText =
+            tentative
+                .map(item => item.text || "")
+                .join("");
+
+
+        if (
+            finalText.trim() ||
+            temporaryText.trim()
+        ) {
+
+            targetText.textContent =
+                finalText +
+                temporaryText;
+        }
+    }
+
+
+    /*
+    ---------------------------------------------
+    VOZ TRADUZIDA
+    ---------------------------------------------
+    */
+
+    if (data.target_media_chunk) {
+
+        await playDeepLMedia(
+            data.target_media_chunk
+        );
+    }
+
+
+    /*
+    ---------------------------------------------
+    FIM
+    ---------------------------------------------
+    */
+
+    if (data.end_of_stream) {
+
+        setVoiceStatus(
+            "🟢 DeepL terminou este trecho."
+        );
+    }
 
 }
 
 
-// ========================================================
-// UINT8ARRAY -> BASE64
-// ========================================================
+/*
+=========================================================
+MEDIA SOURCE
+=========================================================
+*/
 
-function uint8ArrayToBase64(
-  bytes
-) {
+let mediaSource = null;
+let sourceBuffer = null;
 
-  let binary =
-    "";
-
-
-  const chunkSize =
-    0x8000;
+let audioQueue = [];
+let audioPlaying = false;
 
 
-  for (
-    let i = 0;
-    i < bytes.length;
-    i += chunkSize
-  ) {
+/*
+Inicializa MediaSource para tocar
+os fragmentos WebM/Opus enviados pela DeepL.
+*/
 
-    const chunk =
-      bytes.subarray(
-        i,
-        Math.min(
-          i + chunkSize,
-          bytes.length
-        )
-      );
+function initializeAudioPlayer() {
 
+    if (!("MediaSource" in window)) {
 
-    binary +=
-      String.fromCharCode(
-        ...chunk
-      );
+        setDebug(
+            "Este navegador não suporta MediaSource."
+        );
 
-  }
+        return false;
+    }
 
 
-  return btoa(
-    binary
-  );
+    mediaSource =
+        new MediaSource();
 
+
+    audio.src =
+        URL.createObjectURL(
+            mediaSource
+        );
+
+
+    mediaSource.addEventListener(
+        "sourceopen",
+        () => {
+
+            try {
+
+                sourceBuffer =
+                    mediaSource.addSourceBuffer(
+                        'audio/webm; codecs="opus"'
+                    );
+
+
+                sourceBuffer.mode =
+                    "sequence";
+
+
+                sourceBuffer.addEventListener(
+                    "updateend",
+                    () => {
+
+                        processAudioQueue();
+
+                    }
+                );
+
+
+                processAudioQueue();
+
+            } catch (error) {
+
+                console.error(
+                    "Erro MediaSource:",
+                    error
+                );
+
+                setDebug(
+                    "Erro no player de voz: " +
+                    error.message
+                );
+            }
+
+        }
+    );
+
+
+    return true;
 }
 
 
-// ========================================================
-// ÁUDIO
-// ========================================================
+/*
+=========================================================
+TOCAR ÁUDIO DEEP L
+=========================================================
+*/
+
+async function playDeepLMedia(chunk) {
+
+    if (!chunk ||
+        !chunk.data ||
+        !chunk.data.length) {
+
+        return;
+    }
+
+
+    /*
+    A DeepL manda data como array
+    de pedaços base64.
+    */
+
+    for (const base64 of chunk.data) {
+
+        try {
+
+            const binary =
+                atob(base64);
+
+            const bytes =
+                new Uint8Array(
+                    binary.length
+                );
+
+
+            for (
+                let i = 0;
+                i < binary.length;
+                i++
+            ) {
+
+                bytes[i] =
+                    binary.charCodeAt(i);
+            }
+
+
+            audioQueue.push(bytes);
+
+        } catch (error) {
+
+            console.error(
+                "Erro decodificando áudio:",
+                error
+            );
+        }
+    }
+
+
+    if (!mediaSource) {
+
+        initializeAudioPlayer();
+    }
+
+
+    processAudioQueue();
+
+
+    if (
+        chunk.text &&
+        chunk.text.trim()
+    ) {
+
+        targetText.textContent =
+            chunk.text;
+    }
+
+
+    setVoiceStatus(
+        "🔊 Recebendo voz traduzida..."
+    );
+}
+
+
+/*
+=========================================================
+FILA DE ÁUDIO
+=========================================================
+*/
+
+function processAudioQueue() {
+
+    if (!sourceBuffer ||
+        sourceBuffer.updating ||
+        !audioQueue.length) {
+
+        return;
+    }
+
+
+    if (
+        mediaSource &&
+        mediaSource.readyState !== "open"
+    ) {
+
+        return;
+    }
+
+
+    try {
+
+        const chunk =
+            audioQueue.shift();
+
+        sourceBuffer.appendBuffer(
+            chunk
+        );
+
+    } catch (error) {
+
+        console.error(
+            "Erro append áudio:",
+            error
+        );
+
+
+        /*
+        Se o buffer ficar cheio,
+        removemos uma parte antiga.
+        */
+
+        try {
+
+            if (
+                sourceBuffer.buffered.length
+            ) {
+
+                const end =
+                    sourceBuffer.buffered.end(
+                        sourceBuffer.buffered.length - 1
+                    );
+
+                const start =
+                    sourceBuffer.buffered.start(0);
+
+
+                if (
+                    end - start > 30
+                ) {
+
+                    sourceBuffer.remove(
+                        start,
+                        end - 15
+                    );
+                }
+            }
+
+        } catch (e) {}
+
+    }
+}
+
+
+/*
+=========================================================
+CAPTURAR ÁUDIO DA TELA/ABA
+=========================================================
+*/
+
+async function captureAudio() {
+
+    if (!deeplConnected ||
+        !socket ||
+        socket.readyState !== WebSocket.OPEN
+    ) {
+
+        setStatus(
+            "Primeiro conecte a DeepL.",
+            true
+        );
+
+        return;
+    }
+
+
+    try {
+
+        setDebug(
+            "Solicitando captura de tela/aba com áudio..."
+        );
+
+
+        mediaStream =
+            await navigator.mediaDevices.getDisplayMedia({
+
+                video: true,
+
+                audio: true
+            });
+
+
+        const audioTracks =
+            mediaStream.getAudioTracks();
+
+
+        if (!audioTracks.length) {
+
+            mediaStream
+                .getTracks()
+                .forEach(
+                    track => track.stop()
+                );
+
+
+            throw new Error(
+                "Nenhuma faixa de áudio foi compartilhada. Ao escolher a aba, marque a opção de compartilhar áudio."
+            );
+        }
+
+
+        const audioOnlyStream =
+            new MediaStream(
+                audioTracks
+            );
+
+
+        /*
+        ---------------------------------------------
+        Verificar codec
+        ---------------------------------------------
+        */
+
+        let mimeType =
+            "audio/webm;codecs=opus";
+
+
+        if (
+            !MediaRecorder.isTypeSupported(
+                mimeType
+            )
+        ) {
+
+            if (
+                MediaRecorder.isTypeSupported(
+                    "audio/webm"
+                )
+            ) {
+
+                mimeType =
+                    "audio/webm";
+
+            } else {
+
+                throw new Error(
+                    "Este navegador não suporta áudio WebM/Opus."
+                );
+            }
+        }
+
+
+        recorder =
+            new MediaRecorder(
+                audioOnlyStream,
+                {
+                    mimeType: mimeType,
+                    audioBitsPerSecond: 32000
+                }
+            );
+
+
+        recorder.ondataavailable =
+            async (event) => {
+
+                if (
+                    !event.data ||
+                    event.data.size === 0
+                ) {
+
+                    return;
+                }
+
+
+                if (
+                    !socket ||
+                    socket.readyState !== WebSocket.OPEN
+                ) {
+
+                    return;
+                }
+
+
+                try {
+
+                    const buffer =
+                        await event.data.arrayBuffer();
+
+
+                    const bytes =
+                        new Uint8Array(
+                            buffer
+                        );
+
+
+                    const binary =
+                        Array.from(
+                            bytes,
+                            byte =>
+                                String.fromCharCode(byte)
+                        ).join("");
+
+
+                    const base64 =
+                        btoa(binary);
+
+
+                    /*
+                    DeepL exige:
+                    source_media_chunk
+                    */
+
+                    socket.send(
+                        JSON.stringify({
+
+                            source_media_chunk: {
+                                data: base64
+                            }
+
+                        })
+                    );
+
+
+                } catch (error) {
+
+                    console.error(
+                        "Erro enviando áudio:",
+                        error
+                    );
+
+                }
+
+            };
+
+
+        recorder.onerror =
+            (event) => {
+
+                console.error(
+                    "MediaRecorder:",
+                    event
+                );
+
+                setDebug(
+                    "Erro na captura de áudio."
+                );
+            };
+
+
+        recorder.start(200);
+
+
+        /*
+        Se o usuário parar a captura
+        pelo navegador.
+        */
+
+        mediaStream
+            .getVideoTracks()
+            .forEach(
+                track => {
+
+                    track.onended =
+                        () => {
+
+                            stopRecordingOnly();
+
+                        };
+
+                }
+            );
+
+
+        captureBtn.disabled = true;
+
+        stopBtn.disabled = false;
+
+        setStatus(
+            "🎙 Capturando áudio em tempo real..."
+        );
+
+        setVoiceStatus(
+            "🟢 DeepL recebendo áudio..."
+        );
+
+        setDebug(
+            "Áudio sendo enviado para a DeepL."
+        );
+
+
+    } catch (error) {
+
+        console.error(error);
+
+        setStatus(
+            "❌ " + error.message,
+            true
+        );
+
+        setDebug(
+            "Erro na captura: " +
+            error.message
+        );
+    }
+}
+
+
+/*
+=========================================================
+ATIVAR ÁUDIO
+=========================================================
+*/
 
 async function enableAudio() {
 
-  audioEnabled =
-    true;
+    audioEnabled = true;
 
-
-  audioButton.textContent =
-    "🔊 Áudio ativado";
-
-
-  audioButton.disabled =
-    true;
-
-
-  showMessage(
-    "🔊 Áudio da tradução ativado."
-  );
-
-
-  showVoiceStatus(
-    "🟢 O SI está pronto para reproduzir a voz traduzida."
-  );
-
-
-  /*
-   * Desbloqueio de áudio do navegador.
-   */
-
-  try {
-
-    if (
-      !audioContext
-    ) {
-
-      audioContext =
-        new (
-          window.AudioContext ||
-          window.webkitAudioContext
-        )();
-
-    }
-
-
-    if (
-      audioContext.state ===
-      "suspended"
-    ) {
-
-      await audioContext.resume();
-
-    }
-
-  } catch (error) {
-
-    console.log(
-      "AudioContext:",
-      error
-    );
-
-  }
-
-
-  playNextDeepLAudio();
-
-}
-
-
-// ========================================================
-// STATUS
-// ========================================================
-
-function startStatusPolling() {
-
-  if (statusTimer) {
-
-    clearInterval(
-      statusTimer
-    );
-
-  }
-
-
-  statusTimer =
-    setInterval(
-      checkLiveStatus,
-      2500
-    );
-
-
-  checkLiveStatus();
-
-}
-
-
-async function checkLiveStatus() {
-
-  if (!liveId) {
-
-    return;
-
-  }
-
-
-  try {
-
-    const response =
-      await fetch(
-        BACKEND_URL +
-        "/api/youtube-live/" +
-        encodeURIComponent(
-          liveId
-        )
-      );
-
-
-    const data =
-      await response.json();
-
-
-    if (!data.ok) {
-
-      return;
-
-    }
-
-
-    if (
-      data.lastTranslation
-    ) {
-
-      translation.textContent =
-        data.lastTranslation;
-
-    }
-
-
-    if (
-      data.error
-    ) {
-
-      showMessage(
-        "⚠️ " +
-        data.error
-      );
-
-    }
-
-  } catch (error) {
-
-    console.log(
-      "Status:",
-      error
-    );
-
-  }
-
-}
-
-
-// ========================================================
-// PARAR
-// ========================================================
-
-async function stopLive() {
-
-  if (mediaRecorder) {
 
     try {
 
-      if (
-        mediaRecorder.state ===
-        "recording"
-      ) {
+        await audio.play();
 
-        mediaRecorder.stop();
-
-      }
-
-    } catch (_) {}
-
-  }
-
-
-  if (deeplSocket) {
-
-    try {
-
-      if (
-        deeplSocket.readyState ===
-        WebSocket.OPEN
-      ) {
-
-        deeplSocket.send(
-          JSON.stringify({
-
-            end_of_source_media: {}
-
-          })
+        setVoiceStatus(
+            "🔊 Áudio ativado."
         );
 
-      }
+    } catch (error) {
 
-    } catch (_) {}
+        setVoiceStatus(
+            "🔊 Toque novamente para ativar o áudio."
+        );
+    }
+}
+
+
+/*
+=========================================================
+PARAR SOMENTE GRAVAÇÃO
+=========================================================
+*/
+
+function stopRecordingOnly() {
+
+    try {
+
+        if (recorder &&
+            recorder.state !== "inactive"
+        ) {
+
+            recorder.stop();
+        }
+
+    } catch (e) {}
+
+
+    if (mediaStream) {
+
+        mediaStream
+            .getTracks()
+            .forEach(
+                track => track.stop()
+            );
+
+        mediaStream = null;
+    }
+
+
+    captureBtn.disabled = false;
+}
+
+
+/*
+=========================================================
+PARAR TUDO
+=========================================================
+*/
+
+async function stopTranslation() {
+
+    stopping = true;
 
 
     try {
 
-      deeplSocket.close();
+        stopRecordingOnly();
 
-    } catch (_) {}
-
-    deeplSocket =
-      null;
-
-  }
+    } catch (e) {}
 
 
-  if (mediaStream) {
+    /*
+    Finaliza o fluxo DeepL.
+    */
 
-    mediaStream
-      .getTracks()
-      .forEach(
-        track => track.stop()
-      );
+    try {
 
-    mediaStream =
-      null;
+        if (
+            socket &&
+            socket.readyState === WebSocket.OPEN
+        ) {
 
-  }
+            socket.send(
+                JSON.stringify({
+                    end_of_source_media: {}
+                })
+            );
+
+        }
+
+    } catch (e) {}
 
 
-  if (statusTimer) {
-
-    clearInterval(
-      statusTimer
+    setVoiceStatus(
+        "⏳ Finalizando tradução..."
     );
 
-    statusTimer =
-      null;
 
-  }
+    setStatus(
+        "Live parada."
+    );
 
 
-  if (liveId) {
+    setDebug(
+        "Tradução encerrada."
+    );
+
+
+    if (liveId) {
+
+        try {
+
+            await fetch(
+                BACKEND +
+                "/api/youtube-live/" +
+                encodeURIComponent(liveId) +
+                "/stop",
+                {
+                    method: "POST"
+                }
+            );
+
+        } catch (e) {}
+
+    }
+
+
+    setTimeout(
+        () => {
+
+            try {
+
+                if (socket) {
+                    socket.close();
+                }
+
+            } catch (e) {}
+
+
+            socket = null;
+
+            deeplConnected = false;
+
+            liveId = null;
+
+            startBtn.disabled = false;
+
+            captureBtn.disabled = true;
+
+            audioBtn.disabled = true;
+
+            stopBtn.disabled = true;
+
+            stopping = false;
+
+
+            setVoiceStatus(
+                "🔊 DeepL Voice aguardando conexão."
+            );
+
+        },
+        500
+    );
+}
+
+
+/*
+=========================================================
+TESTAR BACKEND
+=========================================================
+*/
+
+async function checkServer() {
 
     try {
 
-      await fetch(
-        BACKEND_URL +
-        "/api/youtube-live/" +
-        encodeURIComponent(
-          liveId
-        ) +
-        "/stop",
-        {
-          method:
-            "POST"
+        const response =
+            await fetch(
+                BACKEND + "/api/health",
+                {
+                    cache: "no-store"
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if (data.ok) {
+
+            setStatus(
+                "🟢 Servidor conectado"
+            );
+
+            console.log(
+                "Backend:",
+                data
+            );
+
+        } else {
+
+            setStatus(
+                "⚠️ Servidor respondeu com problema.",
+                true
+            );
         }
-      );
-
-    } catch (_) {}
-
-  }
 
 
-  liveId =
-    null;
+    } catch (error) {
 
+        setStatus(
+            "🔴 Não foi possível conectar ao servidor.",
+            true
+        );
 
-  deeplSession =
-    null;
-
-
-  audioQueue =
-    [];
-
-
-  playingAudio =
-    false;
-
-
-  resetInterface();
-
+        setDebug(
+            "Backend: " +
+            error.message
+        );
+    }
 }
 
 
-// ========================================================
-// RESET
-// ========================================================
+/*
+=========================================================
+INICIAR PLAYER
+=========================================================
+*/
 
-function resetInterface() {
-
-  startButton.disabled =
-    false;
-
-  captureButton.disabled =
-    true;
-
-  audioButton.disabled =
-    true;
-
-  stopButton.disabled =
-    true;
+initializeAudioPlayer();
 
 
-  audioButton.textContent =
-    "🔊 Ativar áudio";
-
-
-  audioEnabled =
-    false;
-
-
-  mediaRecorder =
-    null;
-
-
-  audioChunks =
-    [];
-
-
-  translation.textContent =
-    "A tradução aparecerá aqui...";
-
-
-  showVoiceStatus(
-    "🔊 DeepL Voice aguardando conexão."
-  );
-
-
-  showMessage(
-    "Live parada."
-  );
-
-}
-
-
-// ========================================================
-// INICIALIZAÇÃO
-// ========================================================
+/*
+=========================================================
+TESTAR SERVIDOR AO ABRIR
+=========================================================
+*/
 
 checkServer();
 
