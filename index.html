@@ -9,7 +9,7 @@
 
 <meta
   name="description"
-  content="SI Tradutor Live — captura o áudio da transmissão e envia para tradução com voz IA."
+  content="SI Tradutor Live — captura o áudio da transmissão e traduz em tempo real com DeepL Voice."
 >
 
 <style>
@@ -224,6 +224,15 @@ button:disabled {
   line-height: 1.5;
 }
 
+.voice-status {
+  margin-top: 15px;
+  padding: 12px;
+  background: rgba(34,197,94,.10);
+  border: 1px solid rgba(34,197,94,.20);
+  border-radius: 10px;
+  color: #bbf7d0;
+}
+
 footer {
   text-align: center;
   color: #64748b;
@@ -268,7 +277,7 @@ footer {
 </div>
 
 <div class="subtitle">
-YouTube Live → Áudio → Tradução → ElevenLabs
+YouTube Live → Áudio → DeepL Voice → Voz traduzida
 </div>
 
 </header>
@@ -400,6 +409,14 @@ Cole o link da YouTube Live para começar.
 </div>
 
 
+<div
+  id="voiceStatus"
+  class="voice-status"
+>
+🔊 DeepL Voice aguardando conexão.
+</div>
+
+
 <div class="info">
 
 <strong>Como funciona:</strong><br><br>
@@ -408,7 +425,8 @@ Cole o link da YouTube Live para começar.
 2. Clique em <strong>Iniciar tradução</strong>.<br>
 3. Clique em <strong>Capturar áudio</strong>.<br>
 4. Na janela do navegador, escolha a aba do YouTube e marque o áudio.<br>
-5. O áudio será enviado ao servidor para processamento.
+5. O SI envia os blocos de áudio ao DeepL Voice em tempo real.<br>
+6. O DeepL devolve a tradução e a voz traduzida.
 
 </div>
 
@@ -448,7 +466,7 @@ O vídeo da live aparecerá aqui.
 <div class="translation">
 
 <div class="translation-title">
-📝 Tradução
+📝 Tradução em tempo real
 </div>
 
 <div id="translation">
@@ -461,7 +479,7 @@ A tradução aparecerá aqui...
 
 
 <footer>
-SI Tradutor Live • Powered by ElevenLabs
+SI Tradutor Live • Powered by DeepL Voice
 </footer>
 
 </div>
@@ -489,7 +507,15 @@ let audioChunks = [];
 
 let audioEnabled = false;
 
-let audioPlayer = null;
+let deeplSocket = null;
+
+let deeplSession = null;
+
+let audioQueue = [];
+
+let playingAudio = false;
+
+let audioContext = null;
 
 
 // ========================================================
@@ -529,6 +555,9 @@ const connection =
 const statusDot =
   document.getElementById("statusDot");
 
+const voiceStatus =
+  document.getElementById("voiceStatus");
+
 
 // ========================================================
 // MENSAGEM
@@ -537,6 +566,18 @@ const statusDot =
 function showMessage(text) {
 
   message.textContent =
+    text || "";
+
+}
+
+
+// ========================================================
+// STATUS DA VOZ
+// ========================================================
+
+function showVoiceStatus(text) {
+
+  voiceStatus.textContent =
     text || "";
 
 }
@@ -769,7 +810,7 @@ async function startLive() {
 
 
     showMessage(
-      "🟢 Live criada. Clique em 'Capturar áudio' para compartilhar o áudio da aba."
+      "🟢 Live criada. Clique em 'Capturar áudio'."
     );
 
 
@@ -791,7 +832,7 @@ async function startLive() {
 
 
 // ========================================================
-// CAPTURA DE ÁUDIO DO NAVEGADOR
+// CAPTURA DO ÁUDIO DO NAVEGADOR
 // ========================================================
 
 async function startBrowserCapture() {
@@ -804,7 +845,7 @@ async function startBrowserCapture() {
     ) {
 
       showMessage(
-        "❌ Este navegador não oferece captura de áudio da tela/aba. Tente usar o Google Chrome atualizado."
+        "❌ Seu navegador não oferece captura de áudio da aba. Use o Google Chrome atualizado."
       );
 
       return;
@@ -812,7 +853,7 @@ async function startBrowserCapture() {
 
 
     showMessage(
-      "🎙️ Escolha a aba do YouTube e ative o compartilhamento de áudio."
+      "🎙️ Escolha a aba do YouTube e marque 'Compartilhar áudio'."
     );
 
 
@@ -836,7 +877,7 @@ async function startBrowserCapture() {
     ) {
 
       showMessage(
-        "❌ Nenhum áudio foi compartilhado. Ao escolher a aba do YouTube, marque a opção de compartilhar áudio."
+        "❌ Nenhum áudio foi compartilhado. Escolha a aba do YouTube e marque o áudio."
       );
 
       mediaStream
@@ -853,7 +894,7 @@ async function startBrowserCapture() {
 
 
     showMessage(
-      "🟢 Áudio da aba capturado. Enviando para o servidor..."
+      "🟢 Áudio da aba capturado."
     );
 
 
@@ -861,6 +902,11 @@ async function startBrowserCapture() {
       true;
 
 
+    // Primeiro cria a sessão DeepL.
+    await createDeepLSession();
+
+
+    // Depois começa a captura.
     startRecording();
 
 
@@ -873,10 +919,597 @@ async function startBrowserCapture() {
 
 
     showMessage(
-      "❌ Captura cancelada ou bloqueada pelo navegador."
+      "❌ " +
+      (
+        error.message ||
+        "Captura cancelada."
+      )
     );
 
   }
+
+}
+
+
+// ========================================================
+// CRIAR SESSÃO DEEPL VOICE
+// ========================================================
+
+async function createDeepLSession() {
+
+  showVoiceStatus(
+    "🟡 Criando sessão DeepL Voice..."
+  );
+
+
+  try {
+
+    const response =
+      await fetch(
+        BACKEND_URL +
+        "/api/deepl/voice-session",
+        {
+
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json"
+          },
+
+          body: JSON.stringify({
+
+            targetLang:
+              targetLang.value,
+
+            sourceMediaContentType:
+              "audio/webm;codecs=opus",
+
+            targetMediaContentType:
+              "audio/webm;codecs=opus"
+
+          })
+
+        }
+      );
+
+
+    const data =
+      await response.json();
+
+
+    if (
+      !response.ok ||
+      !data.ok
+    ) {
+
+      throw new Error(
+        data.error ||
+        data.message ||
+        "Não foi possível criar a sessão DeepL."
+      );
+
+    }
+
+
+    deeplSession =
+      data;
+
+
+    if (
+      !data.streaming_url
+    ) {
+
+      throw new Error(
+        "O servidor não retornou a URL WebSocket do DeepL."
+      );
+
+    }
+
+
+    let wsUrl =
+      data.streaming_url;
+
+
+    /*
+     * O token é temporário e de uso único.
+     * Se o backend já devolveu a URL completa,
+     * não adicionamos novamente.
+     */
+
+    if (
+      data.token &&
+      !wsUrl.includes("token=")
+    ) {
+
+      const separator =
+        wsUrl.includes("?")
+          ? "&"
+          : "?";
+
+      wsUrl =
+        wsUrl +
+        separator +
+        "token=" +
+        encodeURIComponent(
+          data.token
+        );
+
+    }
+
+
+    showVoiceStatus(
+      "🟡 Conectando ao DeepL Voice..."
+    );
+
+
+    await connectDeepLSocket(
+      wsUrl
+    );
+
+
+  } catch (error) {
+
+    showVoiceStatus(
+      "🔴 Erro DeepL Voice: " +
+      error.message
+    );
+
+    throw error;
+
+  }
+
+}
+
+
+// ========================================================
+// WEBSOCKET DEEPL
+// ========================================================
+
+function connectDeepLSocket(
+  wsUrl
+) {
+
+  return new Promise(
+    (resolve, reject) => {
+
+      try {
+
+        deeplSocket =
+          new WebSocket(
+            wsUrl
+          );
+
+
+        deeplSocket.onopen =
+          () => {
+
+            console.log(
+              "DeepL WebSocket conectado."
+            );
+
+
+            showVoiceStatus(
+              "🟢 DeepL Voice conectado — tradução em tempo real."
+            );
+
+
+            showMessage(
+              "🟢 Áudio sendo enviado ao DeepL Voice..."
+            );
+
+
+            resolve();
+
+          };
+
+
+        deeplSocket.onmessage =
+          event => {
+
+            handleDeepLMessage(
+              event.data
+            );
+
+          };
+
+
+        deeplSocket.onerror =
+          error => {
+
+            console.error(
+              "DeepL WebSocket:",
+              error
+            );
+
+
+            showVoiceStatus(
+              "🔴 Erro na conexão DeepL Voice."
+            );
+
+          };
+
+
+        deeplSocket.onclose =
+          event => {
+
+            console.log(
+              "DeepL WebSocket fechado:",
+              event.code,
+              event.reason
+            );
+
+
+            if (
+              deeplSocket
+            ) {
+
+              showVoiceStatus(
+                "⚠️ Conexão DeepL Voice encerrada."
+              );
+
+            }
+
+          };
+
+      } catch (error) {
+
+        reject(
+          error
+        );
+
+      }
+
+    }
+  );
+
+}
+
+
+// ========================================================
+// MENSAGENS RECEBIDAS DO DEEPL
+// ========================================================
+
+function handleDeepLMessage(
+  rawData
+) {
+
+  try {
+
+    if (
+      typeof rawData !==
+      "string"
+    ) {
+
+      console.log(
+        "Mensagem binária DeepL recebida."
+      );
+
+      return;
+
+    }
+
+
+    const data =
+      JSON.parse(
+        rawData
+      );
+
+
+    // ----------------------------------------
+    // TRADUÇÃO
+    // ----------------------------------------
+
+    if (
+      data.target_transcript_update
+    ) {
+
+      const update =
+        data.target_transcript_update;
+
+
+      let text =
+        "";
+
+
+      if (
+        update.concluded &&
+        update.concluded.length
+      ) {
+
+        text +=
+          update.concluded
+            .map(
+              item =>
+                item.text || ""
+            )
+            .join("");
+
+      }
+
+
+      if (
+        update.tentative &&
+        update.tentative.length
+      ) {
+
+        text +=
+          update.tentative
+            .map(
+              item =>
+                item.text || ""
+            )
+            .join("");
+
+      }
+
+
+      if (text.trim()) {
+
+        translation.textContent =
+          text.trim();
+
+      }
+
+    }
+
+
+    // ----------------------------------------
+    // TRANSCRIÇÃO ORIGINAL
+    // ----------------------------------------
+
+    if (
+      data.source_transcript_update
+    ) {
+
+      console.log(
+        "Transcrição original:",
+        data.source_transcript_update
+      );
+
+    }
+
+
+    // ----------------------------------------
+    // ÁUDIO TRADUZIDO
+    // ----------------------------------------
+
+    if (
+      data.target_media_chunk
+    ) {
+
+      const media =
+        data.target_media_chunk;
+
+
+      if (
+        media.data &&
+        media.data.length
+      ) {
+
+        queueDeepLAudio(
+          media
+        );
+
+      }
+
+    }
+
+
+    // ----------------------------------------
+    // ERRO
+    // ----------------------------------------
+
+    if (
+      data.error
+    ) {
+
+      console.error(
+        "DeepL error:",
+        data.error
+      );
+
+
+      showVoiceStatus(
+        "🔴 DeepL: " +
+        (
+          data.error.error_message ||
+          "Erro no processamento."
+        )
+      );
+
+    }
+
+  } catch (error) {
+
+    console.log(
+      "Mensagem DeepL:",
+      rawData
+    );
+
+  }
+
+}
+
+
+// ========================================================
+// BASE64 -> BLOB
+// ========================================================
+
+function base64ToBlob(
+  base64,
+  mimeType
+) {
+
+  const binary =
+    atob(base64);
+
+  const length =
+    binary.length;
+
+  const bytes =
+    new Uint8Array(
+      length
+    );
+
+
+  for (
+    let i = 0;
+    i < length;
+    i++
+  ) {
+
+    bytes[i] =
+      binary.charCodeAt(i);
+
+  }
+
+
+  return new Blob(
+    [bytes],
+    {
+      type:
+        mimeType ||
+        "audio/webm"
+    }
+  );
+
+}
+
+
+// ========================================================
+// FILA DE ÁUDIO
+// ========================================================
+
+function queueDeepLAudio(
+  media
+) {
+
+  if (!audioEnabled) {
+
+    return;
+
+  }
+
+
+  const mimeType =
+    media.content_type ||
+    "audio/webm;codecs=opus";
+
+
+  for (
+    const item of media.data
+  ) {
+
+    try {
+
+      const blob =
+        base64ToBlob(
+          item,
+          mimeType
+        );
+
+
+      audioQueue.push(
+        blob
+      );
+
+    } catch (error) {
+
+      console.error(
+        "Erro criando áudio:",
+        error
+      );
+
+    }
+
+  }
+
+
+  playNextDeepLAudio();
+
+}
+
+
+// ========================================================
+// REPRODUZIR FILA
+// ========================================================
+
+async function playNextDeepLAudio() {
+
+  if (
+    playingAudio ||
+    !audioQueue.length ||
+    !audioEnabled
+  ) {
+
+    return;
+
+  }
+
+
+  playingAudio =
+    true;
+
+
+  const blob =
+    audioQueue.shift();
+
+
+  const url =
+    URL.createObjectURL(
+      blob
+    );
+
+
+  try {
+
+    const audio =
+      new Audio(
+        url
+      );
+
+
+    audio.volume =
+      1;
+
+
+    await audio.play();
+
+
+    await new Promise(
+      resolve => {
+
+        audio.onended =
+          resolve;
+
+        audio.onerror =
+          resolve;
+
+      }
+    );
+
+
+  } catch (error) {
+
+    console.error(
+      "Erro reproduzindo DeepL:",
+      error
+    );
+
+  }
+
+
+  URL.revokeObjectURL(
+    url
+  );
+
+
+  playingAudio =
+    false;
+
+
+  playNextDeepLAudio();
 
 }
 
@@ -888,7 +1521,9 @@ async function startBrowserCapture() {
 function startRecording() {
 
   if (!mediaStream) {
+
     return;
+
   }
 
 
@@ -964,188 +1599,223 @@ function startRecording() {
           event.data
         );
 
+
+        /*
+         * Envio REAL para DeepL.
+         *
+         * O navegador entrega pequenos
+         * blocos WebM/Opus.
+         */
+
+        sendAudioChunkToDeepL(
+          event.data
+        );
+
       }
 
     };
 
 
-  mediaRecorder.onstop =
-    async () => {
+  mediaRecorder.onerror =
+    event => {
 
-      const blob =
-        new Blob(
-          audioChunks,
-          {
-            type:
-              mediaRecorder.mimeType ||
-              "audio/webm"
-          }
-        );
-
-
-      await sendAudioToServer(
-        blob
+      console.error(
+        "MediaRecorder:",
+        event.error
       );
 
     };
 
 
   mediaRecorder.start(
-    5000
+    250
   );
 
 
   showMessage(
-    "🎙️ Capturando áudio da YouTube Live..."
-  );
-
-
-  // Envia pequenos blocos continuamente.
-  setTimeout(
-    stopAndRestartRecording,
-    5000
+    "🎙️ Capturando áudio da YouTube Live e enviando ao DeepL..."
   );
 
 }
 
 
 // ========================================================
-// ENVIAR BLOCO
+// ENVIAR BLOCO AO DEEPL
 // ========================================================
 
-async function stopAndRestartRecording() {
-
-  if (
-    !mediaRecorder ||
-    mediaRecorder.state !== "recording"
-  ) {
-
-    return;
-  }
-
-
-  mediaRecorder.stop();
-
-
-  setTimeout(
-    () => {
-
-      if (
-        mediaStream &&
-        mediaStream.active
-      ) {
-
-        startRecording();
-
-      }
-
-    },
-    300
-  );
-
-}
-
-
-// ========================================================
-// ENVIO DO ÁUDIO
-// ========================================================
-
-async function sendAudioToServer(
+async function sendAudioChunkToDeepL(
   blob
 ) {
 
-  if (!liveId) {
+  if (
+    !deeplSocket ||
+    deeplSocket.readyState !==
+      WebSocket.OPEN
+  ) {
+
     return;
+
   }
 
 
   try {
 
-    const formData =
-      new FormData();
+    const arrayBuffer =
+      await blob.arrayBuffer();
 
 
-    formData.append(
-      "audio",
-      blob,
-      "live-audio.webm"
-    );
+    const bytes =
+      new Uint8Array(
+        arrayBuffer
+      );
 
 
-    formData.append(
-      "liveId",
-      liveId
-    );
+    const base64 =
+      uint8ArrayToBase64(
+        bytes
+      );
 
 
-    formData.append(
-      "targetLang",
-      targetLang.value
-    );
+    deeplSocket.send(
+      JSON.stringify({
 
+        source_media_chunk: {
 
-    const response =
-      await fetch(
-        BACKEND_URL +
-        "/api/live-audio",
-        {
-
-          method:
-            "POST",
-
-          body:
-            formData
+          data:
+            base64
 
         }
+
+      })
+    );
+
+
+  } catch (error) {
+
+    console.error(
+      "Envio DeepL:",
+      error
+    );
+
+  }
+
+}
+
+
+// ========================================================
+// UINT8ARRAY -> BASE64
+// ========================================================
+
+function uint8ArrayToBase64(
+  bytes
+) {
+
+  let binary =
+    "";
+
+
+  const chunkSize =
+    0x8000;
+
+
+  for (
+    let i = 0;
+    i < bytes.length;
+    i += chunkSize
+  ) {
+
+    const chunk =
+      bytes.subarray(
+        i,
+        Math.min(
+          i + chunkSize,
+          bytes.length
+        )
       );
 
 
-    const data =
-      await response.json();
+    binary +=
+      String.fromCharCode(
+        ...chunk
+      );
 
+  }
+
+
+  return btoa(
+    binary
+  );
+
+}
+
+
+// ========================================================
+// ÁUDIO
+// ========================================================
+
+async function enableAudio() {
+
+  audioEnabled =
+    true;
+
+
+  audioButton.textContent =
+    "🔊 Áudio ativado";
+
+
+  audioButton.disabled =
+    true;
+
+
+  showMessage(
+    "🔊 Áudio da tradução ativado."
+  );
+
+
+  showVoiceStatus(
+    "🟢 O SI está pronto para reproduzir a voz traduzida."
+  );
+
+
+  /*
+   * Desbloqueio de áudio do navegador.
+   */
+
+  try {
 
     if (
-      !response.ok ||
-      !data.ok
+      !audioContext
     ) {
 
-      console.log(
-        "Servidor de áudio:",
-        data
-      );
+      audioContext =
+        new (
+          window.AudioContext ||
+          window.webkitAudioContext
+        )();
 
-      return;
     }
 
 
     if (
-      data.translation
+      audioContext.state ===
+      "suspended"
     ) {
 
-      translation.textContent =
-        data.translation;
-
-    }
-
-
-    if (
-      data.audioUrl
-    ) {
-
-      playTranslatedAudio(
-        data.audioUrl
-      );
+      await audioContext.resume();
 
     }
 
   } catch (error) {
 
-    console.error(
-      "Envio de áudio:",
+    console.log(
+      "AudioContext:",
       error
     );
 
   }
+
+
+  playNextDeepLAudio();
 
 }
 
@@ -1180,7 +1850,9 @@ function startStatusPolling() {
 async function checkLiveStatus() {
 
   if (!liveId) {
+
     return;
+
   }
 
 
@@ -1201,7 +1873,9 @@ async function checkLiveStatus() {
 
 
     if (!data.ok) {
+
       return;
+
     }
 
 
@@ -1239,97 +1913,6 @@ async function checkLiveStatus() {
 
 
 // ========================================================
-// ÁUDIO DA TRADUÇÃO
-// ========================================================
-
-async function enableAudio() {
-
-  audioEnabled =
-    true;
-
-
-  audioButton.textContent =
-    "🔊 Áudio ativado";
-
-
-  audioButton.disabled =
-    true;
-
-
-  showMessage(
-    "🔊 Áudio da tradução ativado."
-  );
-
-
-  try {
-
-    const audio =
-      new Audio();
-
-
-    audio.volume =
-      0;
-
-
-    await audio.play();
-
-  } catch (_) {
-
-    console.log(
-      "Navegador bloqueou áudio inicial."
-    );
-
-  }
-
-}
-
-
-// ========================================================
-// TOCAR ÁUDIO GERADO
-// ========================================================
-
-function playTranslatedAudio(
-  audioUrl
-) {
-
-  if (!audioEnabled) {
-    return;
-  }
-
-
-  if (audioPlayer) {
-
-    audioPlayer.pause();
-
-  }
-
-
-  audioPlayer =
-    new Audio(
-      audioUrl
-    );
-
-
-  audioPlayer.volume =
-    1;
-
-
-  audioPlayer.play()
-    .catch(
-      error => {
-
-        console.log(
-          "Erro reproduzindo voz:",
-          error
-        );
-
-      }
-    );
-
-}
-
-
-// ========================================================
 // PARAR
 // ========================================================
 
@@ -1349,6 +1932,40 @@ async function stopLive() {
       }
 
     } catch (_) {}
+
+  }
+
+
+  if (deeplSocket) {
+
+    try {
+
+      if (
+        deeplSocket.readyState ===
+        WebSocket.OPEN
+      ) {
+
+        deeplSocket.send(
+          JSON.stringify({
+
+            end_of_source_media: {}
+
+          })
+        );
+
+      }
+
+    } catch (_) {}
+
+
+    try {
+
+      deeplSocket.close();
+
+    } catch (_) {}
+
+    deeplSocket =
+      null;
 
   }
 
@@ -1405,6 +2022,18 @@ async function stopLive() {
     null;
 
 
+  deeplSession =
+    null;
+
+
+  audioQueue =
+    [];
+
+
+  playingAudio =
+    false;
+
+
   resetInterface();
 
 }
@@ -1449,6 +2078,11 @@ function resetInterface() {
     "A tradução aparecerá aqui...";
 
 
+  showVoiceStatus(
+    "🔊 DeepL Voice aguardando conexão."
+  );
+
+
   showMessage(
     "Live parada."
   );
@@ -1465,4 +2099,4 @@ checkServer();
 </script>
 
 </body>
-</html>
+  </html>
