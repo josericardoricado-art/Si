@@ -7,21 +7,40 @@ const crypto = require("crypto");
 const app = express();
 const server = http.createServer(app);
 
-app.use(cors());
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"]
+  })
+);
+
 app.use(express.json({ limit: "25mb" }));
+app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
-const PORT = process.env.PORT || 10000;
+const PORT = Number(process.env.PORT || 10000);
 
-const DEEPL_API_KEY = process.env.DEEPL_API_KEY || "";
+const DEEPL_API_KEY =
+  process.env.DEEPL_API_KEY || "";
+
+const DEEPGRAM_API_KEY =
+  process.env.DEEPGRAM_API_KEY || "";
 
 const DEEPL_API_URL =
   DEEPL_API_KEY.includes(":fx")
     ? "https://api-free.deepl.com/v2/translate"
     : "https://api.deepl.com/v2/translate";
 
+const DEEPGRAM_URL =
+  "wss://api.deepgram.com/v2/listen" +
+  "?model=flux-general-multi" +
+  "&encoding=linear16" +
+  "&sample_rate=16000" +
+  "&eot_timeout_ms=1200";
+
 const sessions = new Map();
 
-const SUPPORTED_LANGUAGES = {
+const LANGUAGES = {
   "pt-BR": "PT-BR",
   "en-US": "EN-US",
   "es-ES": "ES",
@@ -43,26 +62,23 @@ const SUPPORTED_LANGUAGES = {
   "vi-VN": "VI"
 };
 
-function gerarId() {
+function novoId() {
   return crypto.randomUUID();
 }
 
 function normalizarIdioma(lang) {
-  if (!lang) return "PT-BR";
-
-  if (SUPPORTED_LANGUAGES[lang]) {
-    return SUPPORTED_LANGUAGES[lang];
+  if (!lang) {
+    return "PT-BR";
   }
 
-  const encontrado = Object.keys(SUPPORTED_LANGUAGES).find(
-    key => key.toLowerCase() === String(lang).toLowerCase()
-  );
-
-  if (encontrado) {
-    return SUPPORTED_LANGUAGES[encontrado];
+  if (LANGUAGES[lang]) {
+    return LANGUAGES[lang];
   }
 
-  const base = String(lang).split("-")[0].toLowerCase();
+  const base =
+    String(lang)
+      .toLowerCase()
+      .split("-")[0];
 
   const mapa = {
     pt: "PT-BR",
@@ -89,50 +105,105 @@ function normalizarIdioma(lang) {
   return mapa[base] || "PT-BR";
 }
 
-async function traduzirDeepL(texto, targetLang) {
+function diagnostico(session, etapa, extra = {}) {
+  if (!session) {
+    return;
+  }
+
+  session.diagnostics.push({
+    etapa,
+    hora: new Date().toISOString(),
+    ...extra
+  });
+
+  if (session.diagnostics.length > 100) {
+    session.diagnostics =
+      session.diagnostics.slice(-100);
+  }
+}
+
+async function traduzirDeepL(texto, idioma) {
   if (!DEEPL_API_KEY) {
-    throw new Error("DEEPL_API_KEY não configurada no Render.");
+    throw new Error(
+      "DEEPL_API_KEY não configurada no Render."
+    );
   }
 
   if (!texto || !String(texto).trim()) {
     return "";
   }
 
-  const resposta = await fetch(DEEPL_API_URL, {
-    method: "POST",
-    headers: {
-      "Authorization": `DeepL-Auth-Key ${DEEPL_API_KEY}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      text: [String(texto)],
-      target_lang: targetLang
-    })
-  });
+  const resposta = await fetch(
+    DEEPL_API_URL,
+    {
+      method: "POST",
+      headers: {
+        "Authorization":
+          `DeepL-Auth-Key ${DEEPL_API_KEY}`,
+        "Content-Type":
+          "application/json"
+      },
+      body: JSON.stringify({
+        text: [String(texto)],
+        target_lang: idioma
+      })
+    }
+  );
 
-  const dados = await resposta.json();
+  const dados =
+    await resposta.json();
 
   if (!resposta.ok) {
     throw new Error(
       dados?.message ||
-      `DeepL respondeu HTTP ${resposta.status}`
+      `DeepL HTTP ${resposta.status}`
     );
   }
 
-  return dados?.translations?.[0]?.text || "";
+  return (
+    dados?.translations?.[0]?.text ||
+    ""
+  );
+}
+
+function enviarWS(session, objeto) {
+  if (!session) {
+    return;
+  }
+
+  const mensagem =
+    JSON.stringify(objeto);
+
+  for (
+    const cliente of session.clients
+  ) {
+    try {
+      if (
+        cliente.readyState ===
+        WebSocket.OPEN
+      ) {
+        cliente.send(mensagem);
+      }
+    } catch (_) {}
+  }
 }
 
 function criarSessao(clientId, targetLang) {
-  const jobId = gerarId();
+  const jobId = novoId();
 
-  const sessao = {
+  const session = {
     jobId,
-    clientId: clientId || "android",
-    targetLang: normalizarIdioma(targetLang),
+    clientId:
+      clientId || "android",
+    targetLang:
+      normalizarIdioma(targetLang),
 
-    status: "created",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    status: "starting",
+
+    deepgram: null,
+    deepgramConnected: false,
+
+    clients: new Set(),
 
     chunksRecebidos: 0,
     bytesRecebidos: 0,
@@ -140,615 +211,1072 @@ function criarSessao(clientId, targetLang) {
     sourceText: "",
     translatedText: "",
 
-    clients: new Set()
+    diagnostics: [],
+
+    createdAt:
+      new Date().toISOString(),
+
+    updatedAt:
+      new Date().toISOString(),
+
+    stopped: false
   };
 
-  sessions.set(jobId, sessao);
+  sessions.set(
+    jobId,
+    session
+  );
 
-  return sessao;
+  diagnostico(
+    session,
+    "session_created"
+  );
+
+  return session;
 }
 
-function atualizarSessao(sessao, dados) {
-  Object.assign(sessao, dados);
-  sessao.updatedAt = new Date().toISOString();
+function atualizar(
+  session,
+  dados
+) {
+  Object.assign(
+    session,
+    dados
+  );
+
+  session.updatedAt =
+    new Date().toISOString();
 }
+function conectarDeepgram(session) {
+  if (!DEEPGRAM_API_KEY) {
+    console.error(
+      "[DEEPGRAM] DEEPGRAM_API_KEY não configurada."
+    );
 
-function enviarParaClientes(sessao, mensagem) {
-  const texto =
-    typeof mensagem === "string"
-      ? mensagem
-      : JSON.stringify(mensagem);
+    atualizar(session, {
+      status: "deepgram_key_missing"
+    });
 
-  for (const cliente of sessao.clients) {
-    try {
-      if (cliente.readyState === WebSocket.OPEN) {
-        cliente.send(texto);
+    return;
+  }
+
+  if (session.stopped) {
+    return;
+  }
+
+  console.log(
+    `[DEEPGRAM] Conectando ${session.jobId}`
+  );
+
+  diagnostico(
+    session,
+    "deepgram_connecting"
+  );
+
+  const dg =
+    new WebSocket(
+      DEEPGRAM_URL,
+      {
+        headers: {
+          Authorization:
+            `Token ${DEEPGRAM_API_KEY}`
+        }
       }
-    } catch (erro) {
-      console.error("Erro enviando WebSocket:", erro.message);
-    }
-  }
-}
-
-app.get("/", (req, res) => {
-  res.json({
-    ok: true,
-    service: "SI Tradutor Live",
-    version: "13.0-DeepL",
-    message: "Backend do SI Tradutor Live funcionando",
-    provider: "DeepL",
-    endpoints: {
-      health: "/api/health",
-      deeplTest: "/api/deepl/test",
-      audioStart: "POST /api/audio/start",
-      audioChunk: "POST /api/audio/chunk",
-      audioOutput: "GET /api/audio/output/:jobId",
-      audioStatus: "GET /api/audio/status/:jobId",
-      diagnostic: "GET /api/audio/diagnostic/:jobId",
-      audioStop: "POST /api/audio/stop",
-      sessions: "GET /api/audio/sessions",
-      websocket: "wss://si-u2ul.onrender.com/ws"
-    }
-  });
-});
-
-app.get("/api/health", (req, res) => {
-  res.json({
-    ok: true,
-    service: "SI Tradutor Live",
-    version: "13.0-DeepL",
-    provider: "DeepL",
-    deeplConfigured: Boolean(DEEPL_API_KEY),
-    sessions: sessions.size,
-    timestamp: new Date().toISOString()
-  });
-});
-app.get("/api/deepl/test", async (req, res) => {
-  try {
-    if (!DEEPL_API_KEY) {
-      return res.status(500).json({
-        ok: false,
-        error: "DEEPL_API_KEY não configurada no Render."
-      });
-    }
-
-    const texto =
-      req.query.text ||
-      "Olá, este é um teste do SI Tradutor Live.";
-
-    const target =
-      normalizarIdioma(req.query.target || "en-US");
-
-    const translation = await traduzirDeepL(
-      texto,
-      target
     );
 
-    res.json({
-      ok: true,
-      provider: "DeepL",
-      status: 200,
-      source: texto,
-      target,
-      translation
+  session.deepgram = dg;
+
+  dg.on("open", () => {
+    session.deepgramConnected =
+      true;
+
+    atualizar(session, {
+      status:
+        "deepgram_connected"
     });
 
-  } catch (erro) {
-    console.error("Erro DeepL:", erro);
-
-    res.status(500).json({
-      ok: false,
-      provider: "DeepL",
-      error: erro.message
-    });
-  }
-});
-
-
-app.post("/api/audio/start", (req, res) => {
-  try {
-    const {
-      clientId,
-      targetLang
-    } = req.body || {};
-
-    const sessao = criarSessao(
-      clientId,
-      targetLang
+    diagnostico(
+      session,
+      "deepgram_connected"
     );
 
-    atualizarSessao(sessao, {
-      status: "waiting_audio"
-    });
-
-    res.json({
-      ok: true,
-      jobId: sessao.jobId,
-      targetLang: sessao.targetLang,
-      status: sessao.status,
-      provider: "DeepL"
-    });
-
-  } catch (erro) {
-    console.error("Erro /api/audio/start:", erro);
-
-    res.status(500).json({
-      ok: false,
-      error: erro.message
-    });
-  }
-});
-
-
-app.post("/api/audio/chunk", async (req, res) => {
-  try {
-    const {
-      jobId,
-      audio,
-      mimeType,
-      sampleRate
-    } = req.body || {};
-
-    if (!jobId) {
-      return res.status(400).json({
-        ok: false,
-        error: "jobId não informado."
-      });
-    }
-
-    const sessao = sessions.get(jobId);
-
-    if (!sessao) {
-      return res.status(404).json({
-        ok: false,
-        error: "Sessão não encontrada.",
-        jobId
-      });
-    }
-
-    if (!audio) {
-      return res.status(400).json({
-        ok: false,
-        error: "Áudio não informado."
-      });
-    }
-
-    let buffer;
-
-    try {
-      buffer = Buffer.from(audio, "base64");
-    } catch (erro) {
-      return res.status(400).json({
-        ok: false,
-        error: "Áudio base64 inválido."
-      });
-    }
-
-    sessao.chunksRecebidos += 1;
-    sessao.bytesRecebidos += buffer.length;
-
-    atualizarSessao(sessao, {
-      status: "receiving_audio",
-      lastMimeType: mimeType || "audio/pcm",
-      lastSampleRate: sampleRate || 16000
-    });
-
-    /*
-     * IMPORTANTE:
-     *
-     * O áudio recebido pelo Android é PCM.
-     * A API /v2/translate da DeepL traduz TEXTO,
-     * não PCM diretamente.
-     *
-     * Por isso este endpoint apenas recebe e registra
-     * os blocos de áudio neste momento.
-     *
-     * A etapa de transcrição precisa transformar:
-     *
-     * PCM -> texto
-     *
-     * antes de enviar o texto para o DeepL.
-     */
-
-    enviarParaClientes(sessao, {
-      type: "audio_received",
-      jobId: sessao.jobId,
-      chunks: sessao.chunksRecebidos,
-      bytes: sessao.bytesRecebidos
-    });
-
-    res.json({
-      ok: true,
-      jobId,
-      received: true,
-      chunks: sessao.chunksRecebidos,
-      bytes: sessao.bytesRecebidos
-    });
-
-  } catch (erro) {
-    console.error("Erro /api/audio/chunk:", erro);
-
-    res.status(500).json({
-      ok: false,
-      error: erro.message
-    });
-  }
-});
-
-
-app.post("/api/audio/translate", async (req, res) => {
-  try {
-    const {
-      jobId,
-      text,
-      sourceText
-    } = req.body || {};
-
-    if (!jobId) {
-      return res.status(400).json({
-        ok: false,
-        error: "jobId não informado."
-      });
-    }
-
-    const sessao = sessions.get(jobId);
-
-    if (!sessao) {
-      return res.status(404).json({
-        ok: false,
-        error: "Sessão não encontrada."
-      });
-    }
-
-    const texto =
-      text ||
-      sourceText ||
-      "";
-
-    if (!texto.trim()) {
-      return res.status(400).json({
-        ok: false,
-        error: "Texto não informado."
-      });
-    }
-
-    atualizarSessao(sessao, {
-      status: "translating",
-      sourceText: texto
-    });
-
-    const traducao = await traduzirDeepL(
-      texto,
-      sessao.targetLang
+    console.log(
+      `[DEEPGRAM] Conectado ${session.jobId}`
     );
 
-    atualizarSessao(sessao, {
-      status: "translated",
-      translatedText: traducao
+    enviarWS(session, {
+      type:
+        "deepgram_connected",
+      jobId:
+        session.jobId
     });
-
-    enviarParaClientes(sessao, {
-      type: "translation",
-      jobId: sessao.jobId,
-      sourceText: texto,
-      translatedText: traducao,
-      targetLang: sessao.targetLang
-    });
-
-    res.json({
-      ok: true,
-      jobId: sessao.jobId,
-      sourceText: texto,
-      translatedText: traducao,
-      targetLang: sessao.targetLang
-    });
-
-  } catch (erro) {
-    console.error("Erro /api/audio/translate:", erro);
-
-    res.status(500).json({
-      ok: false,
-      error: erro.message
-    });
-  }
-});
-
-
-app.get("/api/audio/status/:jobId", (req, res) => {
-  const sessao = sessions.get(req.params.jobId);
-
-  if (!sessao) {
-    return res.status(404).json({
-      ok: false,
-      error: "Sessão não encontrada."
-    });
-  }
-
-  res.json({
-    ok: true,
-    jobId: sessao.jobId,
-    status: sessao.status,
-    targetLang: sessao.targetLang,
-    chunksRecebidos: sessao.chunksRecebidos,
-    bytesRecebidos: sessao.bytesRecebidos,
-    sourceText: sessao.sourceText,
-    translatedText: sessao.translatedText,
-    createdAt: sessao.createdAt,
-    updatedAt: sessao.updatedAt
   });
-});
 
+  dg.on(
+    "message",
+    async mensagem => {
+      try {
+        const dados =
+          JSON.parse(
+            mensagem.toString()
+          );
 
-app.get("/api/audio/output/:jobId", (req, res) => {
-  const sessao = sessions.get(req.params.jobId);
+        if (
+          dados.type !==
+          "TurnInfo"
+        ) {
+          return;
+        }
 
-  if (!sessao) {
-    return res.status(404).json({
-      ok: false,
-      error: "Sessão não encontrada."
-    });
-  }
+        const texto =
+          String(
+            dados.transcript || ""
+          ).trim();
 
-  res.json({
-    ok: true,
-    jobId: sessao.jobId,
-    status: sessao.status,
-    sourceText: sessao.sourceText,
-    translatedText: sessao.translatedText,
-    audioUrl: null,
-    message:
-      "O áudio traduzido ainda depende da etapa de transcrição e síntese de voz."
-  });
-});
+        if (!texto) {
+          return;
+        }
 
+        console.log(
+          `[DEEPGRAM] ${dados.event}: ${texto}`
+        );
 
-app.get("/api/audio/diagnostic/:jobId", (req, res) => {
-  const sessao = sessions.get(req.params.jobId);
+        if (
+          dados.event ===
+          "Update"
+        ) {
+          atualizar(session, {
+            status:
+              "transcribing",
+            sourceText:
+              texto
+          });
 
-  if (!sessao) {
-    return res.status(404).json({
-      ok: false,
-      error: "Sessão não encontrada."
-    });
-  }
-
-  res.json({
-    ok: true,
-    provider: "DeepL",
-    jobId: sessao.jobId,
-    status: sessao.status,
-    targetLang: sessao.targetLang,
-    chunksRecebidos: sessao.chunksRecebidos,
-    bytesRecebidos: sessao.bytesRecebidos,
-    sourceText: sessao.sourceText,
-    translatedText: sessao.translatedText,
-    deeplConfigured: Boolean(DEEPL_API_KEY),
-    createdAt: sessao.createdAt,
-    updatedAt: sessao.updatedAt
-  });
-});
-app.post("/api/audio/stop", (req, res) => {
-  try {
-    const {
-      jobId
-    } = req.body || {};
-
-    if (!jobId) {
-      return res.status(400).json({
-        ok: false,
-        error: "jobId não informado."
-      });
-    }
-
-    const sessao = sessions.get(jobId);
-
-    if (!sessao) {
-      return res.status(404).json({
-        ok: false,
-        error: "Sessão não encontrada."
-      });
-    }
-
-    atualizarSessao(sessao, {
-      status: "stopped"
-    });
-
-    enviarParaClientes(sessao, {
-      type: "session_stopped",
-      jobId: sessao.jobId
-    });
-
-    res.json({
-      ok: true,
-      jobId: sessao.jobId,
-      status: "stopped"
-    });
-
-  } catch (erro) {
-    console.error("Erro /api/audio/stop:", erro);
-
-    res.status(500).json({
-      ok: false,
-      error: erro.message
-    });
-  }
-});
-
-
-app.get("/api/audio/sessions", (req, res) => {
-  const lista = [];
-
-  for (const sessao of sessions.values()) {
-    lista.push({
-      jobId: sessao.jobId,
-      clientId: sessao.clientId,
-      targetLang: sessao.targetLang,
-      status: sessao.status,
-      chunksRecebidos: sessao.chunksRecebidos,
-      bytesRecebidos: sessao.bytesRecebidos,
-      sourceText: sessao.sourceText,
-      translatedText: sessao.translatedText,
-      createdAt: sessao.createdAt,
-      updatedAt: sessao.updatedAt
-    });
-  }
-
-  res.json({
-    ok: true,
-    count: lista.length,
-    sessions: lista
-  });
-});
-
-
-const wss = new WebSocket.Server({
-  server,
-  path: "/ws"
-});
-
-
-wss.on("connection", (ws) => {
-  console.log("WebSocket Android conectado.");
-
-  ws.send(JSON.stringify({
-    type: "connected",
-    provider: "DeepL",
-    message: "WebSocket do SI conectado."
-  }));
-
-
-  ws.on("message", (mensagem) => {
-    try {
-      const dados = JSON.parse(mensagem.toString());
-
-      if (dados.type === "subscribe") {
-        const sessao = sessions.get(dados.jobId);
-
-        if (!sessao) {
-          ws.send(JSON.stringify({
-            type: "error",
-            error: "Sessão não encontrada.",
-            jobId: dados.jobId
-          }));
+          enviarWS(session, {
+            type:
+              "transcript",
+            jobId:
+              session.jobId,
+            text:
+              texto,
+            final:
+              false,
+            languages:
+              dados.languages ||
+              []
+          });
 
           return;
         }
 
-        sessao.clients.add(ws);
+        if (
+          dados.event ===
+          "EndOfTurn"
+        ) {
+          atualizar(session, {
+            status:
+              "transcript_final",
+            sourceText:
+              texto
+          });
 
-        ws.jobId = dados.jobId;
+          enviarWS(session, {
+            type:
+              "transcript",
+            jobId:
+              session.jobId,
+            text:
+              texto,
+            final:
+              true,
+            languages:
+              dados.languages ||
+              []
+          });
 
-        ws.send(JSON.stringify({
-          type: "subscribed",
-          jobId: dados.jobId,
-          targetLang: sessao.targetLang,
-          status: sessao.status
-        }));
+          try {
+            atualizar(session, {
+              status:
+                "translating"
+            });
 
-        return;
-      }
+            const traducao =
+              await traduzirDeepL(
+                texto,
+                session.targetLang
+              );
 
+            atualizar(session, {
+              status:
+                "translated",
+              translatedText:
+                traducao
+            });
 
-      if (dados.type === "unsubscribe") {
-        if (ws.jobId) {
-          const sessao = sessions.get(ws.jobId);
+            console.log(
+              `[DEEPL] ${traducao}`
+            );
 
-          if (sessao) {
-            sessao.clients.delete(ws);
+            enviarWS(session, {
+              type:
+                "translation",
+              jobId:
+                session.jobId,
+              sourceText:
+                texto,
+              translatedText:
+                traducao,
+              targetLang:
+                session.targetLang
+            });
+
+          } catch (erro) {
+            console.error(
+              "[DEEPL] Erro:",
+              erro.message
+            );
+
+            atualizar(session, {
+              status:
+                "translation_error"
+            });
+
+            enviarWS(session, {
+              type:
+                "error",
+              jobId:
+                session.jobId,
+              stage:
+                "deepl",
+              error:
+                erro.message
+            });
           }
         }
 
-        ws.jobId = null;
-
-        ws.send(JSON.stringify({
-          type: "unsubscribed"
-        }));
-
-        return;
+      } catch (erro) {
+        console.error(
+          "[DEEPGRAM] Erro:",
+          erro.message
+        );
       }
+    }
+  );
+
+  dg.on(
+    "close",
+    (codigo, motivo) => {
+      session.deepgramConnected =
+        false;
+
+      session.deepgram =
+        null;
+
+      console.log(
+        `[DEEPGRAM] Fechado ${session.jobId} ` +
+        `code=${codigo}`
+      );
+
+      atualizar(session, {
+        status:
+          "deepgram_disconnected"
+      });
+
+      diagnostico(
+        session,
+        "deepgram_closed",
+        {
+          codigo
+        }
+      );
+
+      enviarWS(session, {
+        type:
+          "deepgram_disconnected",
+        jobId:
+          session.jobId,
+        code:
+          codigo
+      });
+    }
+  );
+
+  dg.on(
+    "error",
+    erro => {
+      session.deepgramConnected =
+        false;
+
+      console.error(
+        "[DEEPGRAM] WebSocket error:",
+        erro.message
+      );
+
+      atualizar(session, {
+        status:
+          "deepgram_error"
+      });
+
+      diagnostico(
+        session,
+        "deepgram_error",
+        {
+          error:
+            erro.message
+        }
+      );
+
+      enviarWS(session, {
+        type:
+          "error",
+        jobId:
+          session.jobId,
+        stage:
+          "deepgram",
+        error:
+          erro.message
+      });
+    }
+  );
+}
+
+function enviarAudioDeepgram(
+  session,
+  buffer
+) {
+  if (
+    !session ||
+    !session.deepgram
+  ) {
+    return false;
+  }
+
+  if (
+    session.deepgram.readyState !==
+    WebSocket.OPEN
+  ) {
+    return false;
+  }
+
+  try {
+    session.deepgram.send(
+      buffer
+    );
+
+    return true;
+  } catch (erro) {
+    console.error(
+      "[DEEPGRAM] Erro enviando áudio:",
+      erro.message
+    );
+
+    return false;
+  }
+}
+
+function fecharDeepgram(session) {
+  if (
+    !session ||
+    !session.deepgram
+  ) {
+    return;
+  }
+
+  try {
+    if (
+      session.deepgram.readyState ===
+      WebSocket.OPEN
+    ) {
+      session.deepgram.send(
+        JSON.stringify({
+          type:
+            "CloseStream"
+        })
+      );
+    }
+
+    session.deepgram.close();
+
+  } catch (_) {}
+
+  session.deepgram =
+    null;
+
+  session.deepgramConnected =
+    false;
+}
+
+app.get(
+  "/api/health",
+  (req, res) => {
+    res.json({
+      ok: true,
+      service:
+        "SI Tradutor Live",
+      version:
+        "14.0-Deepgram-DeepL",
+      provider:
+        "Deepgram + DeepL",
+      deeplConfigured:
+        Boolean(
+          DEEPL_API_KEY
+        ),
+      deepgramConfigured:
+        Boolean(
+          DEEPGRAM_API_KEY
+        ),
+      sessions:
+        sessions.size
+    });
+  }
+);
+
+app.get(
+  "/api/deepl/test",
+  async (req, res) => {
+    try {
+      const texto =
+        req.query.text ||
+        "Olá, este é um teste do SI Tradutor Live.";
+
+      const target =
+        normalizarIdioma(
+          req.query.target ||
+          "en-US"
+        );
+
+      const traducao =
+        await traduzirDeepL(
+          texto,
+          target
+        );
+
+      res.json({
+        ok: true,
+        provider:
+          "DeepL",
+        status:
+          200,
+        source:
+          texto,
+        target,
+        translation:
+          traducao
+      });
+
+    } catch (erro) {
+      res.status(500).json({
+        ok: false,
+        provider:
+          "DeepL",
+        error:
+          erro.message
+      });
+    }
+  }
+);
+
+app.post(
+  "/api/audio/start",
+  (req, res) => {
+    try {
+      const session =
+        criarSessao(
+          req.body?.clientId,
+          req.body?.targetLang
+        );
+
+      conectarDeepgram(
+        session
+      );
+
+      res.json({
+        ok: true,
+        jobId:
+          session.jobId,
+        clientId:
+          session.clientId,
+        targetLang:
+          session.targetLang,
+        status:
+          session.status
+      });
+
+    } catch (erro) {
+      res.status(500).json({
+        ok: false,
+        error:
+          erro.message
+      });
+    }
+  }
+);
+app.post(
+  "/api/audio/chunk",
+  (req, res) => {
+    try {
+      const {
+        jobId,
+        audio,
+        mimeType,
+        sampleRate
+      } = req.body || {};
+
+      if (!jobId) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "jobId não informado."
+        });
+      }
+
+      const session =
+        sessions.get(jobId);
+
+      if (!session) {
+        return res.status(404).json({
+          ok: false,
+          error:
+            "Sessão não encontrada."
+        });
+      }
+
+      if (!audio) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Áudio não informado."
+        });
+      }
+
+      const buffer =
+        Buffer.from(
+          audio,
+          "base64"
+        );
+
+      session.chunksRecebidos +=
+        1;
+
+      session.bytesRecebidos +=
+        buffer.length;
+
+      atualizar(session, {
+        status:
+          "receiving_audio",
+        mimeType:
+          mimeType ||
+          "audio/pcm",
+        sampleRate:
+          sampleRate ||
+          16000
+      });
+
+      const enviado =
+        enviarAudioDeepgram(
+          session,
+          buffer
+        );
+
+      if (enviado) {
+        diagnostico(
+          session,
+          "audio_sent_deepgram",
+          {
+            bytes:
+              buffer.length
+          }
+        );
+      } else {
+        console.log(
+          `[DEEPGRAM] Áudio aguardando conexão ` +
+          `${jobId}`
+        );
+      }
+
+      res.json({
+        ok: true,
+        jobId,
+        received:
+          true,
+        sentToDeepgram:
+          enviado,
+        chunks:
+          session.chunksRecebidos,
+        bytes:
+          session.bytesRecebidos
+      });
 
     } catch (erro) {
       console.error(
-        "Mensagem WebSocket inválida:",
+        "[AUDIO CHUNK]",
         erro.message
       );
-    }
-  });
 
-
-  ws.on("close", () => {
-    console.log("WebSocket Android desconectado.");
-
-    if (ws.jobId) {
-      const sessao = sessions.get(ws.jobId);
-
-      if (sessao) {
-        sessao.clients.delete(ws);
-      }
-    }
-  });
-
-
-  ws.on("error", (erro) => {
-    console.error(
-      "Erro WebSocket:",
-      erro.message
-    );
-  });
-});
-
-
-setInterval(() => {
-  const agora = Date.now();
-
-  for (const [jobId, sessao] of sessions.entries()) {
-    const atualizado =
-      new Date(sessao.updatedAt).getTime();
-
-    const idade =
-      agora - atualizado;
-
-    /*
-     * Remove sessões com mais de 30 minutos
-     * sem atualização.
-     */
-    if (idade > 30 * 60 * 1000) {
-      for (const cliente of sessao.clients) {
-        try {
-          cliente.close();
-        } catch (_) {}
-      }
-
-      sessions.delete(jobId);
-
-      console.log(
-        "Sessão removida:",
-        jobId
-      );
+      res.status(500).json({
+        ok: false,
+        error:
+          erro.message
+      });
     }
   }
-}, 60 * 1000);
+);
 
+app.get(
+  "/api/audio/status/:jobId",
+  (req, res) => {
+    const session =
+      sessions.get(
+        req.params.jobId
+      );
 
-app.use((req, res) => {
-  res.status(404).json({
-    ok: false,
-    error: "Rota não encontrada.",
-    path: req.originalUrl
+    if (!session) {
+      return res.status(404).json({
+        ok: false,
+        error:
+          "Sessão não encontrada."
+      });
+    }
+
+    res.json({
+      ok: true,
+      jobId:
+        session.jobId,
+      status:
+        session.status,
+      targetLang:
+        session.targetLang,
+      deepgramConnected:
+        session.deepgramConnected,
+      chunksRecebidos:
+        session.chunksRecebidos,
+      bytesRecebidos:
+        session.bytesRecebidos,
+      sourceText:
+        session.sourceText,
+      translatedText:
+        session.translatedText,
+      createdAt:
+        session.createdAt,
+      updatedAt:
+        session.updatedAt
+    });
+  }
+);
+
+app.get(
+  "/api/audio/diagnostic/:jobId",
+  (req, res) => {
+    const session =
+      sessions.get(
+        req.params.jobId
+      );
+
+    if (!session) {
+      return res.status(404).json({
+        ok: false,
+        error:
+          "Sessão não encontrada."
+      });
+    }
+
+    res.json({
+      ok: true,
+      jobId:
+        session.jobId,
+      status:
+        session.status,
+      provider:
+        "Deepgram + DeepL",
+      deepgramConnected:
+        session.deepgramConnected,
+      deeplConfigured:
+        Boolean(
+          DEEPL_API_KEY
+        ),
+      deepgramConfigured:
+        Boolean(
+          DEEPGRAM_API_KEY
+        ),
+      chunksRecebidos:
+        session.chunksRecebidos,
+      bytesRecebidos:
+        session.bytesRecebidos,
+      sourceText:
+        session.sourceText,
+      translatedText:
+        session.translatedText,
+      diagnostics:
+        session.diagnostics
+    });
+  }
+);
+
+app.get(
+  "/api/audio/output/:jobId",
+  (req, res) => {
+    const session =
+      sessions.get(
+        req.params.jobId
+      );
+
+    if (!session) {
+      return res.status(404).json({
+        ok: false,
+        error:
+          "Sessão não encontrada."
+      });
+    }
+
+    res.json({
+      ok: true,
+      jobId:
+        session.jobId,
+      status:
+        session.status,
+      sourceText:
+        session.sourceText,
+      translatedText:
+        session.translatedText,
+      audioUrl:
+        null,
+      message:
+        "A saída de voz será adicionada na próxima etapa."
+    });
+  }
+);
+
+app.post(
+  "/api/audio/stop",
+  (req, res) => {
+    try {
+      const {
+        jobId
+      } = req.body || {};
+
+      if (!jobId) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "jobId não informado."
+        });
+      }
+
+      const session =
+        sessions.get(jobId);
+
+      if (!session) {
+        return res.status(404).json({
+          ok: false,
+          error:
+            "Sessão não encontrada."
+        });
+      }
+
+      session.stopped =
+        true;
+
+      fecharDeepgram(
+        session
+      );
+
+      atualizar(session, {
+        status:
+          "stopped"
+      });
+
+      enviarWS(session, {
+        type:
+          "session_stopped",
+        jobId:
+          session.jobId
+      });
+
+      res.json({
+        ok: true,
+        jobId,
+        status:
+          "stopped"
+      });
+
+    } catch (erro) {
+      res.status(500).json({
+        ok: false,
+        error:
+          erro.message
+      });
+    }
+  }
+);
+
+app.get(
+  "/api/audio/sessions",
+  (req, res) => {
+    const lista =
+      Array.from(
+        sessions.values()
+      ).map(session => ({
+        jobId:
+          session.jobId,
+        clientId:
+          session.clientId,
+        targetLang:
+          session.targetLang,
+        status:
+          session.status,
+        deepgramConnected:
+          session.deepgramConnected,
+        chunksRecebidos:
+          session.chunksRecebidos,
+        bytesRecebidos:
+          session.bytesRecebidos,
+        sourceText:
+          session.sourceText,
+        translatedText:
+          session.translatedText,
+        createdAt:
+          session.createdAt,
+        updatedAt:
+          session.updatedAt
+      }));
+
+    res.json({
+      ok: true,
+      count:
+        lista.length,
+      sessions:
+        lista
+    });
+  }
+);
+const wss =
+  new WebSocket.Server({
+    server,
+    path: "/ws"
   });
-});
 
+wss.on(
+  "connection",
+  ws => {
+    console.log(
+      "[WS] Android conectado."
+    );
 
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(
-    `SI Tradutor Live rodando na porta ${PORT}`
-  );
+    ws.send(
+      JSON.stringify({
+        type:
+          "connected",
+        provider:
+          "Deepgram + DeepL",
+        message:
+          "WebSocket do SI conectado."
+      })
+    );
 
-  console.log(
-    `DeepL configurado: ${Boolean(DEEPL_API_KEY)}`
-  );
+    ws.on(
+      "message",
+      mensagem => {
+        try {
+          const dados =
+            JSON.parse(
+              mensagem.toString()
+            );
 
-  console.log(
-    `WebSocket: ws://0.0.0.0:${PORT}/ws`
-  );
-});
+          if (
+            dados.type ===
+            "subscribe"
+          ) {
+            const session =
+              sessions.get(
+                dados.jobId
+              );
+
+            if (!session) {
+              ws.send(
+                JSON.stringify({
+                  type:
+                    "error",
+                  error:
+                    "Sessão não encontrada.",
+                  jobId:
+                    dados.jobId
+                })
+              );
+
+              return;
+            }
+
+            session.clients.add(
+              ws
+            );
+
+            ws.jobId =
+              dados.jobId;
+
+            ws.send(
+              JSON.stringify({
+                type:
+                  "subscribed",
+                jobId:
+                  session.jobId,
+                targetLang:
+                  session.targetLang,
+                status:
+                  session.status
+              })
+            );
+
+            return;
+          }
+
+          if (
+            dados.type ===
+            "unsubscribe"
+          ) {
+            if (ws.jobId) {
+              const session =
+                sessions.get(
+                  ws.jobId
+                );
+
+              if (session) {
+                session.clients.delete(
+                  ws
+                );
+              }
+            }
+
+            ws.jobId =
+              null;
+
+            return;
+          }
+
+        } catch (erro) {
+          console.error(
+            "[WS] Mensagem inválida:",
+            erro.message
+          );
+        }
+      }
+    );
+
+    ws.on(
+      "close",
+      () => {
+        if (ws.jobId) {
+          const session =
+            sessions.get(
+              ws.jobId
+            );
+
+          if (session) {
+            session.clients.delete(
+              ws
+            );
+          }
+        }
+
+        console.log(
+          "[WS] Android desconectado."
+        );
+      }
+    );
+
+    ws.on(
+      "error",
+      erro => {
+        console.error(
+          "[WS] Erro:",
+          erro.message
+        );
+      }
+    );
+  }
+);
+
+setInterval(
+  () => {
+    const agora =
+      Date.now();
+
+    for (
+      const [
+        jobId,
+        session
+      ] of sessions
+    ) {
+      const ultima =
+        new Date(
+          session.updatedAt
+        ).getTime();
+
+      if (
+        agora - ultima >
+        30 * 60 * 1000
+      ) {
+        try {
+          fecharDeepgram(
+            session
+          );
+        } catch (_) {}
+
+        for (
+          const cliente
+          of session.clients
+        ) {
+          try {
+            cliente.close();
+          } catch (_) {}
+        }
+
+        sessions.delete(
+          jobId
+        );
+
+        console.log(
+          `[SESSION] Removida: ${jobId}`
+        );
+      }
+    }
+  },
+  60 * 1000
+);
+
+app.use(
+  (req, res) => {
+    res.status(404).json({
+      ok: false,
+      error:
+        "Rota não encontrada.",
+      path:
+        req.originalUrl
+    });
+  }
+);
+
+server.listen(
+  PORT,
+  "0.0.0.0",
+  () => {
+    console.log(
+      `SI Tradutor Live rodando na porta ${PORT}`
+    );
+
+    console.log(
+      `DeepL configurado: ${
+        Boolean(DEEPL_API_KEY)
+      }`
+    );
+
+    console.log(
+      `Deepgram configurado: ${
+        Boolean(DEEPGRAM_API_KEY)
+      }`
+    );
+
+    console.log(
+      `WebSocket: ws://0.0.0.0:${PORT}/ws`
+    );
+  }
+);
