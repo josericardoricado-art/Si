@@ -2109,11 +2109,6 @@ class AudioCaptureService : Service() {
                     guard++
                 }
             }
-
-
-            playedOutputChunks++
-
-            playedOutputBytes +=
                 wav.pcm.size.toLong()
 
 
