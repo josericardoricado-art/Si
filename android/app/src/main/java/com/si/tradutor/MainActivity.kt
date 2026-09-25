@@ -10,11 +10,14 @@ import android.graphics.Typeface
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
@@ -33,24 +36,16 @@ import kotlin.concurrent.thread
 class MainActivity : AppCompatActivity() {
 
     companion object {
-
-        private const val BACKEND_URL =
-            "https://si-u2ul.onrender.com"
-
-        private const val REQUEST_RECORD_AUDIO =
-            5001
-
-        private const val REQUEST_MEDIA_PROJECTION =
-            5002
-
-        private const val PREFS =
-            "si_preferences"
-
-        private const val CLIENT_ID =
-            "client_id"
+        private const val BACKEND_URL = "https://si-u2ul.onrender.com"
+        private const val REQUEST_RECORD_AUDIO = 5001
+        private const val REQUEST_MEDIA_PROJECTION = 5002
+        private const val PREFS = "si_preferences"
+        private const val CLIENT_ID = "client_id"
+        private const val DIAG_PREFS = "si_diagnostic"
     }
 
     private lateinit var statusText: TextView
+    private lateinit var diagnosticText: TextView
     private lateinit var monitorButton: Button
     private lateinit var stopButton: Button
     private lateinit var languageSpinner: Spinner
@@ -59,1573 +54,482 @@ class MainActivity : AppCompatActivity() {
     private var monitoring = false
     private var starting = false
 
+    private val diagnosticHandler = Handler(Looper.getMainLooper())
 
-    // =========================================================
-    // ON CREATE
-    // =========================================================
+    private val diagnosticRunnable = object : Runnable {
+        override fun run() {
+            atualizarDiagnostico()
+            diagnosticHandler.postDelayed(this, 500)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-
         super.onCreate(savedInstanceState)
-
         criarTela()
-
         verificarPermissaoMicrofone()
+        diagnosticHandler.post(diagnosticRunnable)
     }
-
-
-    // =========================================================
-    // CRIAR TELA
-    // =========================================================
 
     private fun criarTela() {
-
+        val scroll = ScrollView(this)
         val root = LinearLayout(this)
-
-        root.orientation =
-            LinearLayout.VERTICAL
-
-        root.setPadding(
-            48,
-            60,
-            48,
-            40
-        )
-
-        root.gravity =
-            Gravity.CENTER_HORIZONTAL
-
-        root.setBackgroundColor(
-            Color.rgb(
-                5,
-                21,
-                47
-            )
-        )
-
-
-        // -----------------------------------------------------
-        // LOGO
-        // -----------------------------------------------------
+        root.orientation = LinearLayout.VERTICAL
+        root.gravity = Gravity.CENTER_HORIZONTAL
+        root.setPadding(48, 45, 48, 40)
+        root.setBackgroundColor(Color.rgb(5, 21, 47))
 
         val logo = TextView(this)
-
         logo.text = "SI"
-
         logo.textSize = 70f
-
-        logo.setTextColor(
-            Color.WHITE
-        )
-
-        logo.setTypeface(
-            null,
-            Typeface.BOLD
-        )
-
-        logo.gravity =
-            Gravity.CENTER
-
-        root.addView(
-            logo,
-            LinearLayout.LayoutParams(
-                -1,
-                130
-            )
-        )
-
-
-        // -----------------------------------------------------
-        // TÍTULO
-        // -----------------------------------------------------
+        logo.setTextColor(Color.WHITE)
+        logo.setTypeface(null, Typeface.BOLD)
+        logo.gravity = Gravity.CENTER
+        root.addView(logo, LinearLayout.LayoutParams(-1, 120))
 
         val title = TextView(this)
-
-        title.text =
-            "SI TRADUTOR LIVE"
-
+        title.text = "SI TRADUTOR LIVE"
         title.textSize = 30f
-
-        title.setTextColor(
-            Color.WHITE
-        )
-
-        title.setTypeface(
-            null,
-            Typeface.BOLD
-        )
-
-        title.gravity =
-            Gravity.CENTER
-
+        title.setTextColor(Color.WHITE)
+        title.setTypeface(null, Typeface.BOLD)
+        title.gravity = Gravity.CENTER
         root.addView(title)
 
-
-        // -----------------------------------------------------
-        // SUBTÍTULO
-        // -----------------------------------------------------
-
         val subtitle = TextView(this)
-
-        subtitle.text =
-            "Tradução e dublagem em tempo real"
-
+        subtitle.text = "Tradução e dublagem em tempo real"
         subtitle.textSize = 18f
-
-        subtitle.setTextColor(
-            Color.LTGRAY
-        )
-
-        subtitle.gravity =
-            Gravity.CENTER
-
-        subtitle.setPadding(
-            0,
-            15,
-            0,
-            35
-        )
-
+        subtitle.setTextColor(Color.LTGRAY)
+        subtitle.gravity = Gravity.CENTER
+        subtitle.setPadding(0, 12, 0, 25)
         root.addView(subtitle)
 
-
-        // -----------------------------------------------------
-        // STATUS
-        // -----------------------------------------------------
-
         statusText = TextView(this)
-
-        statusText.text =
-            "🔵 Pronto para iniciar"
-
+        statusText.text = "🔵 Pronto para iniciar"
         statusText.textSize = 17f
+        statusText.setTextColor(Color.WHITE)
+        statusText.gravity = Gravity.CENTER
+        statusText.setPadding(20, 20, 20, 20)
+        statusText.setBackgroundColor(Color.rgb(20, 48, 90))
+        root.addView(statusText, LinearLayout.LayoutParams(-1, 95))
 
-        statusText.setTextColor(
-            Color.WHITE
+        adicionarEspaco(root, 12)
+
+        diagnosticText = TextView(this)
+        diagnosticText.text = "🔎 Diagnóstico: aguardando..."
+        diagnosticText.textSize = 15f
+        diagnosticText.setTextColor(Color.WHITE)
+        diagnosticText.gravity = Gravity.CENTER
+        diagnosticText.setPadding(18, 16, 18, 16)
+        diagnosticText.setBackgroundColor(Color.rgb(15, 37, 70))
+        root.addView(diagnosticText, LinearLayout.LayoutParams(-1, 155))
+
+        adicionarEspaco(root, 20)
+
+        monitorButton = Button(this)
+        monitorButton.text = "🎬 MONITORAR TELA"
+        monitorButton.textSize = 18f
+        monitorButton.setTextColor(Color.WHITE)
+        monitorButton.setBackgroundColor(Color.rgb(25, 140, 255))
+        monitorButton.setOnClickListener { iniciarMonitoramento() }
+        root.addView(monitorButton, LinearLayout.LayoutParams(-1, 90))
+
+        adicionarEspaco(root, 18)
+
+        stopButton = Button(this)
+        stopButton.text = "⏹ PARAR MONITORAMENTO"
+        stopButton.textSize = 17f
+        stopButton.setTextColor(Color.WHITE)
+        stopButton.setBackgroundColor(Color.rgb(40, 65, 105))
+        stopButton.isEnabled = false
+        stopButton.setOnClickListener { pararMonitoramento() }
+        root.addView(stopButton, LinearLayout.LayoutParams(-1, 90))
+
+        adicionarEspaco(root, 22)
+
+        val languageTitle = TextView(this)
+        languageTitle.text = "🌎 Idioma da tradução"
+        languageTitle.textSize = 20f
+        languageTitle.setTextColor(Color.WHITE)
+        languageTitle.setTypeface(null, Typeface.BOLD)
+        root.addView(languageTitle)
+
+        adicionarEspaco(root, 10)
+
+        languageSpinner = Spinner(this)
+        val languages = arrayOf(
+            "Português",
+            "English",
+            "Español",
+            "Français",
+            "Deutsch",
+            "Italiano",
+            "日本語",
+            "한국어",
+            "中文",
+            "Русский",
+            "العربية",
+            "हिन्दी",
+            "Türkçe",
+            "Nederlands",
+            "Polski",
+            "Українська",
+            "ไทย",
+            "Bahasa Indonesia",
+            "Tiếng Việt"
         )
-
-        statusText.gravity =
-            Gravity.CENTER
-
-        statusText.setPadding(
-            20,
-            25,
-            20,
-            25
+        languageSpinner.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            languages
         )
-
-        statusText.setBackgroundColor(
-            Color.rgb(
-                20,
-                48,
-                90
-            )
-        )
-
-        root.addView(
-            statusText,
-            LinearLayout.LayoutParams(
-                -1,
-                100
-            )
-        )
-
-
-        adicionarEspaco(
-            root,
-            25
-        )
-
-
-        // -----------------------------------------------------
-        // MONITORAR TELA
-        // -----------------------------------------------------
-
-        monitorButton =
-            Button(this)
-
-        monitorButton.text =
-            "🎬 MONITORAR TELA"
-
-        monitorButton.textSize =
-            18f
-
-        monitorButton.setTextColor(
-            Color.WHITE
-        )
-
-        monitorButton.setBackgroundColor(
-            Color.rgb(
-                25,
-                140,
-                255
-            )
-        )
-
-        monitorButton.setOnClickListener {
-
-            iniciarMonitoramento()
-        }
-
-        root.addView(
-            monitorButton,
-            LinearLayout.LayoutParams(
-                -1,
-                90
-            )
-        )
-
-
-        adicionarEspaco(
-            root,
-            18
-        )
-
-
-        // -----------------------------------------------------
-        // PARAR
-        // -----------------------------------------------------
-
-        stopButton =
-            Button(this)
-
-        stopButton.text =
-            "⏹ PARAR MONITORAMENTO"
-
-        stopButton.textSize =
-            17f
-
-        stopButton.setTextColor(
-            Color.WHITE
-        )
-
-        stopButton.setBackgroundColor(
-            Color.rgb(
-                40,
-                65,
-                105
-            )
-        )
-
-        stopButton.isEnabled =
-            false
-
-        stopButton.setOnClickListener {
-
-            pararMonitoramento()
-        }
-
-        root.addView(
-            stopButton,
-            LinearLayout.LayoutParams(
-                -1,
-                90
-            )
-        )
-
-
-        adicionarEspaco(
-            root,
-            25
-        )
-
-
-        // -----------------------------------------------------
-        // IDIOMA
-        // -----------------------------------------------------
-
-        val languageTitle =
-            TextView(this)
-
-        languageTitle.text =
-            "🌎 Idioma da tradução"
-
-        languageTitle.textSize =
-            20f
-
-        languageTitle.setTextColor(
-            Color.WHITE
-        )
-
-        languageTitle.setTypeface(
-            null,
-            Typeface.BOLD
-        )
-
-        root.addView(
-            languageTitle
-        )
-
-
-        adicionarEspaco(
-            root,
-            10
-        )
-
-
-        // -----------------------------------------------------
-        // SPINNER
-        // -----------------------------------------------------
-
-        languageSpinner =
-            Spinner(this)
-
-        val languages =
-            arrayOf(
-                "Português",
-                "English",
-                "Español",
-                "Français",
-                "Deutsch",
-                "Italiano",
-                "日本語",
-                "한국어",
-                "中文",
-                "Русский",
-                "العربية",
-                "हिन्दी",
-                "Türkçe",
-                "Nederlands",
-                "Polski",
-                "Українська",
-                "ไทย",
-                "Bahasa Indonesia",
-                "Tiếng Việt"
-            )
-
-        val adapter =
-            ArrayAdapter(
-                this,
-                android.R.layout.simple_spinner_dropdown_item,
-                languages
-            )
-
-        languageSpinner.adapter =
-            adapter
-
-        root.addView(
-            languageSpinner,
-            LinearLayout.LayoutParams(
-                -1,
-                70
-            )
-        )
-
-
-        adicionarEspaco(
-            root,
-            25
-        )
-
-
-        // -----------------------------------------------------
-        // DUBLAGEM
-        // -----------------------------------------------------
-
-        val dubbing =
-            Button(this)
-
-        dubbing.text =
-            "🔊 DUBLAGEM ATIVADA"
-
-        dubbing.textSize =
-            17f
-
-        dubbing.setTextColor(
-            Color.BLACK
-        )
-
-        dubbing.setBackgroundColor(
-            Color.rgb(
-                30,
-                225,
-                120
-            )
-        )
-
-        root.addView(
-            dubbing,
-            LinearLayout.LayoutParams(
-                -1,
-                85
-            )
-        )
-
-
-        adicionarEspaco(
-            root,
-            15
-        )
-
-
-        // -----------------------------------------------------
-        // TRADUÇÃO
-        // -----------------------------------------------------
-
-        val translation =
-            Button(this)
-
-        translation.text =
-            "🌐 TRADUÇÃO ATIVADA"
-
-        translation.textSize =
-            17f
-
-        translation.setTextColor(
-            Color.WHITE
-        )
-
-        translation.setBackgroundColor(
-            Color.rgb(
-                25,
-                140,
-                255
-            )
-        )
-
-        root.addView(
-            translation,
-            LinearLayout.LayoutParams(
-                -1,
-                85
-            )
-        )
-
-
-        setContentView(root)
+        root.addView(languageSpinner, LinearLayout.LayoutParams(-1, 70))
+
+        adicionarEspaco(root, 22)
+
+        val dubbing = Button(this)
+        dubbing.text = "🔊 DUBLAGEM ATIVADA"
+        dubbing.textSize = 17f
+        dubbing.setTextColor(Color.BLACK)
+        dubbing.setBackgroundColor(Color.rgb(30, 225, 120))
+        root.addView(dubbing, LinearLayout.LayoutParams(-1, 85))
+
+        adicionarEspaco(root, 15)
+
+        val translation = Button(this)
+        translation.text = "🌐 TRADUÇÃO ATIVADA"
+        translation.textSize = 17f
+        translation.setTextColor(Color.WHITE)
+        translation.setBackgroundColor(Color.rgb(25, 140, 255))
+        root.addView(translation, LinearLayout.LayoutParams(-1, 85))
+
+        scroll.addView(root)
+        setContentView(scroll)
     }
 
-
-    // =========================================================
-    // ESPAÇO
-    // =========================================================
-
-    private fun adicionarEspaco(
-        root: LinearLayout,
-        altura: Int
-    ) {
-
-        val space =
-            View(this)
-
-        root.addView(
-            space,
-            LinearLayout.LayoutParams(
-                1,
-                altura
-            )
-        )
+    private fun adicionarEspaco(root: LinearLayout, altura: Int) {
+        root.addView(View(this), LinearLayout.LayoutParams(1, altura))
     }
-
-
-    // =========================================================
-    // PERMISSÃO MICROFONE
-    // =========================================================
 
     private fun verificarPermissaoMicrofone() {
-
-        if (
-            Build.VERSION.SDK_INT >=
-            Build.VERSION_CODES.M
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
         ) {
-
-            if (
-                ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.RECORD_AUDIO
-                ) !=
-                PackageManager.PERMISSION_GRANTED
-            ) {
-
-                ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(
-                        Manifest.permission.RECORD_AUDIO
-                    ),
-                    REQUEST_RECORD_AUDIO
-                )
-            }
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.RECORD_AUDIO),
+                REQUEST_RECORD_AUDIO
+            )
         }
     }
 
-
-    // =========================================================
-    // INICIAR MONITORAMENTO
-    // =========================================================
-
     private fun iniciarMonitoramento() {
-
         if (monitoring) {
-
-            Toast.makeText(
-                this,
-                "Monitoramento já está ativo",
-                Toast.LENGTH_SHORT
-            ).show()
-
+            Toast.makeText(this, "Monitoramento já está ativo", Toast.LENGTH_SHORT).show()
             return
         }
-
-
-        if (starting) {
-
-            return
-        }
-
+        if (starting) return
 
         starting = true
-
-        monitorButton.isEnabled =
-            false
-
-        stopButton.isEnabled =
-            false
-
-
-        status(
-            "🟡 Acordando servidor..."
-        )
-
-
-        // -----------------------------------------------------
-        // NÃO FAZEMOS MAIS /api/health PRIMEIRO.
-        //
-        // O próprio /api/audio/start acorda o Render.
-        // -----------------------------------------------------
-
+        monitorButton.isEnabled = false
+        stopButton.isEnabled = false
+        status("🟡 Conectando ao Render...")
         criarSessao()
     }
 
-
-    // =========================================================
-    // CRIAR SESSÃO
-    // =========================================================
-
     private fun criarSessao() {
-
         thread {
+            var ultimaMensagem = "Erro desconhecido"
 
-            var ultimaMensagem =
-                "Erro desconhecido"
-
-
-            // -------------------------------------------------
-            // Até 3 tentativas.
-            //
-            // Isso permite que o Render acorde se estiver
-            // dormindo.
-            // -------------------------------------------------
-
-            for (
-                tentativa in 1..3
-            ) {
-
+            for (tentativa in 1..3) {
                 try {
-
                     runOnUiThread {
-
-                        if (tentativa == 1) {
-
-                            status(
-                                "🟡 Acordando servidor..."
-                            )
-
-                        } else {
-
-                            status(
-                                "🟡 Servidor acordando... tentativa $tentativa/3"
-                            )
-                        }
+                        status(
+                            if (tentativa == 1) "🟡 Acordando servidor..."
+                            else "🟡 Servidor acordando... tentativa $tentativa/3"
+                        )
                     }
 
+                    val clientId = obterClientId()
+                    val targetLang = obterIdiomaSelecionado()
 
-                    val clientId =
-                        obterClientId()
+                    val connection = URL("$BACKEND_URL/api/audio/start")
+                        .openConnection() as HttpURLConnection
 
+                    connection.requestMethod = "POST"
+                    connection.connectTimeout = 15000
+                    connection.readTimeout = 30000
+                    connection.doOutput = true
+                    connection.useCaches = false
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.setRequestProperty("Accept", "application/json")
+                    connection.setRequestProperty("Connection", "close")
 
-                    val targetLang =
-                        obterIdiomaSelecionado()
+                    val json = JSONObject()
+                    json.put("clientId", clientId)
+                    json.put("targetLang", targetLang)
 
-
-                    println(
-                        "SI: clientId = $clientId"
-                    )
-
-                    println(
-                        "SI: targetLang = $targetLang"
-                    )
-
-
-                    val connection =
-                        URL(
-                            "$BACKEND_URL/api/audio/start"
-                        )
-                            .openConnection()
-                            as HttpURLConnection
-
-
-                    connection.requestMethod =
-                        "POST"
-
-
-                    // -------------------------------------------------
-                    // Timeout menor que o antigo.
-                    //
-                    // Se o Render não responder, fazemos nova tentativa.
-                    // -------------------------------------------------
-
-                    connection.connectTimeout =
-                        15000
-
-                    connection.readTimeout =
-                        30000
-
-
-                    connection.doOutput =
-                        true
-
-                    connection.useCaches =
-                        false
-
-
-                    connection.setRequestProperty(
-                        "Content-Type",
-                        "application/json"
-                    )
-
-                    connection.setRequestProperty(
-                        "Accept",
-                        "application/json"
-                    )
-
-                    connection.setRequestProperty(
-                        "Connection",
-                        "close"
-                    )
-
-
-                    val json =
-                        JSONObject()
-
-
-                    json.put(
-                        "clientId",
-                        clientId
-                    )
-
-                    json.put(
-                        "targetLang",
-                        targetLang
-                    )
-
-
-                    println(
-                        "SI: enviando /api/audio/start"
-                    )
-
-
-                    OutputStreamWriter(
-                        connection.outputStream
-                    ).use { writer ->
-
-                        writer.write(
-                            json.toString()
-                        )
-
+                    OutputStreamWriter(connection.outputStream).use { writer ->
+                        writer.write(json.toString())
                         writer.flush()
                     }
 
-
-                    val responseCode =
-                        connection.responseCode
-
-
-                    println(
-                        "SI: /api/audio/start HTTP $responseCode"
-                    )
-
-
-                    val stream =
-                        if (
-                            responseCode in 200..299
-                        ) {
-
-                            connection.inputStream
-
-                        } else {
-
-                            connection.errorStream
-                        }
-
-
-                    val response =
-                        if (stream != null) {
-
-                            BufferedReader(
-                                InputStreamReader(
-                                    stream
-                                )
-                            ).use { reader ->
-
-                                reader.readText()
-                            }
-
-                        } else {
-
-                            ""
-                        }
-
-
+                    val responseCode = connection.responseCode
+                    val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+                    val response = if (stream != null) {
+                        BufferedReader(InputStreamReader(stream)).use { it.readText() }
+                    } else ""
                     connection.disconnect()
 
-
-                    println(
-                        "SI: resposta start = $response"
-                    )
-
-
-                    // -------------------------------------------------
-                    // ERRO HTTP
-                    // -------------------------------------------------
-
-                    if (
-                        responseCode !in 200..299
-                    ) {
-
-                        ultimaMensagem =
-                            "HTTP $responseCode"
-
-
-                        // -------------------------------------------------
-                        // 404 não adianta repetir.
-                        // Significa que a rota não existe na versão
-                        // do Render que está ativa.
-                        // -------------------------------------------------
-
-                        if (
-                            responseCode == 404
-                        ) {
-
-                            runOnUiThread {
-
-                                status(
-                                    "❌ Rota /api/audio/start não encontrada no Render"
-                                )
-
-                                monitorButton.isEnabled =
-                                    true
-
-                                starting =
-                                    false
-
-                                Toast.makeText(
-                                    this,
-                                    "O Render está usando uma versão sem /api/audio/start.",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
-
-                            return@thread
-                        }
-
-
-                        // -------------------------------------------------
-                        // Outros erros: tenta novamente.
-                        // -------------------------------------------------
-
-                        if (
-                            tentativa < 3
-                        ) {
-
-                            Thread.sleep(
-                                2000
-                            )
-
+                    if (responseCode !in 200..299) {
+                        ultimaMensagem = "HTTP $responseCode"
+                        if (tentativa < 3) {
+                            Thread.sleep(2000)
                             continue
                         }
-
-
                         runOnUiThread {
-
-                            status(
-                                "❌ Erro do Render: HTTP $responseCode"
-                            )
-
-                            monitorButton.isEnabled =
-                                true
-
-                            starting =
-                                false
+                            status("❌ Erro do Render: HTTP $responseCode")
+                            monitorButton.isEnabled = true
+                            starting = false
                         }
-
                         return@thread
                     }
 
-
-                    // -------------------------------------------------
-                    // JSON DA SESSÃO
-                    // -------------------------------------------------
-
-                    val result =
-                        try {
-
-                            JSONObject(
-                                response
-                            )
-
-                        } catch (
-                            e: Exception
-                        ) {
-
-                            null
-                        }
-
-
-                    if (
-                        result == null
-                    ) {
-
-                        ultimaMensagem =
-                            "Resposta inválida do servidor"
-
-
-                        if (
-                            tentativa < 3
-                        ) {
-
-                            Thread.sleep(
-                                2000
-                            )
-
+                    val result = try { JSONObject(response) } catch (_: Exception) { null }
+                    if (result == null) {
+                        ultimaMensagem = "Resposta inválida do servidor"
+                        if (tentativa < 3) {
+                            Thread.sleep(2000)
                             continue
                         }
-
-
                         runOnUiThread {
-
-                            status(
-                                "❌ Resposta inválida do Render"
-                            )
-
-                            monitorButton.isEnabled =
-                                true
-
-                            starting =
-                                false
+                            status("❌ Resposta inválida do Render")
+                            monitorButton.isEnabled = true
+                            starting = false
                         }
-
                         return@thread
                     }
 
+                    val ok = result.optBoolean("ok", false)
+                    val returnedJobId = result.optString("jobId", "")
 
-                    val ok =
-                        result.optBoolean(
-                            "ok",
-                            false
-                        )
-
-
-                    val returnedJobId =
-                        result.optString(
-                            "jobId",
-                            ""
-                        )
-
-
-                    println(
-                        "SI: ok = $ok"
-                    )
-
-                    println(
-                        "SI: jobId = $returnedJobId"
-                    )
-
-
-                    // -------------------------------------------------
-                    // SESSÃO CRIADA
-                    // -------------------------------------------------
-
-                    if (
-                        ok &&
-                        returnedJobId.isNotEmpty()
-                    ) {
-
-                        currentJobId =
-                            returnedJobId
-
-
-                        println(
-                            "SI: sessão criada = $returnedJobId"
-                        )
-
-
+                    if (ok && returnedJobId.isNotEmpty()) {
+                        currentJobId = returnedJobId
                         runOnUiThread {
-
-                            status(
-                                "🟢 Servidor conectado. Autorize a captura..."
-                            )
-
-
-                            monitoring =
-                                true
-
-                            starting =
-                                false
-
-
-                            monitorButton.isEnabled =
-                                false
-
-                            stopButton.isEnabled =
-                                true
-
-
+                            status("🟢 Render conectado. Autorize a captura...")
+                            monitoring = true
+                            starting = false
+                            monitorButton.isEnabled = false
+                            stopButton.isEnabled = true
                             solicitarCapturaDeTela()
                         }
-
-
                         return@thread
                     }
 
-
-                    // -------------------------------------------------
-                    // SERVIDOR RESPONDEU MAS NÃO CRIOU SESSÃO
-                    // -------------------------------------------------
-
-                    ultimaMensagem =
-                        result.optString(
-                            "message",
-                            "Render não criou a sessão"
-                        )
-
-
-                    if (
-                        tentativa < 3
-                    ) {
-
-                        Thread.sleep(
-                            2000
-                        )
-
+                    ultimaMensagem = result.optString("message", "Render não criou a sessão")
+                    if (tentativa < 3) {
+                        Thread.sleep(2000)
                         continue
                     }
 
-
                     runOnUiThread {
-
-                        status(
-                            "❌ $ultimaMensagem"
-                        )
-
-                        monitorButton.isEnabled =
-                            true
-
-                        starting =
-                            false
+                        status("❌ $ultimaMensagem")
+                        monitorButton.isEnabled = true
+                        starting = false
                     }
-
                     return@thread
 
-
-                } catch (
-                    e: Exception
-                ) {
-
-                    ultimaMensagem =
-                        e.message
-                            ?: "Falha de conexão"
-
-
-                    println(
-                        "SI: erro tentativa $tentativa: $ultimaMensagem"
-                    )
-
-
-                    if (
-                        tentativa < 3
-                    ) {
-
+                } catch (e: Exception) {
+                    ultimaMensagem = e.message ?: "Falha de conexão"
+                    if (tentativa < 3) {
                         runOnUiThread {
-
-                            status(
-                                "🟡 Servidor ainda acordando... tentativa $tentativa/3"
-                            )
+                            status("🟡 Servidor ainda acordando... tentativa $tentativa/3")
                         }
-
-
-                        try {
-
-                            Thread.sleep(
-                                2000
-                            )
-
-                        } catch (
-                            _: Exception
-                        ) {
-                        }
-
+                        try { Thread.sleep(2000) } catch (_: Exception) { }
                         continue
                     }
 
-
                     runOnUiThread {
-
-                        status(
-                            "❌ Não foi possível conectar ao servidor"
-                        )
-
-                        monitorButton.isEnabled =
-                            true
-
-                        starting =
-                            false
-
-
-                        Toast.makeText(
-                            this,
-                            ultimaMensagem,
-                            Toast.LENGTH_LONG
-                        ).show()
+                        status("❌ Não foi possível conectar ao servidor")
+                        monitorButton.isEnabled = true
+                        starting = false
+                        Toast.makeText(this, ultimaMensagem, Toast.LENGTH_LONG).show()
                     }
-
-
                     return@thread
                 }
             }
 
-
-            // -----------------------------------------------------
-            // SEGURANÇA
-            // -----------------------------------------------------
-
             runOnUiThread {
-
-                status(
-                    "❌ Servidor não respondeu"
-                )
-
-                monitorButton.isEnabled =
-                    true
-
-                starting =
-                    false
+                status("❌ Servidor não respondeu")
+                monitorButton.isEnabled = true
+                starting = false
             }
         }
     }
 
-
-    // =========================================================
-    // SOLICITAR CAPTURA DE TELA
-    // =========================================================
-
     private fun solicitarCapturaDeTela() {
-
         try {
-
-            val projectionManager =
-                getSystemService(
-                    Context.MEDIA_PROJECTION_SERVICE
-                ) as MediaProjectionManager
-
-
-            val intent =
-                projectionManager
-                    .createScreenCaptureIntent()
-
-
-            startActivityForResult(
-                intent,
-                REQUEST_MEDIA_PROJECTION
-            )
-
-        } catch (
-            e: Exception
-        ) {
-
-            status(
-                "❌ Erro ao abrir captura de tela"
-            )
-
-
-            monitoring =
-                false
-
-            starting =
-                false
-
-
-            monitorButton.isEnabled =
-                true
-
-            stopButton.isEnabled =
-                false
-
-
-            Toast.makeText(
-                this,
-                e.message
-                    ?: "Não foi possível iniciar a captura",
-                Toast.LENGTH_LONG
-            ).show()
+            val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            val intent = projectionManager.createScreenCaptureIntent()
+            startActivityForResult(intent, REQUEST_MEDIA_PROJECTION)
+        } catch (e: Exception) {
+            status("❌ Erro ao abrir captura de tela")
+            monitoring = false
+            starting = false
+            monitorButton.isEnabled = true
+            stopButton.isEnabled = false
+            Toast.makeText(this, e.message ?: "Não foi possível iniciar a captura", Toast.LENGTH_LONG).show()
         }
     }
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
 
-    // =========================================================
-    // RESULTADO DA CAPTURA DE TELA
-    // =========================================================
+        if (requestCode != REQUEST_MEDIA_PROJECTION) return
 
-    override fun onActivityResult(
-        requestCode: Int,
-        resultCode: Int,
-        data: Intent?
-    ) {
-
-        super.onActivityResult(
-            requestCode,
-            resultCode,
-            data
-        )
-
-
-        if (
-            requestCode !=
-            REQUEST_MEDIA_PROJECTION
-        ) {
-
-            return
-        }
-
-
-        if (
-            resultCode ==
-            Activity.RESULT_OK &&
-            data != null
-        ) {
-
-            iniciarCapturaAudio(
-                resultCode,
-                data
-            )
-
+        if (resultCode == Activity.RESULT_OK && data != null) {
+            iniciarCapturaAudio(resultCode, data)
         } else {
-
-            status(
-                "❌ Captura de tela não autorizada"
-            )
-
-
-            monitoring =
-                false
-
-            starting =
-                false
-
-
-            monitorButton.isEnabled =
-                true
-
-            stopButton.isEnabled =
-                false
-
-
-            // -------------------------------------------------
-            // Se o usuário cancelar a autorização, também
-            // pedimos para o servidor encerrar a sessão.
-            // -------------------------------------------------
-
+            status("❌ Captura de tela não autorizada")
+            monitoring = false
+            starting = false
+            monitorButton.isEnabled = true
+            stopButton.isEnabled = false
             encerrarSessaoNoServidor()
         }
     }
 
-
-    // =========================================================
-    // INICIAR CAPTURA DE ÁUDIO
-    // =========================================================
-
-    private fun iniciarCapturaAudio(
-        resultCode: Int,
-        resultData: Intent
-    ) {
-
-        val intent =
-            Intent(
-                this,
-                AudioCaptureService::class.java
-            )
-
-
-        intent.action =
-            AudioCaptureService.ACTION_START
-
-
-        intent.putExtra(
-            AudioCaptureService.EXTRA_JOB_ID,
-            currentJobId
-        )
-
-
-        intent.putExtra(
-            AudioCaptureService.EXTRA_RESULT_CODE,
-            resultCode
-        )
-
-
-        intent.putExtra(
-            AudioCaptureService.EXTRA_RESULT_DATA,
-            resultData
-        )
-
-
-        // -----------------------------------------------------
-        // Android 8+:
-        // inicia o serviço como foreground.
-        // -----------------------------------------------------
+    private fun iniciarCapturaAudio(resultCode: Int, resultData: Intent) {
+        val intent = Intent(this, AudioCaptureService::class.java)
+        intent.action = AudioCaptureService.ACTION_START
+        intent.putExtra(AudioCaptureService.EXTRA_JOB_ID, currentJobId)
+        intent.putExtra(AudioCaptureService.EXTRA_RESULT_CODE, resultCode)
+        intent.putExtra(AudioCaptureService.EXTRA_RESULT_DATA, resultData)
 
         try {
-
-            if (
-                Build.VERSION.SDK_INT >=
-                Build.VERSION_CODES.O
-            ) {
-
-                ContextCompat.startForegroundService(
-                    this,
-                    intent
-                )
-
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                ContextCompat.startForegroundService(this, intent)
             } else {
-
-                startService(
-                    intent
-                )
+                startService(intent)
             }
-
-        } catch (
-            e: Exception
-        ) {
-
-            monitoring =
-                false
-
-            starting =
-                false
-
-
-            monitorButton.isEnabled =
-                true
-
-            stopButton.isEnabled =
-                false
-
-
-            status(
-                "❌ Não foi possível iniciar o serviço de áudio"
-            )
-
-
-            Toast.makeText(
-                this,
-                e.message
-                    ?: "Erro no serviço de áudio",
-                Toast.LENGTH_LONG
-            ).show()
-
-
-            return
+            status("🎤 Capturando áudio em tempo real...")
+        } catch (e: Exception) {
+            monitoring = false
+            starting = false
+            monitorButton.isEnabled = true
+            stopButton.isEnabled = false
+            status("❌ Não foi possível iniciar o serviço de áudio")
+            Toast.makeText(this, e.message ?: "Erro no serviço de áudio", Toast.LENGTH_LONG).show()
         }
-
-
-        status(
-            "🎤 Capturando áudio em tempo real..."
-        )
     }
-
-
-    // =========================================================
-    // PARAR MONITORAMENTO
-    // =========================================================
 
     private fun pararMonitoramento() {
-
-        val intent =
-            Intent(
-                this,
-                AudioCaptureService::class.java
-            )
-
-
-        intent.action =
-            AudioCaptureService.ACTION_STOP
-
+        val intent = Intent(this, AudioCaptureService::class.java)
+        intent.action = AudioCaptureService.ACTION_STOP
 
         try {
-
-            startService(
-                intent
-            )
-
-        } catch (
-            _: Exception
-        ) {
-        }
-
+            startService(intent)
+        } catch (_: Exception) { }
 
         encerrarSessaoNoServidor()
-
-
-        status(
-            "⏸ Monitoramento parado"
-        )
-
-
-        monitoring =
-            false
-
-        starting =
-            false
-
-
-        monitorButton.isEnabled =
-            true
-
-        stopButton.isEnabled =
-            false
-
-
-        currentJobId =
-            null
+        status("⏸ Monitoramento parado")
+        monitoring = false
+        starting = false
+        monitorButton.isEnabled = true
+        stopButton.isEnabled = false
+        currentJobId = null
     }
-
-
-    // =========================================================
-    // ENCERRAR SESSÃO NO SERVIDOR
-    // =========================================================
 
     private fun encerrarSessaoNoServidor() {
-
-        val jobId =
-            currentJobId
-                ?: return
-
-
+        val job = currentJobId ?: return
         thread {
-
             try {
-
-                val connection =
-                    URL(
-                        "$BACKEND_URL/api/audio/stop/$jobId"
-                    )
-                        .openConnection()
-                        as HttpURLConnection
-
-
-                connection.requestMethod =
-                    "POST"
-
-
-                connection.connectTimeout =
-                    5000
-
-                connection.readTimeout =
-                    5000
-
-
-                connection.useCaches =
-                    false
-
-
-                connection.setRequestProperty(
-                    "Connection",
-                    "close"
-                )
-
-
-                try {
-
-                    connection.responseCode
-
-                } catch (
-                    _: Exception
-                ) {
-                }
-
-
+                val connection = URL("$BACKEND_URL/api/audio/stop/$job")
+                    .openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 5000
+                connection.readTimeout = 5000
+                connection.doOutput = true
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.outputStream.use { it.write("{}".toByteArray()) }
+                connection.responseCode
                 connection.disconnect()
+            } catch (_: Exception) { }
+        }
+    }
 
-            } catch (
-                _: Exception
-            ) {
+    private fun obterClientId(): String {
+        val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val atual = prefs.getString(CLIENT_ID, null)
+        if (!atual.isNullOrEmpty()) return atual
+
+        val novo = UUID.randomUUID().toString()
+        prefs.edit().putString(CLIENT_ID, novo).apply()
+        return novo
+    }
+
+    private fun obterIdiomaSelecionado(): String {
+        return when (languageSpinner.selectedItemPosition) {
+            0 -> "pt"
+            1 -> "en"
+            2 -> "es"
+            3 -> "fr"
+            4 -> "de"
+            5 -> "it"
+            6 -> "ja"
+            7 -> "ko"
+            8 -> "zh"
+            9 -> "ru"
+            10 -> "ar"
+            11 -> "hi"
+            12 -> "tr"
+            13 -> "nl"
+            14 -> "pl"
+            15 -> "uk"
+            16 -> "th"
+            17 -> "id"
+            18 -> "vi"
+            else -> "pt"
+        }
+    }
+
+    private fun atualizarDiagnostico() {
+        if (!::diagnosticText.isInitialized) return
+
+        val prefs = getSharedPreferences(DIAG_PREFS, Context.MODE_PRIVATE)
+        val status = prefs.getString("status", "🔎 Diagnóstico: aguardando...") ?: "🔎 Diagnóstico: aguardando..."
+        val captured = prefs.getLong("captured", 0L)
+        val sent = prefs.getLong("sent", 0L)
+        val received = prefs.getLong("received", 0L)
+        val played = prefs.getLong("played", 0L)
+        val rms = prefs.getLong("rms", 0L)
+        val queue = prefs.getInt("queue", 0)
+        val error = prefs.getString("error", "") ?: ""
+
+        val job = currentJobId?.let {
+            if (it.length > 12) it.take(12) + "..." else it
+        } ?: "-"
+
+        diagnosticText.text = buildString {
+            append(status)
+            append("\n\n")
+            append("Capturados: $captured   Enviados: $sent")
+            append("\nPiper recebidos: $received   Reproduzidos: $played")
+            append("\nRMS: $rms   Fila: $queue")
+            append("\nSessão: $job")
+            if (error.isNotEmpty()) {
+                append("\n⚠️ ")
+                append(error)
             }
         }
     }
 
-
-    // =========================================================
-    // CLIENT ID
-    // =========================================================
-
-    private fun obterClientId():
-            String {
-
-        val prefs =
-            getSharedPreferences(
-                PREFS,
-                Context.MODE_PRIVATE
-            )
-
-
-        var clientId =
-            prefs.getString(
-                CLIENT_ID,
-                ""
-            ) ?: ""
-
-
-        if (
-            clientId.isEmpty()
-        ) {
-
-            clientId =
-                UUID
-                    .randomUUID()
-                    .toString()
-
-
-            prefs
-                .edit()
-                .putString(
-                    CLIENT_ID,
-                    clientId
-                )
-                .apply()
-        }
-
-
-        return clientId
-    }
-
-
-    // =========================================================
-    // IDIOMA
-    // =========================================================
-
-    private fun obterIdiomaSelecionado():
-            String {
-
-        return when (
-            languageSpinner.selectedItemPosition
-        ) {
-
-            0 ->
-                "pt-BR"
-
-            1 ->
-                "en-US"
-
-            2 ->
-                "es-ES"
-
-            3 ->
-                "fr-FR"
-
-            4 ->
-                "de-DE"
-
-            5 ->
-                "it-IT"
-
-            6 ->
-                "ja-JP"
-
-            7 ->
-                "ko-KR"
-
-            8 ->
-                "zh-CN"
-
-            9 ->
-                "ru-RU"
-
-            10 ->
-                "ar-SA"
-
-            11 ->
-                "hi-IN"
-
-            12 ->
-                "tr-TR"
-
-            13 ->
-                "nl-NL"
-
-            14 ->
-                "pl-PL"
-
-            15 ->
-                "uk-UA"
-
-            16 ->
-                "th-TH"
-
-            17 ->
-                "id-ID"
-
-            18 ->
-                "vi-VN"
-
-            else ->
-                "pt-BR"
+    private fun status(texto: String) {
+        if (::statusText.isInitialized) {
+            statusText.text = texto
         }
     }
-
-
-    // =========================================================
-    // STATUS
-    // =========================================================
-
-    private fun status(
-        message: String
-    ) {
-
-        runOnUiThread {
-
-            statusText.text =
-                message
-        }
-    }
-
-
-    // =========================================================
-    // ON DESTROY
-    // =========================================================
 
     override fun onDestroy() {
-
+        diagnosticHandler.removeCallbacks(diagnosticRunnable)
         super.onDestroy()
-
-        if (monitoring) {
-
-            try {
-
-                val intent =
-                    Intent(
-                        this,
-                        AudioCaptureService::class.java
-                    )
-
-                intent.action =
-                    AudioCaptureService.ACTION_STOP
-
-                startService(
-                    intent
-                )
-
-            } catch (
-                _: Exception
-            ) {
-            }
-        }
     }
 }
