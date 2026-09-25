@@ -1381,35 +1381,59 @@ class AudioCaptureService : Service() {
                 )
                     .openConnection()
                     as HttpURLConnection
-
-
             connection.requestMethod =
                 "GET"
-
 
             connection.connectTimeout =
                 10000
 
             connection.readTimeout =
-                30000
+                10000
 
+            connection.useCaches =
+                false
+
+            connection.setRequestProperty(
+                "Connection",
+                "close"
+            )
+
+            connection.setRequestProperty(
+                "Accept",
+                "audio/wav,audio/x-wav,*/*"
+            )
+
+            val code =
+                connection.responseCode
+
+            Log.d(
+                TAG,
+                "WAV HTTP=$code url=$urlString"
+            )
 
             if (
-                connection.responseCode !in 200..299
+                code !in 200..299
             ) {
 
                 Log.e(
                     TAG,
-                    "WAV HTTP=${connection.responseCode}"
+                    "WAV HTTP=$code"
                 )
 
                 null
 
             } else {
 
+                val expected =
+                    connection.contentLengthLong
+
+                Log.d(
+                    TAG,
+                    "WAV Content-Length=$expected"
+                )
+
                 val output =
                     ByteArrayOutputStream()
-
 
                 connection.inputStream.use {
                     input ->
@@ -1419,6 +1443,7 @@ class AudioCaptureService : Service() {
                             8192
                         )
 
+                    var total = 0L
 
                     while (true) {
 
@@ -1427,14 +1452,12 @@ class AudioCaptureService : Service() {
                                 buffer
                             )
 
-
                         if (
                             read == -1
                         ) {
 
                             break
                         }
-
 
                         if (
                             read > 0
@@ -1445,10 +1468,25 @@ class AudioCaptureService : Service() {
                                 0,
                                 read
                             )
+
+                            total += read
+
+                            if (
+                                total > 20L * 1024L * 1024L
+                            ) {
+
+                                throw IllegalStateException(
+                                    "WAV maior que 20 MB"
+                                )
+                            }
                         }
                     }
-                }
 
+                    Log.d(
+                        TAG,
+                        "WAV download terminado bytes=$total"
+                    )
+                }
 
                 output.toByteArray()
             }
@@ -1899,6 +1937,10 @@ class AudioCaptureService : Service() {
                 "WAV salvo para reprodução: ${file.absolutePath} bytes=${item.wav.size}"
             )
 
+            publicarDiagnostico(
+                "📦 WAV salvo • iniciando MediaPlayer"
+            )
+
 
             synchronized(
                 mediaPlayerLock
@@ -1931,6 +1973,11 @@ class AudioCaptureService : Service() {
 
                 player.prepare()
 
+                Log.d(
+                    TAG,
+                    "MediaPlayer preparado duração=${player.duration}ms"
+                )
+
                 player.setVolume(
                     1.0f,
                     1.0f
@@ -1947,6 +1994,10 @@ class AudioCaptureService : Service() {
                 )
 
                 player.start()
+
+                publicarDiagnostico(
+                    "🔊 VOZ FALANDO • duração=${player.duration}ms"
+                )
 
 
                 while (
