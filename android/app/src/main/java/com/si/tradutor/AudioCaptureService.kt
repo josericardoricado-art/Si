@@ -61,6 +61,9 @@ class AudioCaptureService : Service() {
         private const val NOTIFICATION_ID =
             1001
 
+        private const val DIAG_PREFS =
+            "si_diagnostic"
+
         private const val SAMPLE_RATE =
             16000
 
@@ -207,6 +210,10 @@ class AudioCaptureService : Service() {
         0L
 
     @Volatile
+    private var piperAudioCount =
+        0L
+
+    @Volatile
     private var playedAudio =
         0L
 
@@ -217,6 +224,33 @@ class AudioCaptureService : Service() {
     @Volatile
     private var lastError:
         String? = null
+
+
+    // =========================================================
+    // DIAGNÓSTICO VISÍVEL NO APLICATIVO
+    // =========================================================
+
+    private fun publicarDiagnostico(
+        mensagem: String
+    ) {
+        try {
+            getSharedPreferences(
+                DIAG_PREFS,
+                Context.MODE_PRIVATE
+            ).edit()
+                .putString("status", mensagem)
+                .putLong("time", System.currentTimeMillis())
+                .putLong("captured", capturedChunks)
+                .putLong("sent", sentChunks)
+                .putLong("received", piperAudioCount)
+                .putLong("played", playedAudio)
+                .putLong("rms", lastRms)
+                .putInt("queue", outputQueue.size)
+                .putString("error", lastError ?: "")
+                .apply()
+        } catch (_: Exception) {
+        }
+    }
 
 
     // =========================================================
@@ -257,6 +291,10 @@ class AudioCaptureService : Service() {
         Log.d(
             TAG,
             "================================"
+        )
+
+        publicarDiagnostico(
+            "🟢 Serviço de áudio preparado"
         )
     }
 
@@ -383,6 +421,10 @@ class AudioCaptureService : Service() {
             stopping = false
 
             limparEstado()
+
+            publicarDiagnostico(
+                "🟢 Render conectado • iniciando captura"
+            )
 
             iniciarMediaProjection(
                 resultCode,
@@ -610,6 +652,10 @@ class AudioCaptureService : Service() {
                         "CAPTURA DE ÁUDIO INICIADA"
                     )
 
+                    publicarDiagnostico(
+                        "🎤 Áudio capturado • aguardando fala"
+                    )
+
 
                     while (
                         running &&
@@ -694,6 +740,16 @@ class AudioCaptureService : Service() {
 
 
                         capturedChunks++
+
+                        if (capturedChunks == 1L || capturedChunks % 20L == 0L) {
+                            publicarDiagnostico(
+                                if (rms > 2) {
+                                    "🎤 Áudio capturado • RMS=$rms"
+                                } else {
+                                    "🎤 Capturando • áudio silencioso"
+                                }
+                            )
+                        }
 
 
                         if (
@@ -970,6 +1026,12 @@ class AudioCaptureService : Service() {
 
                 sentChunks++
 
+                if (sentChunks == 1L || sentChunks % 20L == 0L) {
+                    publicarDiagnostico(
+                        "📡 Áudio enviado ao Render"
+                    )
+                }
+
 
                 if (
                     sentChunks <= 5 ||
@@ -1156,6 +1218,12 @@ class AudioCaptureService : Service() {
                 audioUrl.isEmpty()
             ) {
 
+                if (sentChunks > 0L) {
+                    publicarDiagnostico(
+                        "🟡 Texto/voz ainda não chegou • aguardando Piper"
+                    )
+                }
+
                 return
             }
 
@@ -1193,6 +1261,10 @@ class AudioCaptureService : Service() {
             Log.d(
                 TAG,
                 "NOVO AUDIO PIPER=$audioId"
+            )
+
+            publicarDiagnostico(
+                "🔊 Áudio Piper recebido • baixando WAV"
             )
 
 
@@ -1258,6 +1330,12 @@ class AudioCaptureService : Service() {
             Log.d(
                 TAG,
                 "AUDIO PIPER NA FILA"
+            )
+
+            piperAudioCount++
+
+            publicarDiagnostico(
+                "🔊 Áudio Piper recebido • pronto para reproduzir"
             )
 
 
@@ -1725,12 +1803,20 @@ class AudioCaptureService : Service() {
                         }
 
 
+                        publicarDiagnostico(
+                            "▶️ Reproduzindo voz Piper"
+                        )
+
                         tocarWav(
                             item
                         )
 
 
                         playedAudio++
+
+                        publicarDiagnostico(
+                            "✅ Voz reproduzida"
+                        )
 
 
                         Log.d(
@@ -1755,6 +1841,10 @@ class AudioCaptureService : Service() {
                                 TAG,
                                 "Erro playback",
                                 e
+                            )
+
+                            publicarDiagnostico(
+                                "❌ Erro ao reproduzir: ${e.message ?: "erro desconhecido"}"
                             )
                         }
                     }
@@ -1852,6 +1942,10 @@ class AudioCaptureService : Service() {
                     "MEDIAPLAYER START audioId=${item.audioId}"
                 )
 
+                publicarDiagnostico(
+                    "▶️ MediaPlayer iniciou a voz"
+                )
+
                 player.start()
 
 
@@ -1905,6 +1999,10 @@ class AudioCaptureService : Service() {
                 TAG,
                 "Erro reproduzindo WAV com MediaPlayer",
                 e
+            )
+
+            publicarDiagnostico(
+                "❌ MediaPlayer: ${e.message ?: "erro desconhecido"}"
             )
 
         } finally {
@@ -2109,6 +2207,9 @@ class AudioCaptureService : Service() {
         receivedAudio =
             0
 
+        piperAudioCount =
+            0
+
         playedAudio =
             0
 
@@ -2205,6 +2306,10 @@ class AudioCaptureService : Service() {
         Log.d(
             TAG,
             "================================"
+        )
+
+        publicarDiagnostico(
+            "⏹ Monitoramento encerrado"
         )
 
 
