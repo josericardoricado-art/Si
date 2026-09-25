@@ -735,7 +735,70 @@ def create_audio_session(
 
     return job
 
+# ============================================================
+# CRIAR SESSÃO DE ÁUDIO
+# ============================================================
 
+@app.route(
+    "/api/audio/start",
+    methods=["POST"]
+)
+def audio_start():
+
+    try:
+
+        data = request.get_json(
+            silent=True
+        ) or {}
+
+        target_language = normalize_language(
+            data.get(
+                "targetLang",
+                data.get(
+                    "targetLanguage",
+                    DEFAULT_TARGET_LANGUAGE
+                )
+            )
+        )
+
+        job_id = uuid.uuid4().hex
+
+        job = create_audio_session(
+            job_id,
+            target_language
+        )
+
+        return jsonify({
+
+            "ok": True,
+
+            "jobId":
+                job_id,
+
+            "status":
+                job["status"],
+
+            "targetLanguage":
+                target_language
+
+        })
+
+    except Exception as error:
+
+        print(
+            "[AUDIO START] Erro:",
+            repr(error),
+            flush=True
+        )
+
+        return jsonify({
+
+            "ok": False,
+
+            "error":
+                str(error)
+
+        }), 500
 # ============================================================
 # HOME
 # ============================================================
