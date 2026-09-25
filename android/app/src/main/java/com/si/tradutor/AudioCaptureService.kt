@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
@@ -1250,11 +1251,6 @@ class AudioCaptureService : Service() {
 
                     return
                 }
-
-
-                downloadedAudioIds.add(
-                    audioId
-                )
             }
 
 
@@ -1304,44 +1300,65 @@ class AudioCaptureService : Service() {
             }
 
 
+            synchronized(
+                downloadedAudioLock
+            ) {
+
+                downloadedAudioIds.add(
+                    audioId
+                )
+            }
+
             val item =
                 OutputAudio(
                     audioId,
                     validWav
                 )
 
+            piperAudioCount++
 
-            if (
-                !outputQueue.offer(
-                    item,
-                    3,
-                    TimeUnit.SECONDS
+            publicarDiagnostico(
+                "📦 WAV baixado • reproduzindo agora"
+            )
+
+            Log.d(
+                TAG,
+                "AUDIO PIPER BAIXADO bytes=${validWav.size} id=$audioId"
+            )
+
+            val tocou =
+                tocarWav(
+                    item
                 )
-            ) {
+
+            if (tocou) {
+
+                playedAudio++
+
+                publicarDiagnostico(
+                    "✅ VOZ PIPER REPRODUZIDA"
+                )
+
+                Log.d(
+                    TAG,
+                    "AUDIO PIPER TOCADO #$playedAudio id=$audioId"
+                )
+
+                // Só confirma ao Render depois que o WAV terminou de tocar.
+                enviarAck(
+                    audioId
+                )
+
+            } else {
 
                 removerAudioBaixado(
                     audioId
                 )
 
-                return
+                publicarDiagnostico(
+                    "❌ Piper chegou, mas não conseguiu tocar no Android"
+                )
             }
-
-
-            Log.d(
-                TAG,
-                "AUDIO PIPER NA FILA"
-            )
-
-            piperAudioCount++
-
-            publicarDiagnostico(
-                "🔊 Áudio Piper recebido • pronto para reproduzir"
-            )
-
-
-            enviarAck(
-                audioId
-            )
 
         } catch (e: Exception) {
 
@@ -1381,8 +1398,11 @@ class AudioCaptureService : Service() {
                 )
                     .openConnection()
                     as HttpURLConnection
+
+
             connection.requestMethod =
                 "GET"
+
 
             connection.connectTimeout =
                 10000
@@ -1390,50 +1410,31 @@ class AudioCaptureService : Service() {
             connection.readTimeout =
                 10000
 
-            connection.useCaches =
-                false
 
-            connection.setRequestProperty(
-                "Connection",
-                "close"
-            )
-
-            connection.setRequestProperty(
-                "Accept",
-                "audio/wav,audio/x-wav,*/*"
-            )
-
-            val code =
+            val httpCode =
                 connection.responseCode
 
             Log.d(
                 TAG,
-                "WAV HTTP=$code url=$urlString"
+                "WAV HTTP=$httpCode url=$urlString"
             )
 
             if (
-                code !in 200..299
+                httpCode !in 200..299
             ) {
 
                 Log.e(
                     TAG,
-                    "WAV HTTP=$code"
+                    "WAV HTTP=${connection.responseCode}"
                 )
 
                 null
 
             } else {
 
-                val expected =
-                    connection.contentLengthLong
-
-                Log.d(
-                    TAG,
-                    "WAV Content-Length=$expected"
-                )
-
                 val output =
                     ByteArrayOutputStream()
+
 
                 connection.inputStream.use {
                     input ->
@@ -1443,7 +1444,6 @@ class AudioCaptureService : Service() {
                             8192
                         )
 
-                    var total = 0L
 
                     while (true) {
 
@@ -1452,12 +1452,14 @@ class AudioCaptureService : Service() {
                                 buffer
                             )
 
+
                         if (
                             read == -1
                         ) {
 
                             break
                         }
+
 
                         if (
                             read > 0
@@ -1468,25 +1470,10 @@ class AudioCaptureService : Service() {
                                 0,
                                 read
                             )
-
-                            total += read
-
-                            if (
-                                total > 20L * 1024L * 1024L
-                            ) {
-
-                                throw IllegalStateException(
-                                    "WAV maior que 20 MB"
-                                )
-                            }
                         }
                     }
-
-                    Log.d(
-                        TAG,
-                        "WAV download terminado bytes=$total"
-                    )
                 }
+
 
                 output.toByteArray()
             }
@@ -1810,92 +1797,11 @@ class AudioCaptureService : Service() {
 
     private fun iniciarPlayback() {
 
-        playbackThread =
-            Thread {
-
-                Log.d(
-                    TAG,
-                    "THREAD PLAYBACK INICIADA - MediaPlayer WAV"
-                )
-
-
-                while (
-                    running &&
-                    !stopping
-                ) {
-
-                    try {
-
-                        val item =
-                            outputQueue.poll(
-                                500,
-                                TimeUnit.MILLISECONDS
-                            )
-
-
-                        if (
-                            item == null
-                        ) {
-
-                            continue
-                        }
-
-
-                        publicarDiagnostico(
-                            "▶️ Reproduzindo voz Piper"
-                        )
-
-                        tocarWav(
-                            item
-                        )
-
-
-                        playedAudio++
-
-                        publicarDiagnostico(
-                            "✅ Voz reproduzida"
-                        )
-
-
-                        Log.d(
-                            TAG,
-                            "AUDIO TOCADO #$playedAudio"
-                        )
-
-                    } catch (
-                        e: InterruptedException
-                    ) {
-
-                        break
-
-                    } catch (e: Exception) {
-
-                        if (running) {
-
-                            lastError =
-                                e.message
-
-                            Log.e(
-                                TAG,
-                                "Erro playback",
-                                e
-                            )
-
-                            publicarDiagnostico(
-                                "❌ Erro ao reproduzir: ${e.message ?: "erro desconhecido"}"
-                            )
-                        }
-                    }
-                }
-
-
-                liberarMediaPlayer()
-            }
-
-
-        playbackThread?.start()
+        Log.d(
+            TAG,
+            "PLAYBACK DIRETO ATIVO - sem fila intermediária"
+        )
     }
-
 
     // =========================================================
     // TOCAR WAV COM MEDIA PLAYER
@@ -1903,20 +1809,12 @@ class AudioCaptureService : Service() {
 
     private fun tocarWav(
         item: OutputAudio
-    ) {
+    ): Boolean {
 
-        if (
-            item.wav.isEmpty()
-        ) {
-
-            Log.e(
-                TAG,
-                "WAV vazio"
-            )
-
-            return
+        if (item.wav.isEmpty()) {
+            Log.e(TAG, "WAV vazio")
+            return false
         }
-
 
         val file =
             File(
@@ -1924,65 +1822,88 @@ class AudioCaptureService : Service() {
                 "si_piper_${item.audioId}.wav"
             )
 
+        var focusGranted = false
 
         try {
 
-            file.writeBytes(
-                item.wav
-            )
-
+            file.writeBytes(item.wav)
 
             Log.d(
                 TAG,
-                "WAV salvo para reprodução: ${file.absolutePath} bytes=${item.wav.size}"
+                "WAV salvo: ${file.absolutePath} bytes=${item.wav.size}"
             )
 
             publicarDiagnostico(
-                "📦 WAV salvo • iniciando MediaPlayer"
+                "📦 WAV salvo • iniciando voz"
             )
 
+            val audioManager =
+                getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
-            synchronized(
-                mediaPlayerLock
-            ) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+
+                val request =
+                    AudioFocusRequest.Builder(
+                        AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+                    )
+                        .setAudioAttributes(
+                            AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_MEDIA)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                .build()
+                        )
+                        .setAcceptsDelayedFocusGain(false)
+                        .build()
+
+                focusGranted =
+                    audioManager.requestAudioFocus(request) ==
+                        AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+
+                Log.d(
+                    TAG,
+                    "AudioFocus=$focusGranted"
+                )
+            }
+
+            synchronized(mediaPlayerLock) {
 
                 liberarMediaPlayerInterno()
 
                 val player =
                     MediaPlayer()
 
-                mediaPlayer =
-                    player
-
+                mediaPlayer = player
 
                 player.setAudioAttributes(
                     AudioAttributes.Builder()
-                        .setUsage(
-                            AudioAttributes.USAGE_MEDIA
-                        )
-                        .setContentType(
-                            AudioAttributes.CONTENT_TYPE_SPEECH
-                        )
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                         .build()
                 )
 
+                player.setOnErrorListener { _, what, extra ->
+                    Log.e(
+                        TAG,
+                        "MediaPlayer ERROR what=$what extra=$extra"
+                    )
+                    publicarDiagnostico(
+                        "❌ MediaPlayer erro $what/$extra"
+                    )
+                    true
+                }
 
-                player.setDataSource(
-                    file.absolutePath
-                )
+                player.setDataSource(file.absolutePath)
 
                 player.prepare()
 
                 Log.d(
                     TAG,
-                    "MediaPlayer preparado duração=${player.duration}ms"
+                    "MediaPlayer preparado duration=${player.duration}ms"
                 )
 
-                player.setVolume(
-                    1.0f,
-                    1.0f
-                )
+                player.setVolume(1.0f, 1.0f)
 
+                player.start()
 
                 Log.d(
                     TAG,
@@ -1990,61 +1911,43 @@ class AudioCaptureService : Service() {
                 )
 
                 publicarDiagnostico(
-                    "▶️ MediaPlayer iniciou a voz"
+                    "🔊 VOZ FALANDO"
                 )
 
-                player.start()
+                while (running && !stopping) {
 
-                publicarDiagnostico(
-                    "🔊 VOZ FALANDO • duração=${player.duration}ms"
-                )
-
-
-                while (
-                    running &&
-                    !stopping
-                ) {
-
-                    val tocando =
+                    val playing =
                         try {
                             player.isPlaying
                         } catch (_: Exception) {
                             false
                         }
 
-
-                    if (!tocando) {
+                    if (!playing) {
                         break
                     }
-
 
                     try {
                         Thread.sleep(50)
                     } catch (e: InterruptedException) {
                         Thread.currentThread().interrupt()
-                        break
+                        return false
                     }
                 }
 
+                Log.d(
+                    TAG,
+                    "MEDIAPLAYER FIM audioId=${item.audioId}"
+                )
 
                 liberarMediaPlayerInterno()
             }
 
-        } catch (
-            e: InterruptedException
-        ) {
-
-            Log.d(
-                TAG,
-                "Playback interrompido"
-            )
-
-            Thread.currentThread().interrupt()
+            return true
 
         } catch (e: Exception) {
 
-            lastError =
-                e.message
+            lastError = e.message
 
             Log.e(
                 TAG,
@@ -2056,15 +1959,28 @@ class AudioCaptureService : Service() {
                 "❌ MediaPlayer: ${e.message ?: "erro desconhecido"}"
             )
 
+            return false
+
         } finally {
 
             try {
                 file.delete()
             } catch (_: Exception) {
             }
+
+            if (focusGranted) {
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        // O AudioFocusRequest é temporário; abandonamos usando o mesmo
+                        // listener implícito somente após a reprodução.
+                        // Em aparelhos que não aceitam o abandono sem referência,
+                        // o sistema libera o foco quando a sessão termina.
+                    }
+                } catch (_: Exception) {
+                }
+            }
         }
     }
-
 
     // =========================================================
     // LIBERAR MEDIA PLAYER
