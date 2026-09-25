@@ -10,10 +10,9 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.AudioFormat
-import android.media.AudioManager
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
-import android.media.AudioTrack
+import android.media.MediaPlayer
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -22,6 +21,7 @@ import android.util.Base64
 import android.util.Log
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.ByteBuffer
@@ -129,13 +129,10 @@ class AudioCaptureService : Service() {
     // AUDIO TRACK
     // =========================================================
 
-    private var audioTrack:
-        AudioTrack? = null
+    private var mediaPlayer:
+        MediaPlayer? = null
 
-    private var audioTrackRate =
-        22050
-
-    private val audioTrackLock =
+    private val mediaPlayerLock =
         Any()
 
 
@@ -151,8 +148,7 @@ class AudioCaptureService : Service() {
 
     private data class OutputAudio(
         val audioId: String,
-        val pcm: ByteArray,
-        val sampleRate: Int
+        val wav: ByteArray
     )
 
 
@@ -1218,14 +1214,14 @@ class AudioCaptureService : Service() {
             }
 
 
-            val parsed =
-                parseWav(
+            val validWav =
+                validarWav(
                     wav
                 )
 
 
             if (
-                parsed == null
+                validWav == null
             ) {
 
                 removerAudioBaixado(
@@ -1239,8 +1235,7 @@ class AudioCaptureService : Service() {
             val item =
                 OutputAudio(
                     audioId,
-                    parsed.first,
-                    parsed.second
+                    validWav
                 )
 
 
@@ -1398,18 +1393,23 @@ class AudioCaptureService : Service() {
 
 
     // =========================================================
-    // PARSER WAV
+    // VALIDAR WAV
     // =========================================================
 
-    private fun parseWav(
+    private fun validarWav(
         wav: ByteArray
-    ): Pair<ByteArray, Int>? {
+    ): ByteArray? {
 
         try {
 
             if (
                 wav.size < 44
             ) {
+
+                Log.e(
+                    TAG,
+                    "WAV pequeno demais: ${wav.size} bytes"
+                )
 
                 return null
             }
@@ -1468,22 +1468,21 @@ class AudioCaptureService : Service() {
                 chunkName(8) != "WAVE"
             ) {
 
+                Log.e(
+                    TAG,
+                    "WAV inválido: RIFF/WAVE não encontrado"
+                )
+
                 return null
             }
 
 
             var offset = 12
-
             var format = 0
-
             var channels = 0
-
             var sampleRate = 0
-
             var bits = 0
-
             var dataStart = -1
-
             var dataSize = 0
 
 
@@ -1523,9 +1522,16 @@ class AudioCaptureService : Service() {
                 }
 
 
+                val safeSize =
+                    minOf(
+                        size,
+                        wav.size - dataOffset
+                    )
+
+
                 if (
                     id == "fmt " &&
-                    size >= 16
+                    safeSize >= 16
                 ) {
 
                     format =
@@ -1533,18 +1539,15 @@ class AudioCaptureService : Service() {
                             dataOffset
                         )
 
-
                     channels =
                         shortLE(
                             dataOffset + 2
                         )
 
-
                     sampleRate =
                         intLE(
                             dataOffset + 4
                         )
-
 
                     bits =
                         shortLE(
@@ -1560,23 +1563,15 @@ class AudioCaptureService : Service() {
                     dataStart =
                         dataOffset
 
-
                     dataSize =
-                        minOf(
-                            size,
-                            wav.size -
-                                dataOffset
-                        )
-
+                        safeSize
 
                     break
                 }
 
 
                 offset =
-                    dataOffset +
-                        size
-
+                    dataOffset + size
 
                 if (
                     offset % 2 != 0
@@ -1596,143 +1591,27 @@ class AudioCaptureService : Service() {
                 dataSize <= 0
             ) {
 
-                return null
-            }
-
-
-            var pcm =
-                wav.copyOfRange(
-                    dataStart,
-                    dataStart +
-                        dataSize
+                Log.e(
+                    TAG,
+                    "WAV incompatível format=$format channels=$channels rate=$sampleRate bits=$bits data=$dataSize"
                 )
 
-
-            if (
-                pcm.size % 2 != 0
-            ) {
-
-                pcm =
-                    pcm.copyOf(
-                        pcm.size - 1
-                    )
-            }
-
-
-            /*
-             * Stereo -> mono
-             */
-            if (
-                channels > 1
-            ) {
-
-                val frameBytes =
-                    channels * 2
-
-
-                val frames =
-                    pcm.size /
-                        frameBytes
-
-
-                val mono =
-                    ByteArray(
-                        frames * 2
-                    )
-
-
-                for (
-                    frame in 0 until frames
-                ) {
-
-                    var sum = 0L
-
-
-                    for (
-                        channel in 0 until channels
-                    ) {
-
-                        val index =
-                            frame *
-                                frameBytes +
-                                channel * 2
-
-
-                        val sample =
-                            (
-                                (pcm[index].toInt() and 0xff) or
-                                    (pcm[index + 1].toInt() shl 8)
-                                )
-
-
-                        val signed =
-                            if (
-                                sample and 0x8000 != 0
-                            ) {
-
-                                sample -
-                                    65536
-
-                            } else {
-
-                                sample
-                            }
-
-
-                        sum += signed
-                    }
-
-
-                    val value =
-                        (
-                            sum /
-                                channels
-                            )
-                            .toInt()
-                            .coerceIn(
-                                -32768,
-                                32767
-                            )
-
-
-                    val index =
-                        frame * 2
-
-
-                    mono[index] =
-                        (
-                            value and 0xff
-                        ).toByte()
-
-
-                    mono[index + 1] =
-                        (
-                            value shr 8
-                        ).toByte()
-                }
-
-
-                pcm =
-                    mono
+                return null
             }
 
 
             Log.d(
                 TAG,
-                "WAV OK rate=$sampleRate pcm=${pcm.size}"
+                "WAV OK rate=$sampleRate channels=$channels bits=$bits bytes=${wav.size}"
             )
 
-
-            return Pair(
-                pcm,
-                sampleRate
-            )
+            return wav
 
         } catch (e: Exception) {
 
             Log.e(
                 TAG,
-                "Erro parse WAV",
+                "Erro validando WAV",
                 e
             )
 
@@ -1820,7 +1699,7 @@ class AudioCaptureService : Service() {
 
                 Log.d(
                     TAG,
-                    "THREAD PLAYBACK INICIADA"
+                    "THREAD PLAYBACK INICIADA - MediaPlayer WAV"
                 )
 
 
@@ -1846,7 +1725,7 @@ class AudioCaptureService : Service() {
                         }
 
 
-                        tocarAudio(
+                        tocarWav(
                             item
                         )
 
@@ -1882,7 +1761,7 @@ class AudioCaptureService : Service() {
                 }
 
 
-                liberarAudioTrack()
+                liberarMediaPlayer()
             }
 
 
@@ -1891,285 +1770,202 @@ class AudioCaptureService : Service() {
 
 
     // =========================================================
-    // TOCAR AUDIO
+    // TOCAR WAV COM MEDIA PLAYER
     // =========================================================
 
-    private fun tocarAudio(
+    private fun tocarWav(
         item: OutputAudio
     ) {
 
         if (
-            item.pcm.isEmpty()
+            item.wav.isEmpty()
+        ) {
+
+            Log.e(
+                TAG,
+                "WAV vazio"
+            )
+
+            return
+        }
+
+
+        val file =
+            File(
+                cacheDir,
+                "si_piper_${item.audioId}.wav"
+            )
+
+
+        try {
+
+            file.writeBytes(
+                item.wav
+            )
+
+
+            Log.d(
+                TAG,
+                "WAV salvo para reprodução: ${file.absolutePath} bytes=${item.wav.size}"
+            )
+
+
+            synchronized(
+                mediaPlayerLock
+            ) {
+
+                liberarMediaPlayerInterno()
+
+                val player =
+                    MediaPlayer()
+
+                mediaPlayer =
+                    player
+
+
+                player.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(
+                            AudioAttributes.USAGE_MEDIA
+                        )
+                        .setContentType(
+                            AudioAttributes.CONTENT_TYPE_SPEECH
+                        )
+                        .build()
+                )
+
+
+                player.setDataSource(
+                    file.absolutePath
+                )
+
+                player.prepare()
+
+                player.setVolume(
+                    1.0f,
+                    1.0f
+                )
+
+
+                Log.d(
+                    TAG,
+                    "MEDIAPLAYER START audioId=${item.audioId}"
+                )
+
+                player.start()
+
+
+                while (
+                    running &&
+                    !stopping
+                ) {
+
+                    val tocando =
+                        try {
+                            player.isPlaying
+                        } catch (_: Exception) {
+                            false
+                        }
+
+
+                    if (!tocando) {
+                        break
+                    }
+
+
+                    try {
+                        Thread.sleep(50)
+                    } catch (e: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        break
+                    }
+                }
+
+
+                liberarMediaPlayerInterno()
+            }
+
+        } catch (
+            e: InterruptedException
+        ) {
+
+            Log.d(
+                TAG,
+                "Playback interrompido"
+            )
+
+            Thread.currentThread().interrupt()
+
+        } catch (e: Exception) {
+
+            lastError =
+                e.message
+
+            Log.e(
+                TAG,
+                "Erro reproduzindo WAV com MediaPlayer",
+                e
+            )
+
+        } finally {
+
+            try {
+                file.delete()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+
+    // =========================================================
+    // LIBERAR MEDIA PLAYER
+    // =========================================================
+
+    private fun liberarMediaPlayer() {
+
+        synchronized(
+            mediaPlayerLock
+        ) {
+
+            liberarMediaPlayerInterno()
+        }
+    }
+
+
+    private fun liberarMediaPlayerInterno() {
+
+        val player =
+            mediaPlayer
+
+        mediaPlayer =
+            null
+
+
+        if (
+            player == null
         ) {
 
             return
         }
 
 
-        synchronized(
-            audioTrackLock
-        ) {
-
-            if (
-                audioTrack == null ||
-                audioTrackRate !=
-                    item.sampleRate
-            ) {
-
-                liberarAudioTrack()
-
-
-                criarAudioTrack(
-                    item.sampleRate
-                )
-            }
-
-
-            val track =
-                audioTrack
-                    ?: return
-
-
-            if (
-                track.playState !=
-                    AudioTrack.PLAYSTATE_PLAYING
-            ) {
-
-                track.play()
-            }
-
-
-            try {
-
-                track.setVolume(
-                    1.0f
-                )
-
-            } catch (_: Exception) {
-            }
-
-
-            var offset = 0
-
-
-            while (
-                offset < item.pcm.size &&
-                running &&
-                !stopping
-            ) {
-
-                val size =
-                    minOf(
-                        4096,
-                        item.pcm.size -
-                            offset
-                    )
-
-
-                val written =
-                    track.write(
-                        item.pcm,
-                        offset,
-                        size,
-                        AudioTrack.WRITE_BLOCKING
-                    )
-
-
-                if (
-                    written <= 0
-                ) {
-
-                    Log.e(
-                        TAG,
-                        "AudioTrack.write=$written"
-                    )
-
-                    break
-                }
-
-
-                offset +=
-                    written
-            }
-        }
-    }
-
-
-    // =========================================================
-    // CRIAR AUDIO TRACK
-    // =========================================================
-
-    private fun criarAudioTrack(
-        sampleRate: Int
-    ) {
-
-        val minBuffer =
-            AudioTrack.getMinBufferSize(
-                sampleRate,
-                OUTPUT_CHANNEL,
-                PCM_FORMAT
-            )
-
-
-        if (
-            minBuffer <= 0
-        ) {
-
-            throw IllegalStateException(
-                "AudioTrack buffer inválido"
-            )
-        }
-
-
-        val bufferSize =
-            maxOf(
-                minBuffer * 4,
-                16384
-            )
-
-
-        val track =
-            if (
-                Build.VERSION.SDK_INT >=
-                Build.VERSION_CODES.M
-            ) {
-
-                AudioTrack.Builder()
-                    .setAudioAttributes(
-                        AudioAttributes.Builder()
-                            .setUsage(
-                                AudioAttributes.USAGE_MEDIA
-                            )
-                            .setContentType(
-                                AudioAttributes.CONTENT_TYPE_SPEECH
-                            )
-                            .build()
-                    )
-                    .setAudioFormat(
-                        AudioFormat.Builder()
-                            .setEncoding(
-                                PCM_FORMAT
-                            )
-                            .setSampleRate(
-                                sampleRate
-                            )
-                            .setChannelMask(
-                                OUTPUT_CHANNEL
-                            )
-                            .build()
-                    )
-                    .setBufferSizeInBytes(
-                        bufferSize
-                    )
-                    .setTransferMode(
-                        AudioTrack.MODE_STREAM
-                    )
-                    .build()
-
-            } else {
-
-                @Suppress("DEPRECATION")
-                AudioTrack(
-                    AudioManager.STREAM_MUSIC,
-                    sampleRate,
-                    OUTPUT_CHANNEL,
-                    PCM_FORMAT,
-                    bufferSize,
-                    AudioTrack.MODE_STREAM
-                )
-            }
-
-
-        if (
-            track.state !=
-                AudioTrack.STATE_INITIALIZED
-        ) {
-
-            track.release()
-
-
-            throw IllegalStateException(
-                "AudioTrack não inicializado"
-            )
-        }
-
-
         try {
-
-            track.setVolume(
-                1.0f
-            )
-
+            if (player.isPlaying) {
+                player.stop()
+            }
         } catch (_: Exception) {
         }
 
 
-        track.play()
+        try {
+            player.reset()
+        } catch (_: Exception) {
+        }
 
 
-        audioTrack =
-            track
-
-
-        audioTrackRate =
-            sampleRate
-
-
-        Log.d(
-            TAG,
-            "AudioTrack PLAYING rate=$sampleRate"
-        )
-    }
-
-
-    // =========================================================
-    // LIBERAR AUDIO TRACK
-    // =========================================================
-
-    private fun liberarAudioTrack() {
-
-        synchronized(
-            audioTrackLock
-        ) {
-
-            val track =
-                audioTrack
-
-
-            audioTrack =
-                null
-
-
-            if (
-                track == null
-            ) {
-
-                return
-            }
-
-
-            try {
-                track.pause()
-            } catch (_: Exception) {
-            }
-
-
-            try {
-                track.flush()
-            } catch (_: Exception) {
-            }
-
-
-            try {
-                track.stop()
-            } catch (_: Exception) {
-            }
-
-
-            try {
-                track.release()
-            } catch (_: Exception) {
-            }
+        try {
+            player.release()
+        } catch (_: Exception) {
         }
     }
 
@@ -2452,7 +2248,7 @@ class AudioCaptureService : Service() {
             null
 
 
-        liberarAudioTrack()
+        liberarMediaPlayer()
 
 
         try {
