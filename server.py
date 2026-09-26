@@ -563,10 +563,21 @@ def generate_piper_audio(
         # "# channels not specified"
         # ----------------------------------------------------
 
-        with wave.open(
-    str(output),
-    "wb",
-) as wav_file:
+                with wave.open(
+            str(output),
+            "wb",
+        ) as wav_file:
+
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(
+                voice.config.sample_rate
+            )
+
+            for chunk in voice.synthesize(text):
+                wav_file.writeframes(
+                    chunk.audio_int16_bytes
+                )
 
     wav_file.setnchannels(1)
     wav_file.setsampwidth(2)
