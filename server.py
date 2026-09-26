@@ -337,21 +337,25 @@ def generate_piper_audio(text, language):
         flush=True,
     )
 
-    # IMPORTANTE:
-    # NÃ£o usamos voice.synthesize_wav() aqui porque versÃµes recentes
-    # do Piper retornam AudioChunk no mÃ©todo synthesize().
-    # Configuramos explicitamente sample rate, sample width e canais.
+    # Piper 1.2.0: synthesize() retorna AudioChunk.
+    # O arquivo WAV precisa ter os parÃ¢metros definidos ANTES
+    # de writeframes(). Definimos mono explicitamente para evitar
+    # o erro: "# channels not specified".
     first_chunk = True
 
-    with wave.open(str(output), "wb") as wav_file:
-        for chunk in voice.synthesize(text):
-            if first_chunk:
-                wav_file.setframerate(int(chunk.sample_rate))
-                wav_file.setsampwidth(int(chunk.sample_width))
-                wav_file.setnchannels(int(chunk.sample_channels))
-                first_chunk = False
+    try:
+        with wave.open(str(output), "wb") as wav_file:
+            for chunk in voice.synthesize(text):
+                if first_chunk:
+                    wav_file.setnchannels(int(getattr(chunk, "sample_channels", 1)))
+                    wav_file.setsampwidth(int(chunk.sample_width))
+                    wav_file.setframerate(int(chunk.sample_rate))
+                    first_chunk = False
 
-            wav_file.writeframes(chunk.audio_int16_bytes)
+                wav_file.writeframes(chunk.audio_int16_bytes)
+    except Exception:
+        output.unlink(missing_ok=True)
+        raise
 
     if first_chunk:
         output.unlink(missing_ok=True)
