@@ -537,9 +537,13 @@ def generate_piper_audio(
         language
     )
 
-    filename = f"{uuid.uuid4().hex}.wav"
+    filename = (
+        f"{uuid.uuid4().hex}.wav"
+    )
 
-    output = AUDIO_DIR / filename
+    output = (
+        AUDIO_DIR / filename
+    )
 
     print(
         "[PIPER] Gerando voz:",
@@ -548,11 +552,10 @@ def generate_piper_audio(
     )
 
     try:
-                with wave.open(
+        with wave.open(
             str(output),
             "wb",
         ) as wav_file:
-
             wav_file.setnchannels(1)
             wav_file.setsampwidth(2)
             wav_file.setframerate(
@@ -565,12 +568,10 @@ def generate_piper_audio(
             )
 
     except Exception as error:
-        try:
-            output.unlink(
-                missing_ok=True
-            )
-        except Exception:
-            pass
+
+        output.unlink(
+            missing_ok=True
+        )
 
         print(
             "[PIPER] Erro ao gerar WAV:",
@@ -589,12 +590,9 @@ def generate_piper_audio(
         )
 
     if output.stat().st_size < 100:
-        try:
-            output.unlink(
-                missing_ok=True
-            )
-        except Exception:
-            pass
+        output.unlink(
+            missing_ok=True
+        )
 
         raise RuntimeError(
             "Arquivo WAV do Piper ficou vazio."
@@ -605,10 +603,22 @@ def generate_piper_audio(
             str(output),
             "rb",
         ) as wav_file:
-            channels = wav_file.getnchannels()
-            sample_width = wav_file.getsampwidth()
-            sample_rate = wav_file.getframerate()
-            frames = wav_file.getnframes()
+
+            channels = (
+                wav_file.getnchannels()
+            )
+
+            sample_width = (
+                wav_file.getsampwidth()
+            )
+
+            sample_rate = (
+                wav_file.getframerate()
+            )
+
+            frames = (
+                wav_file.getnframes()
+            )
 
         print(
             "[PIPER] WAV criado:",
@@ -644,12 +654,10 @@ def generate_piper_audio(
             )
 
     except Exception as error:
-        try:
-            output.unlink(
-                missing_ok=True
-            )
-        except Exception:
-            pass
+
+        output.unlink(
+            missing_ok=True
+        )
 
         raise RuntimeError(
             "WAV Piper inválido: "
