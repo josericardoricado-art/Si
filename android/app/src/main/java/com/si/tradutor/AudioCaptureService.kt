@@ -1827,142 +1827,572 @@ class AudioCaptureService : Service() {
 
         try {
 
-            file.writeBytes(item.wav)
+    // =========================================================
+// TOCAR WAV DO PIPER NO ALTO-FALANTE
+// =========================================================
+
+private fun tocarWav(
+    item: OutputAudio
+): Boolean {
+
+    if (item.wav.isEmpty()) {
+        Log.e(TAG, "WAV vazio")
+        return false
+    }
+
+    val file = File(
+        cacheDir,
+        "si_piper_${item.audioId}.wav"
+    )
+
+    var audioManager: AudioManager? = null
+    var focusRequest: AudioFocusRequest? = null
+    var focusGranted = false
+
+    try {
+
+        // -----------------------------------------------------
+        // SALVAR WAV
+        // -----------------------------------------------------
+
+        file.writeBytes(item.wav)
+
+        Log.d(
+            TAG,
+            "WAV salvo: ${file.absolutePath} bytes=${item.wav.size}"
+        )
+
+        publicarDiagnostico(
+            "📦 WAV salvo • preparando alto-falante"
+        )
+
+
+        // -----------------------------------------------------
+        // AUDIO MANAGER
+        // -----------------------------------------------------
+
+        audioManager =
+            getSystemService(
+                Context.AUDIO_SERVICE
+            ) as AudioManager
+
+
+        // IMPORTANTE:
+        // O SI não deve ficar em modo chamada/telefone.
+        audioManager.mode =
+            AudioManager.MODE_NORMAL
+
+
+        // -----------------------------------------------------
+        // VOLUME DO MEDIA
+        // -----------------------------------------------------
+
+        try {
+
+            val maxVolume =
+                audioManager.getStreamMaxVolume(
+                    AudioManager.STREAM_MUSIC
+                )
+
+            val currentVolume =
+                audioManager.getStreamVolume(
+                    AudioManager.STREAM_MUSIC
+                )
 
             Log.d(
                 TAG,
-                "WAV salvo: ${file.absolutePath} bytes=${item.wav.size}"
+                "Volume MUSIC=$currentVolume/$maxVolume"
             )
 
-            publicarDiagnostico(
-                "📦 WAV salvo • iniciando voz"
-            )
-
-            val audioManager =
-                getSystemService(Context.AUDIO_SERVICE) as AudioManager
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-
-                val request =
-                    AudioFocusRequest.Builder(
-                        AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
-                    )
-                        .setAudioAttributes(
-                            AudioAttributes.Builder()
-                                .setUsage(AudioAttributes.USAGE_MEDIA)
-                                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                                .build()
-                        )
-                        .setAcceptsDelayedFocusGain(false)
-                        .build()
-
-                focusGranted =
-                    audioManager.requestAudioFocus(request) ==
-                        AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-
-                Log.d(
-                    TAG,
-                    "AudioFocus=$focusGranted"
-                )
-            }
-
-            synchronized(mediaPlayerLock) {
-
-                liberarMediaPlayerInterno()
-
-                val player =
-                    MediaPlayer()
-
-                mediaPlayer = player
-
-                player.setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build()
-                )
-
-                player.setOnErrorListener { _, what, extra ->
-                    Log.e(
-                        TAG,
-                        "MediaPlayer ERROR what=$what extra=$extra"
-                    )
-                    publicarDiagnostico(
-                        "❌ MediaPlayer erro $what/$extra"
-                    )
-                    true
-                }
-
-                player.setDataSource(file.absolutePath)
-
-                player.prepare()
-
-                Log.d(
-                    TAG,
-                    "MediaPlayer preparado duration=${player.duration}ms"
-                )
-
-                player.setVolume(1.0f, 1.0f)
-
-                player.start()
-
-                Log.d(
-                    TAG,
-                    "MEDIAPLAYER START audioId=${item.audioId}"
-                )
-
-                publicarDiagnostico(
-                    "🔊 VOZ FALANDO"
-                )
-
-                while (running && !stopping) {
-
-                    val playing =
-                        try {
-                            player.isPlaying
-                        } catch (_: Exception) {
-                            false
-                        }
-
-                    if (!playing) {
-                        break
-                    }
-
-                    try {
-                        Thread.sleep(50)
-                    } catch (e: InterruptedException) {
-                        Thread.currentThread().interrupt()
-                        return false
-                    }
-                }
-
-                Log.d(
-                    TAG,
-                    "MEDIAPLAYER FIM audioId=${item.audioId}"
-                )
-
-                liberarMediaPlayerInterno()
-            }
-
-            return true
+            // Não altera o volume do usuário.
+            // Apenas garante que o stream utilizado
+            // pelo Piper seja STREAM_MUSIC.
 
         } catch (e: Exception) {
 
-            lastError = e.message
+            Log.e(
+                TAG,
+                "Erro verificando volume",
+                e
+            )
+        }
+
+
+        // -----------------------------------------------------
+        // ROTEAR PARA ALTO-FALANTE
+        // -----------------------------------------------------
+
+        if (
+            Build.VERSION.SDK_INT >=
+            Build.VERSION_CODES.S
+        ) {
+
+            try {
+
+                val devices =
+                    audioManager.getDevices(
+                        AudioManager.GET_DEVICES_OUTPUTS
+                    )
+
+                val speaker =
+                    devices.firstOrNull {
+                        it.type ==
+                            android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                    }
+
+                if (speaker != null) {
+
+                    val routed =
+                        audioManager.setCommunicationDevice(
+                            speaker
+                        )
+
+                    Log.d(
+                        TAG,
+                        "Alto-falante interno roteado=$routed"
+                    )
+
+                } else {
+
+                    Log.w(
+                        TAG,
+                        "Alto-falante interno não encontrado"
+                    )
+                }
+
+            } catch (e: Exception) {
+
+                Log.e(
+                    TAG,
+                    "Erro roteando alto-falante",
+                    e
+                )
+            }
+        }
+
+
+        // -----------------------------------------------------
+        // AUDIO FOCUS
+        // -----------------------------------------------------
+
+        if (
+            Build.VERSION.SDK_INT >=
+            Build.VERSION_CODES.O
+        ) {
+
+            focusRequest =
+                AudioFocusRequest.Builder(
+                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+                )
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(
+                                AudioAttributes.USAGE_MEDIA
+                            )
+                            .setContentType(
+                                AudioAttributes.CONTENT_TYPE_SPEECH
+                            )
+                            .build()
+                    )
+                    .setAcceptsDelayedFocusGain(
+                        false
+                    )
+                    .build()
+
+
+            focusGranted =
+                audioManager.requestAudioFocus(
+                    focusRequest
+                ) ==
+                    AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+
+        } else {
+
+            @Suppress("DEPRECATION")
+            focusGranted =
+                audioManager.requestAudioFocus(
+                    null,
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+                ) ==
+                    AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        }
+
+
+        Log.d(
+            TAG,
+            "AudioFocus=$focusGranted"
+        )
+
+
+        if (!focusGranted) {
+
+            Log.w(
+                TAG,
+                "AudioFocus não concedido; tentando reproduzir mesmo assim"
+            )
+        }
+
+
+        // -----------------------------------------------------
+        // MEDIA PLAYER
+        // -----------------------------------------------------
+
+        synchronized(
+            mediaPlayerLock
+        ) {
+
+            // Libera player anterior.
+            liberarMediaPlayerInterno()
+
+
+            val player =
+                MediaPlayer()
+
+
+            mediaPlayer =
+                player
+
+
+            // -------------------------------------------------
+            // STREAM MUSIC
+            // -------------------------------------------------
+
+            @Suppress("DEPRECATION")
+            player.setAudioStreamType(
+                AudioManager.STREAM_MUSIC
+            )
+
+
+            // -------------------------------------------------
+            // ATRIBUTOS DE ÁUDIO
+            // -------------------------------------------------
+
+            if (
+                Build.VERSION.SDK_INT >=
+                Build.VERSION_CODES.LOLLIPOP
+            ) {
+
+                player.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(
+                            AudioAttributes.USAGE_MEDIA
+                        )
+                        .setContentType(
+                            AudioAttributes.CONTENT_TYPE_SPEECH
+                        )
+                        .build()
+                )
+            }
+
+
+            // -------------------------------------------------
+            // VOLUME MÁXIMO DO PLAYER
+            // -------------------------------------------------
+
+            player.setVolume(
+                1.0f,
+                1.0f
+            )
+
+
+            // -------------------------------------------------
+            // ERRO
+            // -------------------------------------------------
+
+            player.setOnErrorListener {
+                    _,
+                    what,
+                    extra ->
+
+                Log.e(
+                    TAG,
+                    "MediaPlayer ERROR what=$what extra=$extra"
+                )
+
+                publicarDiagnostico(
+                    "❌ Erro MediaPlayer $what/$extra"
+                )
+
+                true
+            }
+
+
+            // -------------------------------------------------
+            // PREPARAR WAV
+            // -------------------------------------------------
+
+            Log.d(
+                TAG,
+                "MediaPlayer setDataSource"
+            )
+
+
+            player.setDataSource(
+                file.absolutePath
+            )
+
+
+            player.prepare()
+
+
+            Log.d(
+                TAG,
+                "MediaPlayer preparado " +
+                    "duration=${player.duration}ms"
+            )
+
+
+            if (
+                player.duration <= 0
+            ) {
+
+                Log.e(
+                    TAG,
+                    "WAV sem duração válida"
+                )
+
+                liberarMediaPlayerInterno()
+
+                return false
+            }
+
+
+            // -------------------------------------------------
+            // COMEÇAR A FALAR
+            // -------------------------------------------------
+
+            publicarDiagnostico(
+                "🔊 VOZ PIPER INICIANDO"
+            )
+
+
+            Log.d(
+                TAG,
+                "MEDIAPLAYER START"
+            )
+
+
+            player.start()
+
+
+            // -------------------------------------------------
+            // CONFIRMAR QUE COMEÇOU
+            // -------------------------------------------------
+
+            try {
+
+                Thread.sleep(100)
+
+            } catch (_: Exception) {
+            }
+
+
+            val iniciou =
+                try {
+
+                    player.isPlaying
+
+                } catch (_: Exception) {
+
+                    false
+                }
+
+
+            Log.d(
+                TAG,
+                "MediaPlayer isPlaying=$iniciou"
+            )
+
+
+            if (!iniciou) {
+
+                Log.e(
+                    TAG,
+                    "MediaPlayer não iniciou reprodução"
+                )
+
+                publicarDiagnostico(
+                    "❌ Piper não iniciou reprodução"
+                )
+
+                liberarMediaPlayerInterno()
+
+                return false
+            }
+
+
+            publicarDiagnostico(
+                "🔊 VOZ PIPER FALANDO NO ALTO-FALANTE"
+            )
+
+
+            // -------------------------------------------------
+            // ESPERAR WAV TERMINAR
+            // -------------------------------------------------
+
+            while (
+                running &&
+                !stopping
+            ) {
+
+                val tocando =
+                    try {
+
+                        player.isPlaying
+
+                    } catch (_: Exception) {
+
+                        false
+                    }
+
+
+                if (!tocando) {
+                    break
+                }
+
+
+                try {
+
+                    Thread.sleep(50)
+
+                } catch (
+                    e: InterruptedException
+                ) {
+
+                    Thread.currentThread().interrupt()
+
+                    return false
+                }
+            }
+
+
+            Log.d(
+                TAG,
+                "MEDIAPLAYER FIM audioId=${item.audioId}"
+            )
+
+
+            publicarDiagnostico(
+                "✅ VOZ PIPER TERMINOU"
+            )
+
+
+            liberarMediaPlayerInterno()
+        }
+
+
+        return true
+
+
+    } catch (e: Exception) {
+
+        lastError =
+            e.message
+
+
+        Log.e(
+            TAG,
+            "ERRO REPRODUZINDO PIPER",
+            e
+        )
+
+
+        publicarDiagnostico(
+            "❌ Erro voz Piper: ${e.message ?: "desconhecido"}"
+        )
+
+
+        try {
+
+            synchronized(
+                mediaPlayerLock
+            ) {
+
+                liberarMediaPlayerInterno()
+            }
+
+        } catch (_: Exception) {
+        }
+
+
+        return false
+
+
+    } finally {
+
+
+        // -----------------------------------------------------
+        // LIBERAR AUDIO FOCUS
+        // -----------------------------------------------------
+
+        try {
+
+            if (
+                audioManager != null &&
+                Build.VERSION.SDK_INT >=
+                Build.VERSION_CODES.O &&
+                focusRequest != null
+            ) {
+
+                audioManager.abandonAudioFocusRequest(
+                    focusRequest
+                )
+
+            } else if (
+                audioManager != null
+            ) {
+
+                @Suppress("DEPRECATION")
+                audioManager.abandonAudioFocus(
+                    null
+                )
+            }
+
+        } catch (e: Exception) {
 
             Log.e(
                 TAG,
-                "Erro reproduzindo WAV com MediaPlayer",
+                "Erro liberando AudioFocus",
                 e
             )
+        }
 
-            publicarDiagnostico(
-                "❌ MediaPlayer: ${e.message ?: "erro desconhecido"}"
-            )
 
-            return false
+        // -----------------------------------------------------
+        // DEVOLVER ROTEAMENTO NORMAL
+        // -----------------------------------------------------
 
-        } finally {
+        if (
+            Build.VERSION.SDK_INT >=
+            Build.VERSION_CODES.S &&
+            audioManager != null
+        ) {
+
+            try {
+
+                audioManager.clearCommunicationDevice()
+
+            } catch (_: Exception) {
+            }
+        }
+
+
+        // -----------------------------------------------------
+        // APAGAR WAV TEMPORÁRIO
+        // -----------------------------------------------------
+
+        try {
+
+            if (file.exists()) {
+
+                file.delete()
+            }
+
+        } catch (_: Exception) {
+        }
+    }
+}
 
             try {
                 file.delete()
