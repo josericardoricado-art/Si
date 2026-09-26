@@ -537,13 +537,9 @@ def generate_piper_audio(
         language
     )
 
-    filename = (
-        f"{uuid.uuid4().hex}.wav"
-    )
+    filename = f"{uuid.uuid4().hex}.wav"
 
-    output = (
-        AUDIO_DIR / filename
-    )
+    output = AUDIO_DIR / filename
 
     print(
         "[PIPER] Gerando voz:",
@@ -552,49 +548,22 @@ def generate_piper_audio(
     )
 
     try:
-
-        # ----------------------------------------------------
-        # PiperVoice.synthesize_wav()
-        #
-        # O próprio Piper escreve o cabeçalho WAV,
-        # incluindo canais, sample rate e sample width.
-        #
-        # Isso evita:
-        # "# channels not specified"
-        # ----------------------------------------------------
-
-                with wave.open(
+        with wave.open(
             str(output),
             "wb",
         ) as wav_file:
-
-            wav_file.setnchannels(1)
-            wav_file.setsampwidth(2)
-            wav_file.setframerate(
-                voice.config.sample_rate
+            voice.synthesize_wav(
+                text,
+                wav_file,
             )
 
-            for chunk in voice.synthesize(text):
-                wav_file.writeframes(
-                    chunk.audio_int16_bytes
-                )
-
-    wav_file.setnchannels(1)
-    wav_file.setsampwidth(2)
-    wav_file.setframerate(
-        voice.config.sample_rate
-    )
-
-    for chunk in voice.synthesize(text):
-        wav_file.writeframes(
-            chunk.audio_int16_bytes
-        )
-
     except Exception as error:
-
-        output.unlink(
-            missing_ok=True
-        )
+        try:
+            output.unlink(
+                missing_ok=True
+            )
+        except Exception:
+            pass
 
         print(
             "[PIPER] Erro ao gerar WAV:",
@@ -607,46 +576,32 @@ def generate_piper_audio(
             + str(error)
         )
 
-    # --------------------------------------------------------
-    # VERIFICAÇÃO DO ARQUIVO
-    # --------------------------------------------------------
-
     if not output.exists():
         raise RuntimeError(
             "Piper não criou o arquivo WAV."
         )
 
     if output.stat().st_size < 100:
-        output.unlink(
-            missing_ok=True
-        )
+        try:
+            output.unlink(
+                missing_ok=True
+            )
+        except Exception:
+            pass
 
         raise RuntimeError(
             "Arquivo WAV do Piper ficou vazio."
         )
 
     try:
-
         with wave.open(
             str(output),
             "rb",
         ) as wav_file:
-
-            channels = (
-                wav_file.getnchannels()
-            )
-
-            sample_width = (
-                wav_file.getsampwidth()
-            )
-
-            sample_rate = (
-                wav_file.getframerate()
-            )
-
-            frames = (
-                wav_file.getnframes()
-            )
+            channels = wav_file.getnchannels()
+            sample_width = wav_file.getsampwidth()
+            sample_rate = wav_file.getframerate()
+            frames = wav_file.getnframes()
 
         print(
             "[PIPER] WAV criado:",
@@ -682,10 +637,12 @@ def generate_piper_audio(
             )
 
     except Exception as error:
-
-        output.unlink(
-            missing_ok=True
-        )
+        try:
+            output.unlink(
+                missing_ok=True
+            )
+        except Exception:
+            pass
 
         raise RuntimeError(
             "WAV Piper inválido: "
