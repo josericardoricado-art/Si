@@ -548,21 +548,21 @@ def generate_piper_audio(
     )
 
     try:
-        with wave.open(
-    str(output),
-    "wb",
-) as wav_file:
+                with wave.open(
+            str(output),
+            "wb",
+        ) as wav_file:
 
-    wav_file.setnchannels(1)
-    wav_file.setsampwidth(2)
-    wav_file.setframerate(
-        voice.config.sample_rate
-    )
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(
+                voice.config.sample_rate
+            )
 
-    voice.synthesize_wav(
-        text,
-        wav_file,
-    )
+            voice.synthesize_wav(
+                text,
+                wav_file,
+            )
 
     except Exception as error:
         try:
