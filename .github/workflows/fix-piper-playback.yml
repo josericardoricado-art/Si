@@ -2,14 +2,14 @@ name: Apply Piper playback fix
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    if: "!contains(github.event.head_commit.message, 'fix: Piper AudioTrack playback')"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -20,7 +20,6 @@ jobs:
         run: |
           python3 <<'PY'
           from pathlib import Path
-          import re
 
           path = Path('android/app/src/main/java/com/si/tradutor/AudioCaptureService.kt')
           text = path.read_text(encoding='utf-8')
@@ -50,26 +49,22 @@ jobs:
             publicarDiagnostico("🔊 Piper recebido • preparando áudio")
             Log.d(TAG, "PIPER PLAYBACK: iniciando AudioTrack bytes=${item.wav.size}")
 
-            audioManager =
-                getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
             audioManager.mode = AudioManager.MODE_NORMAL
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                focusRequest =
-                    AudioFocusRequest.Builder(
-                        AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+                focusRequest = AudioFocusRequest.Builder(
+                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+                )
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build()
                     )
-                        .setAudioAttributes(
-                            AudioAttributes.Builder()
-                                .setUsage(AudioAttributes.USAGE_MEDIA)
-                                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                                .build()
-                        )
-                        .setAcceptsDelayedFocusGain(false)
-                        .build()
-
-                val focus = audioManager.requestAudioFocus(focusRequest!!)
-                Log.d(TAG, "PIPER AudioFocus=$focus")
+                    .setAcceptsDelayedFocusGain(false)
+                    .build()
+                Log.d(TAG, "PIPER AudioFocus=${audioManager.requestAudioFocus(focusRequest!!)}")
             } else {
                 @Suppress("DEPRECATION")
                 val focus = audioManager.requestAudioFocus(
@@ -94,12 +89,9 @@ jobs:
                 channelConfig,
                 AudioFormat.ENCODING_PCM_16BIT
             )
-
             if (minBuffer <= 0) {
                 throw IllegalStateException("AudioTrack.getMinBufferSize falhou: $minBuffer")
             }
-
-            val bufferSize = maxOf(minBuffer, 8192)
 
             track = AudioTrack.Builder()
                 .setAudioAttributes(
@@ -115,7 +107,7 @@ jobs:
                         .setChannelMask(channelConfig)
                         .build()
                 )
-                .setBufferSizeInBytes(bufferSize)
+                .setBufferSizeInBytes(maxOf(minBuffer, 8192))
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build()
 
@@ -130,8 +122,7 @@ jobs:
                     val speaker = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
                         .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
                     if (speaker != null) {
-                        val preferred = track!!.setPreferredDevice(speaker)
-                        Log.d(TAG, "PIPER alto-falante interno id=${speaker.id} preferred=$preferred")
+                        Log.d(TAG, "PIPER speaker=${speaker.id} preferred=${track!!.setPreferredDevice(speaker)}")
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Não foi possível selecionar alto-falante interno", e)
@@ -168,17 +159,14 @@ jobs:
             val durationMs = ((frames.toDouble() / info.sampleRate) * 1000.0).toLong()
 
             publicarDiagnostico("🔊 VOZ PIPER FALANDO NO ALTO-FALANTE")
-            Log.d(TAG, "PIPER AudioTrack tocando rate=${info.sampleRate} channels=${info.channels} duration=${durationMs}ms")
+            Log.d(TAG, "PIPER AudioTrack rate=${info.sampleRate} channels=${info.channels} duration=${durationMs}ms")
 
             val deadline = System.currentTimeMillis() + durationMs + 250L
             while (running && !stopping && System.currentTimeMillis() < deadline) {
                 Thread.sleep(20)
             }
 
-            try {
-                track!!.stop()
-            } catch (_: Exception) {
-            }
+            try { track!!.stop() } catch (_: Exception) { }
 
             publicarDiagnostico("✅ VOZ PIPER TERMINOU")
             Log.d(TAG, "PIPER AudioTrack terminou audioId=${item.audioId}")
@@ -198,18 +186,9 @@ jobs:
             return false
 
         } finally {
-            try {
-                track?.pause()
-            } catch (_: Exception) {
-            }
-            try {
-                track?.flush()
-            } catch (_: Exception) {
-            }
-            try {
-                track?.release()
-            } catch (_: Exception) {
-            }
+            try { track?.pause() } catch (_: Exception) { }
+            try { track?.flush() } catch (_: Exception) { }
+            try { track?.release() } catch (_: Exception) { }
 
             try {
                 if (audioManager != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && focusRequest != null) {
@@ -233,21 +212,13 @@ jobs:
     private fun extrairWavPcm(wav: ByteArray): WavPcm? {
         if (wav.size < 44) return null
 
-        fun intLE(offset: Int): Int {
-            return ByteBuffer.wrap(wav, offset, 4)
-                .order(ByteOrder.LITTLE_ENDIAN)
-                .int
-        }
+        fun intLE(offset: Int): Int = ByteBuffer.wrap(wav, offset, 4)
+            .order(ByteOrder.LITTLE_ENDIAN).int
 
-        fun shortLE(offset: Int): Int {
-            return ByteBuffer.wrap(wav, offset, 2)
-                .order(ByteOrder.LITTLE_ENDIAN)
-                .short.toInt() and 0xffff
-        }
+        fun shortLE(offset: Int): Int = ByteBuffer.wrap(wav, offset, 2)
+            .order(ByteOrder.LITTLE_ENDIAN).short.toInt() and 0xffff
 
-        fun chunkName(offset: Int): String {
-            return String(wav, offset, 4, Charsets.US_ASCII)
-        }
+        fun chunkName(offset: Int): String = String(wav, offset, 4, Charsets.US_ASCII)
 
         if (chunkName(0) != "RIFF" || chunkName(8) != "WAVE") return null
 
@@ -263,10 +234,8 @@ jobs:
             val id = chunkName(offset)
             val size = intLE(offset + 4)
             if (size < 0) return null
-
             val dataOffset = offset + 8
             if (dataOffset > wav.size) return null
-
             val safeSize = minOf(size, wav.size - dataOffset)
 
             if (id == "fmt " && safeSize >= 16) {
@@ -275,7 +244,6 @@ jobs:
                 sampleRate = intLE(dataOffset + 4)
                 bits = shortLE(dataOffset + 14)
             }
-
             if (id == "data") {
                 dataStart = dataOffset
                 dataSize = safeSize
@@ -309,7 +277,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add android/app/src/main/java/com/si/tradutor/AudioCaptureService.kt .github/workflows/fix-piper-playback.yml
+          git add android/app/src/main/java/com/si/tradutor/AudioCaptureService.kt
           git rm .github/workflows/fix-piper-playback.yml
           git commit -m "fix: Piper AudioTrack playback"
           git push
