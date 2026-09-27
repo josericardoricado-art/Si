@@ -9,9 +9,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
-import android.media.AudioDeviceInfo
-import android.media.AudioFocusRequest
 import android.media.AudioFormat
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
@@ -75,11 +74,6 @@ class AudioCaptureService : Service() {
         private const val PCM_FORMAT =
             AudioFormat.ENCODING_PCM_16BIT
 
-        /*
-         * 3200 bytes =
-         * 1600 samples =
-         * aproximadamente 100 ms em 16 kHz / 16 bit / mono.
-         */
         private const val CHUNK_SIZE =
             3200
 
@@ -194,7 +188,7 @@ class AudioCaptureService : Service() {
     )
 
     // =========================================================
-    // DIAGNÓSTICO VISÍVEL
+    // DIAGNÓSTICO
     // =========================================================
 
     private fun publicarDiagnostico(
@@ -292,11 +286,6 @@ class AudioCaptureService : Service() {
 
     // =========================================================
     // BIND
-    //
-    // CORREÇÃO PRINCIPAL DO ERRO:
-    //
-    // Class 'AudioCaptureService' ... does not implement
-    // abstract base class member 'onBind'
     // =========================================================
 
     override fun onBind(
@@ -324,10 +313,6 @@ class AudioCaptureService : Service() {
             "onStartCommand=$action"
         )
 
-        // -----------------------------------------------------
-        // STOP
-        // -----------------------------------------------------
-
         if (action == ACTION_STOP) {
 
             pararServico(
@@ -337,18 +322,10 @@ class AudioCaptureService : Service() {
             return START_NOT_STICKY
         }
 
-        // -----------------------------------------------------
-        // SOMENTE START
-        // -----------------------------------------------------
-
         if (action != ACTION_START) {
 
             return START_NOT_STICKY
         }
-
-        // -----------------------------------------------------
-        // JÁ RODANDO
-        // -----------------------------------------------------
 
         if (running) {
 
@@ -359,10 +336,6 @@ class AudioCaptureService : Service() {
 
             return START_STICKY
         }
-
-        // -----------------------------------------------------
-        // JOB
-        // -----------------------------------------------------
 
         jobId =
             intent.getStringExtra(
@@ -384,22 +357,13 @@ class AudioCaptureService : Service() {
             return START_NOT_STICKY
         }
 
-        // -----------------------------------------------------
-        // RESULT CODE
-        // -----------------------------------------------------
-
         val resultCode =
             intent.getIntExtra(
                 EXTRA_RESULT_CODE,
                 Activity.RESULT_CANCELED
             )
 
-        // -----------------------------------------------------
-        // RESULT DATA
-        // -----------------------------------------------------
-
         val resultData: Intent? =
-
             if (
                 Build.VERSION.SDK_INT >=
                 Build.VERSION_CODES.TIRAMISU
@@ -423,7 +387,7 @@ class AudioCaptureService : Service() {
 
         if (
             resultCode !=
-                Activity.RESULT_OK ||
+            Activity.RESULT_OK ||
             resultData == null
         ) {
 
@@ -439,10 +403,6 @@ class AudioCaptureService : Service() {
 
             return START_NOT_STICKY
         }
-
-        // -----------------------------------------------------
-        // INICIAR
-        // -----------------------------------------------------
 
         try {
 
@@ -1655,6 +1615,12 @@ class AudioCaptureService : Service() {
 
     // =========================================================
     // TOCAR WAV
+    //
+    // CORREÇÃO:
+    // Não usamos setPreferredDevice().
+    //
+    // O Android escolhe automaticamente a saída de mídia
+    // ativa: alto-falante, fone Bluetooth, USB etc.
     // =========================================================
 
     private fun tocarWav(
@@ -1686,16 +1652,26 @@ class AudioCaptureService : Service() {
                 item.wav
             )
 
+            if (
+                !file.exists() ||
+                file.length() < 44
+            ) {
+
+                lastError =
+                    "Arquivo WAV não foi salvo corretamente"
+
+                return false
+            }
+
             audioManager =
                 getSystemService(
                     Context.AUDIO_SERVICE
                 ) as AudioManager
 
-            audioManager.mode =
-                AudioManager.MODE_NORMAL
-
             // -------------------------------------------------
-            // AUDIO FOCUS
+            // NÃO ALTERAR O DEVICE DE SAÍDA
+            //
+            // O Android deve escolher a rota de áudio normal.
             // -------------------------------------------------
 
             if (
@@ -1703,27 +1679,36 @@ class AudioCaptureService : Service() {
                 Build.VERSION_CODES.O
             ) {
 
+                val attributes =
+                    AudioAttributes.Builder()
+                        .setUsage(
+                            AudioAttributes.USAGE_MEDIA
+                        )
+                        .setContentType(
+                            AudioAttributes.CONTENT_TYPE_SPEECH
+                        )
+                        .build()
+
                 focusRequest =
                     AudioFocusRequest.Builder(
                         AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
                     )
                         .setAudioAttributes(
-                            AudioAttributes.Builder()
-                                .setUsage(
-                                    AudioAttributes.USAGE_MEDIA
-                                )
-                                .setContentType(
-                                    AudioAttributes.CONTENT_TYPE_SPEECH
-                                )
-                                .build()
+                            attributes
                         )
                         .setAcceptsDelayedFocusGain(
                             false
                         )
                         .build()
 
-                audioManager.requestAudioFocus(
-                    focusRequest
+                val focusResult =
+                    audioManager.requestAudioFocus(
+                        focusRequest
+                    )
+
+                Log.d(
+                    TAG,
+                    "AudioFocus result=$focusResult"
                 )
 
             } else {
@@ -1739,10 +1724,6 @@ class AudioCaptureService : Service() {
                 )
             }
 
-            // -------------------------------------------------
-            // MEDIA PLAYER
-            // -------------------------------------------------
-
             synchronized(
                 mediaPlayerLock
             ) {
@@ -1754,6 +1735,10 @@ class AudioCaptureService : Service() {
 
                 mediaPlayer =
                     player
+
+                // -------------------------------------------------
+                // ATRIBUTOS DE ÁUDIO
+                // -------------------------------------------------
 
                 if (
                     Build.VERSION.SDK_INT >=
@@ -1788,50 +1773,24 @@ class AudioCaptureService : Service() {
                 )
 
                 // -------------------------------------------------
-                // ALTO-FALANTE
+                // NÃO usar setPreferredDevice()
                 // -------------------------------------------------
 
-                if (
-                    Build.VERSION.SDK_INT >=
-                    Build.VERSION_CODES.M
-                ) {
+                player.setOnPreparedListener {
 
-                    try {
-
-                        val devices =
-                            audioManager.getDevices(
-                                AudioManager.GET_DEVICES_OUTPUTS
-                            )
-
-                        val speaker =
-                            devices.firstOrNull {
-
-                                it.type ==
-                                    AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
-                            }
-
-                        if (
-                            speaker != null
-                        ) {
-
-                            player.setPreferredDevice(
-                                speaker
-                            )
-                        }
-
-                    } catch (e: Exception) {
-
-                        Log.e(
-                            TAG,
-                            "Erro selecionando alto-falante",
-                            e
-                        )
-                    }
+                    Log.d(
+                        TAG,
+                        "MediaPlayer preparado"
+                    )
                 }
 
-                // -------------------------------------------------
-                // ERRO
-                // -------------------------------------------------
+                player.setOnCompletionListener {
+
+                    Log.d(
+                        TAG,
+                        "MediaPlayer terminou"
+                    )
+                }
 
                 player.setOnErrorListener {
 
@@ -1844,11 +1803,14 @@ class AudioCaptureService : Service() {
                         "MediaPlayer ERROR $what/$extra"
                     )
 
+                    lastError =
+                        "MediaPlayer ERROR $what/$extra"
+
                     true
                 }
 
                 // -------------------------------------------------
-                // ARQUIVO
+                // WAV
                 // -------------------------------------------------
 
                 player.setDataSource(
@@ -1857,8 +1819,16 @@ class AudioCaptureService : Service() {
 
                 player.prepare()
 
+                val duration =
+                    player.duration
+
+                Log.d(
+                    TAG,
+                    "Piper WAV duration=$duration ms"
+                )
+
                 if (
-                    player.duration <= 0
+                    duration <= 0
                 ) {
 
                     liberarMediaPlayerInterno()
@@ -1943,7 +1913,7 @@ class AudioCaptureService : Service() {
         } finally {
 
             // -------------------------------------------------
-            // LIBERAR AUDIO FOCUS
+            // AUDIO FOCUS
             // -------------------------------------------------
 
             try {
@@ -1977,7 +1947,7 @@ class AudioCaptureService : Service() {
             }
 
             // -------------------------------------------------
-            // APAGAR WAV
+            // APAGAR WAV LOCAL
             // -------------------------------------------------
 
             try {
@@ -2425,7 +2395,6 @@ class AudioCaptureService : Service() {
                 TAG,
                 "Erro enviando STOP",
                 e
-
             )
 
         } finally {
