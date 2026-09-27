@@ -134,9 +134,6 @@ AUDIO_DIR.mkdir(
 
 # ============================================================
 # LIMITES
-#
-# Esses limites são importantes para impedir que o Render
-# acumule dezenas de frases enquanto o Piper está falando.
 # ============================================================
 
 MAX_AUDIO_QUEUE = 3
@@ -234,7 +231,6 @@ def normalize_language(language):
         language
     ).strip().lower()
 
-
     aliases = {
 
         "pt-br": "pt",
@@ -280,17 +276,13 @@ def normalize_language(language):
         "italiano": "it",
     }
 
-
     language = aliases.get(
         language,
         language,
     )
 
-
     if language not in PIPER_VOICES:
-
         language = "pt"
-
 
     return language
 
@@ -316,7 +308,6 @@ def deepl_language(language):
         "it": "IT",
     }
 
-
     return mapping.get(
         normalize_language(language),
         "PT-BR",
@@ -332,13 +323,11 @@ def clean_text(text):
     if not text:
         return ""
 
-
     text = re.sub(
         r"\s+",
         " ",
         str(text),
     ).strip()
-
 
     return text[:1500]
 
@@ -366,7 +355,6 @@ def text_key(text):
         text,
     ).strip()
 
-
     return text
 
 
@@ -383,24 +371,20 @@ def download_file(
         destination
     )
 
-
     destination.parent.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-
     temporary = destination.with_name(
         destination.name + ".part"
     )
-
 
     print(
         "[PIPER] Download:",
         url,
         flush=True,
     )
-
 
     try:
 
@@ -413,7 +397,6 @@ def download_file(
 
             response.raise_for_status()
 
-
             with open(
                 temporary,
                 "wb",
@@ -424,11 +407,9 @@ def download_file(
                 ):
 
                     if chunk:
-
                         output.write(
                             chunk
                         )
-
 
         if (
             not temporary.exists()
@@ -440,23 +421,18 @@ def download_file(
                 "ou incompleto."
             )
 
-
         temporary.replace(
             destination
         )
 
-
     except Exception:
 
         try:
-
             temporary.unlink(
                 missing_ok=True
             )
-
         except Exception:
             pass
-
 
         raise
 
@@ -473,7 +449,6 @@ def download_piper_voice(
         model_name
     )
 
-
     if not relative_path:
 
         raise RuntimeError(
@@ -481,18 +456,15 @@ def download_piper_voice(
             + model_name
         )
 
-
     model_path = (
         PIPER_DATA_DIR
         / f"{model_name}.onnx"
     )
 
-
     config_path = (
         PIPER_DATA_DIR
         / f"{model_name}.onnx.json"
     )
-
 
     # --------------------------------------------------------
     # JÁ EXISTE
@@ -513,7 +485,6 @@ def download_piper_voice(
 
         return model_path
 
-
     model_url = (
         PIPER_VOICE_BASE_URL
         + relative_path
@@ -521,7 +492,6 @@ def download_piper_voice(
         + model_name
         + ".onnx"
     )
-
 
     config_url = (
         PIPER_VOICE_BASE_URL
@@ -531,13 +501,11 @@ def download_piper_voice(
         + ".onnx.json"
     )
 
-
     print(
         "[PIPER] Baixando voz:",
         model_name,
         flush=True,
     )
-
 
     # --------------------------------------------------------
     # MODELO
@@ -553,7 +521,6 @@ def download_piper_voice(
             model_path,
         )
 
-
     # --------------------------------------------------------
     # CONFIG
     # --------------------------------------------------------
@@ -567,7 +534,6 @@ def download_piper_voice(
             config_url,
             config_path,
         )
-
 
     # --------------------------------------------------------
     # VERIFICAÇÃO
@@ -583,7 +549,6 @@ def download_piper_voice(
             + str(model_path)
         )
 
-
     if (
         not config_path.exists()
         or config_path.stat().st_size < 100
@@ -594,13 +559,11 @@ def download_piper_voice(
             + str(config_path)
         )
 
-
     print(
         "[PIPER] Download concluído:",
         model_name,
         flush=True,
     )
-
 
     return model_path
 
@@ -617,7 +580,6 @@ def get_piper_voice(
         language
     )
 
-
     with piper_global_lock:
 
         if language in piper_voices:
@@ -626,18 +588,15 @@ def get_piper_voice(
                 language
             ]
 
-
         if language not in piper_locks:
 
             piper_locks[
                 language
             ] = threading.Lock()
 
-
         lock = piper_locks[
             language
         ]
-
 
     with lock:
 
@@ -647,16 +606,13 @@ def get_piper_voice(
                 language
             ]
 
-
         model_name = PIPER_VOICES[
             language
         ]
 
-
         model_path = download_piper_voice(
             model_name
         )
-
 
         print(
             "[PIPER] Carregando:",
@@ -664,13 +620,11 @@ def get_piper_voice(
             flush=True,
         )
 
-
         try:
 
             voice = PiperVoice.load(
                 str(model_path)
             )
-
 
         except Exception as error:
 
@@ -679,13 +633,11 @@ def get_piper_voice(
                 + str(error)
             )
 
-
         with piper_global_lock:
 
             piper_voices[
                 language
             ] = voice
-
 
         print(
             "[PIPER] Voz pronta:",
@@ -693,12 +645,31 @@ def get_piper_voice(
             flush=True,
         )
 
-
         return voice
 
 
 # ============================================================
 # GERAR ÁUDIO PIPER
+#
+# CORREÇÃO PRINCIPAL:
+#
+# Algumas versões atuais do piper-tts não possuem:
+#
+#     synthesize_wav()
+#
+# Elas usam:
+#
+#     voice.synthesize(text)
+#
+# que retorna AudioChunk.
+#
+# Aqui montamos o WAV manualmente usando:
+#
+#     audio_int16_bytes
+#     sample_rate
+#     sample_width
+#     sample_channels
+#
 # ============================================================
 
 def generate_piper_audio(
@@ -710,32 +681,25 @@ def generate_piper_audio(
         text
     )
 
-
     if not text:
-
         return None
-
 
     language = normalize_language(
         language
     )
 
-
     voice = get_piper_voice(
         language
     )
-
 
     filename = (
         f"{uuid.uuid4().hex}.wav"
     )
 
-
     output = (
         AUDIO_DIR
         / filename
     )
-
 
     print(
         "[PIPER] Gerando voz:",
@@ -743,32 +707,161 @@ def generate_piper_audio(
         flush=True,
     )
 
-
     try:
 
-        with wave.open(
-            str(output),
-            "wb",
-        ) as wav_file:
+        # ====================================================
+        # NOVA API DO PIPER
+        # ====================================================
 
-            wav_file.setnchannels(
-                1
+        if hasattr(
+            voice,
+            "synthesize"
+        ):
+
+            chunks = voice.synthesize(
+                text
             )
 
-            wav_file.setsampwidth(
-                2
+            first_chunk = None
+
+            total_frames = 0
+
+            sample_rate = None
+
+            sample_width = None
+
+            sample_channels = None
+
+            with wave.open(
+                str(output),
+                "wb",
+            ) as wav_file:
+
+                for chunk in chunks:
+
+                    if first_chunk is None:
+
+                        first_chunk = chunk
+
+                        sample_rate = int(
+                            getattr(
+                                chunk,
+                                "sample_rate",
+                                getattr(
+                                    voice.config,
+                                    "sample_rate",
+                                    22050,
+                                ),
+                            )
+                        )
+
+                        sample_width = int(
+                            getattr(
+                                chunk,
+                                "sample_width",
+                                2,
+                            )
+                        )
+
+                        sample_channels = int(
+                            getattr(
+                                chunk,
+                                "sample_channels",
+                                1,
+                            )
+                        )
+
+                        wav_file.setnchannels(
+                            sample_channels
+                        )
+
+                        wav_file.setsampwidth(
+                            sample_width
+                        )
+
+                        wav_file.setframerate(
+                            sample_rate
+                        )
+
+                    audio_bytes = getattr(
+                        chunk,
+                        "audio_int16_bytes",
+                        None,
+                    )
+
+                    if audio_bytes:
+
+                        wav_file.writeframes(
+                            audio_bytes
+                        )
+
+                        bytes_per_frame = (
+                            sample_width
+                            * sample_channels
+                        )
+
+                        if bytes_per_frame > 0:
+
+                            total_frames += (
+                                len(audio_bytes)
+                                // bytes_per_frame
+                            )
+
+            if first_chunk is None:
+
+                raise RuntimeError(
+                    "Piper não retornou nenhum "
+                    "bloco de áudio."
+                )
+
+            if total_frames <= 0:
+
+                raise RuntimeError(
+                    "Piper retornou áudio vazio."
+                )
+
+        # ====================================================
+        # COMPATIBILIDADE COM VERSÕES ANTIGAS
+        # ====================================================
+
+        elif hasattr(
+            voice,
+            "synthesize_wav"
+        ):
+
+            with wave.open(
+                str(output),
+                "wb",
+            ) as wav_file:
+
+                wav_file.setnchannels(
+                    1
+                )
+
+                wav_file.setsampwidth(
+                    2
+                )
+
+                wav_file.setframerate(
+                    getattr(
+                        voice.config,
+                        "sample_rate",
+                        22050,
+                    )
+                )
+
+                voice.synthesize_wav(
+                    text,
+                    wav_file,
+                )
+
+        else:
+
+            raise RuntimeError(
+                "A versão do Piper instalada não "
+                "possui nem synthesize() nem "
+                "synthesize_wav()."
             )
-
-            wav_file.setframerate(
-                voice.config.sample_rate
-            )
-
-
-            voice.synthesize_wav(
-                text,
-                wav_file,
-            )
-
 
     except Exception as error:
 
@@ -776,19 +869,16 @@ def generate_piper_audio(
             missing_ok=True
         )
 
-
         print(
             "[PIPER] Erro ao gerar WAV:",
             repr(error),
             flush=True,
         )
 
-
         raise RuntimeError(
             "Erro na geração de áudio Piper: "
             + str(error)
         )
-
 
     if not output.exists():
 
@@ -796,18 +886,15 @@ def generate_piper_audio(
             "Piper não criou o arquivo WAV."
         )
 
-
     if output.stat().st_size < 100:
 
         output.unlink(
             missing_ok=True
         )
 
-
         raise RuntimeError(
             "Arquivo WAV do Piper ficou vazio."
         )
-
 
     # --------------------------------------------------------
     # VALIDAR WAV
@@ -836,7 +923,6 @@ def generate_piper_audio(
                 wav_file.getnframes()
             )
 
-
         print(
             "[PIPER] WAV:",
             "channels=",
@@ -850,30 +936,29 @@ def generate_piper_audio(
             flush=True,
         )
 
-
         if channels <= 0:
+
             raise RuntimeError(
                 "WAV sem canais."
             )
 
-
         if sample_width <= 0:
+
             raise RuntimeError(
                 "WAV sem sample width."
             )
 
-
         if sample_rate <= 0:
+
             raise RuntimeError(
                 "WAV sem sample rate."
             )
 
-
         if frames <= 0:
+
             raise RuntimeError(
                 "WAV sem áudio."
             )
-
 
     except Exception as error:
 
@@ -881,19 +966,16 @@ def generate_piper_audio(
             missing_ok=True
         )
 
-
         raise RuntimeError(
             "WAV Piper inválido: "
             + str(error)
         )
-
 
     print(
         "[PIPER] Áudio pronto:",
         filename,
         flush=True,
     )
-
 
     return filename
 
@@ -911,11 +993,8 @@ def translate_with_deepl(
         text
     )
 
-
     if not text:
-
         return ""
-
 
     if not DEEPL_API_KEY:
 
@@ -923,7 +1002,6 @@ def translate_with_deepl(
             "DEEPL_API_KEY não configurada "
             "no Render."
         )
-
 
     payload = {
 
@@ -937,7 +1015,6 @@ def translate_with_deepl(
             ),
     }
 
-
     headers = {
 
         "Authorization":
@@ -948,14 +1025,12 @@ def translate_with_deepl(
             "application/json",
     }
 
-
     response = requests.post(
         DEEPL_API_URL,
         headers=headers,
         json=payload,
         timeout=20,
     )
-
 
     if response.status_code != 200:
 
@@ -965,7 +1040,6 @@ def translate_with_deepl(
             + ": "
             + response.text[:1000]
         )
-
 
     try:
 
@@ -977,19 +1051,16 @@ def translate_with_deepl(
             "DeepL retornou resposta inválida."
         )
 
-
     translations = data.get(
         "translations",
         [],
     )
-
 
     if not translations:
 
         raise RuntimeError(
             "DeepL não retornou tradução."
         )
-
 
     translated = clean_text(
         translations[0].get(
@@ -998,13 +1069,11 @@ def translate_with_deepl(
         )
     )
 
-
     if not translated:
 
         raise RuntimeError(
             "DeepL retornou tradução vazia."
         )
-
 
     return translated
 
@@ -1039,7 +1108,6 @@ def deepgram_url():
         "utterance_end_ms=1000",
     ]
 
-
     return (
         "wss://api.deepgram.com/v1/listen?"
         + "&".join(params)
@@ -1048,12 +1116,6 @@ def deepgram_url():
 
 # ============================================================
 # COLOCAR TRADUÇÃO NA FILA
-#
-# A fila é "latest only".
-#
-# Se chegarem várias frases enquanto Piper está trabalhando,
-# mantemos somente a mais recente.
-# Isso evita atraso acumulado e voz atrasada.
 # ============================================================
 
 def enqueue_translation(
@@ -1065,10 +1127,8 @@ def enqueue_translation(
         transcript
     )
 
-
     if not transcript:
         return
-
 
     with job["lock"]:
 
@@ -1076,13 +1136,11 @@ def enqueue_translation(
             transcript
         )
 
-
         if key == job[
             "last_queued_source_key"
         ]:
 
             return
-
 
         if key == job[
             "last_source_key"
@@ -1090,19 +1148,16 @@ def enqueue_translation(
 
             return
 
-
         job[
             "last_queued_source_key"
         ] = key
-
 
     q = job[
         "translation_queue"
     ]
 
-
     # --------------------------------------------------------
-    # Remover item antigo.
+    # Manter somente a frase mais recente.
     # --------------------------------------------------------
 
     try:
@@ -1111,13 +1166,15 @@ def enqueue_translation(
 
             old = q.get_nowait()
 
-            if old is None:
+            if old is not None:
 
-                continue
+                try:
+                    q.task_done()
+                except Exception:
+                    pass
 
     except queue.Empty:
         pass
-
 
     try:
 
@@ -1147,21 +1204,14 @@ def process_transcript(
         transcript
     )
 
-
     if not transcript:
         return
-
 
     source_key = text_key(
         transcript
     )
 
-
     with job["lock"]:
-
-        # ----------------------------------------------------
-        # Não repetir frase.
-        # ----------------------------------------------------
 
         if source_key == job[
             "last_source_key"
@@ -1169,38 +1219,31 @@ def process_transcript(
 
             return
 
-
         job[
             "last_source_key"
         ] = source_key
-
 
         job[
             "source_text"
         ] = transcript
 
-
         job[
             "status"
         ] = "translating"
-
 
         job[
             "error"
         ] = None
 
-
         target_language = job[
             "target_language"
         ]
-
 
     print(
         "[SI] Texto:",
         transcript,
         flush=True,
     )
-
 
     try:
 
@@ -1213,17 +1256,11 @@ def process_transcript(
             target_language,
         )
 
-
         translated_key = text_key(
             translated
         )
 
-
         with job["lock"]:
-
-            # ------------------------------------------------
-            # Evitar repetir tradução.
-            # ------------------------------------------------
 
             if translated_key == job[
                 "last_translation_key"
@@ -1235,28 +1272,23 @@ def process_transcript(
 
                 return
 
-
             job[
                 "last_translation_key"
             ] = translated_key
-
 
             job[
                 "translated_text"
             ] = translated
 
-
             job[
                 "status"
             ] = "generating_voice"
-
 
         print(
             "[SI] Tradução:",
             translated,
             flush=True,
         )
-
 
         # ====================================================
         # PIPER
@@ -1266,7 +1298,6 @@ def process_transcript(
             translated,
             target_language,
         )
-
 
         if not filename:
 
@@ -1278,15 +1309,9 @@ def process_transcript(
 
             return
 
-
         audio_id = uuid.uuid4().hex
 
-
         with job["lock"]:
-
-            # ------------------------------------------------
-            # Não deixar a fila crescer.
-            # ------------------------------------------------
 
             while len(
                 job["audio_queue"]
@@ -1296,7 +1321,6 @@ def process_transcript(
                     "audio_queue"
                 ].pop(0)
 
-
                 old_filename = os.path.basename(
                     old_item.get(
                         "audioUrl",
@@ -1304,14 +1328,12 @@ def process_transcript(
                     )
                 )
 
-
                 if old_filename:
 
                     old_path = (
                         AUDIO_DIR
                         / old_filename
                     )
-
 
                     try:
 
@@ -1322,7 +1344,6 @@ def process_transcript(
                     except Exception:
                         pass
 
-
             sequence = (
                 job[
                     "audio_sequence"
@@ -1330,11 +1351,9 @@ def process_transcript(
                 + 1
             )
 
-
             job[
                 "audio_sequence"
             ] = sequence
-
 
             item = {
 
@@ -1355,18 +1374,15 @@ def process_transcript(
                     filename,
             }
 
-
             job[
                 "audio_queue"
             ].append(
                 item
             )
 
-
             job[
                 "audio_id"
             ] = audio_id
-
 
             job[
                 "audio_url"
@@ -1374,11 +1390,9 @@ def process_transcript(
                 "audioUrl"
             ]
 
-
             job[
                 "status"
             ] = "ready"
-
 
         print(
             "[SI] Áudio Piper pronto:",
@@ -1388,7 +1402,6 @@ def process_transcript(
             flush=True,
         )
 
-
     except Exception as error:
 
         print(
@@ -1397,13 +1410,11 @@ def process_transcript(
             flush=True,
         )
 
-
         with job["lock"]:
 
             job[
                 "error"
             ] = str(error)
-
 
             job[
                 "status"
@@ -1432,16 +1443,13 @@ def translation_worker(
                 )
             )
 
-
         except queue.Empty:
 
             continue
 
-
         if transcript is None:
 
             break
-
 
         try:
 
@@ -1450,7 +1458,6 @@ def translation_worker(
                 transcript,
             )
 
-
         except Exception as error:
 
             print(
@@ -1458,7 +1465,6 @@ def translation_worker(
                 repr(error),
                 flush=True,
             )
-
 
         finally:
 
@@ -1482,7 +1488,6 @@ def deepgram_worker(
 
     ws = None
 
-
     try:
 
         if not DEEPGRAM_API_KEY:
@@ -1491,12 +1496,10 @@ def deepgram_worker(
                 "DEEPGRAM_API_KEY não configurada."
             )
 
-
         print(
             "[DEEPGRAM] Conectando...",
             flush=True,
         )
-
 
         ws = websocket.create_connection(
 
@@ -1510,11 +1513,9 @@ def deepgram_worker(
             timeout=10,
         )
 
-
         ws.settimeout(
             0.5
         )
-
 
         with job["lock"]:
 
@@ -1522,22 +1523,18 @@ def deepgram_worker(
                 "status"
             ] = "listening"
 
-
             job[
                 "connected"
             ] = True
-
 
             job[
                 "error"
             ] = None
 
-
         print(
             "[DEEPGRAM] Conectado.",
             flush=True,
         )
-
 
         while not job[
             "stop_event"
@@ -1557,18 +1554,15 @@ def deepgram_worker(
                     )
                 )
 
-
             except queue.Empty:
 
                 audio_data = None
-
 
             if audio_data is not None:
 
                 if audio_data is False:
 
                     break
-
 
                 try:
 
@@ -1581,7 +1575,6 @@ def deepgram_worker(
                         ),
                     )
 
-
                 except Exception as error:
 
                     print(
@@ -1591,7 +1584,6 @@ def deepgram_worker(
                     )
 
                     break
-
 
             # =================================================
             # RECEBER RESPOSTAS
@@ -1603,7 +1595,6 @@ def deepgram_worker(
 
                     message = ws.recv()
 
-
                 except (
                     websocket
                     .WebSocketTimeoutException
@@ -1611,16 +1602,12 @@ def deepgram_worker(
 
                     break
 
-
                 except Exception:
 
                     break
 
-
                 if not message:
-
                     break
-
 
                 if isinstance(
                     message,
@@ -1629,24 +1616,20 @@ def deepgram_worker(
 
                     continue
 
-
                 try:
 
                     data = json.loads(
                         message
                     )
 
-
                 except Exception:
 
                     continue
-
 
                 channel = data.get(
                     "channel",
                     {},
                 )
-
 
                 alternatives = (
                     channel.get(
@@ -1655,11 +1638,8 @@ def deepgram_worker(
                     )
                 )
 
-
                 if not alternatives:
-
                     continue
-
 
                 transcript = clean_text(
                     alternatives[0].get(
@@ -1668,11 +1648,8 @@ def deepgram_worker(
                     )
                 )
 
-
                 if not transcript:
-
                     continue
-
 
                 is_final = bool(
                     data.get(
@@ -1681,7 +1658,6 @@ def deepgram_worker(
                     )
                 )
 
-
                 speech_final = bool(
                     data.get(
                         "speech_final",
@@ -1689,18 +1665,15 @@ def deepgram_worker(
                     )
                 )
 
-
                 with job["lock"]:
 
                     job[
                         "interim_text"
                     ] = transcript
 
-
                     job[
                         "last_activity"
                     ] = time.time()
-
 
                 # ---------------------------------------------
                 # SOMENTE FRASES FINAIS
@@ -1713,9 +1686,8 @@ def deepgram_worker(
                         transcript,
                     )
 
-
                 # ---------------------------------------------
-                # speech_final também é sinal de fechamento
+                # FECHAMENTO DA FALA
                 # ---------------------------------------------
 
                 if speech_final:
@@ -1726,7 +1698,6 @@ def deepgram_worker(
                             "interim_text"
                         ] = ""
 
-
     except Exception as error:
 
         print(
@@ -1735,18 +1706,15 @@ def deepgram_worker(
             flush=True,
         )
 
-
         with job["lock"]:
 
             job[
                 "error"
             ] = str(error)
 
-
             job[
                 "status"
             ] = "error"
-
 
     finally:
 
@@ -1756,16 +1724,13 @@ def deepgram_worker(
                 "connected"
             ] = False
 
-
         try:
 
             if ws:
-
                 ws.close()
 
         except Exception:
             pass
-
 
         print(
             "[DEEPGRAM] Conexão encerrada.",
@@ -1785,7 +1750,6 @@ def create_audio_session(
     target_language = normalize_language(
         target_language
     )
-
 
     job = {
 
@@ -1860,13 +1824,11 @@ def create_audio_session(
             threading.Lock(),
     }
 
-
     with audio_sessions_lock:
 
         audio_sessions[
             job_id
         ] = job
-
 
     threading.Thread(
         target=translation_worker,
@@ -1878,7 +1840,6 @@ def create_audio_session(
         ),
     ).start()
 
-
     threading.Thread(
         target=deepgram_worker,
         args=(job,),
@@ -1888,7 +1849,6 @@ def create_audio_session(
             + job_id[:8]
         ),
     ).start()
-
 
     return job
 
@@ -1912,7 +1872,7 @@ def home():
             "SI Tradutor Live",
 
         "version":
-            "20.0-Piper-Stable",
+            "21.0-Piper-Synthesize",
 
         "providers": {
 
@@ -1956,7 +1916,7 @@ def health():
             "SI Tradutor Live",
 
         "version":
-            "20.0-Piper-Stable",
+            "21.0-Piper-Synthesize",
 
         "deepgram_configured":
             bool(
@@ -2014,18 +1974,15 @@ def test_piper():
             or {}
         )
 
-
         text = data.get(
             "text",
             "Olá. Este é um teste de voz do SI.",
         )
 
-
         language = data.get(
             "language",
             "pt",
         )
-
 
     else:
 
@@ -2034,12 +1991,10 @@ def test_piper():
             "Olá. Este é um teste de voz do SI.",
         )
 
-
         language = request.args.get(
             "language",
             "pt",
         )
-
 
     try:
 
@@ -2047,12 +2002,10 @@ def test_piper():
             language
         )
 
-
         filename = generate_piper_audio(
             text,
             language,
         )
-
 
         return jsonify({
 
@@ -2073,7 +2026,6 @@ def test_piper():
                 + filename,
         })
 
-
     except Exception as error:
 
         print(
@@ -2081,7 +2033,6 @@ def test_piper():
             repr(error),
             flush=True,
         )
-
 
         return jsonify({
 
@@ -2115,7 +2066,6 @@ def audio_start():
             or {}
         )
 
-
         target_language = normalize_language(
 
             data.get(
@@ -2128,15 +2078,12 @@ def audio_start():
             )
         )
 
-
         job_id = uuid.uuid4().hex
-
 
         job = create_audio_session(
             job_id,
             target_language,
         )
-
 
         return jsonify({
 
@@ -2153,7 +2100,6 @@ def audio_start():
                 target_language,
         })
 
-
     except Exception as error:
 
         print(
@@ -2161,7 +2107,6 @@ def audio_start():
             repr(error),
             flush=True,
         )
-
 
         return jsonify({
 
@@ -2187,7 +2132,6 @@ def audio_chunk():
         silent=True
     )
 
-
     if not data:
 
         return jsonify({
@@ -2199,14 +2143,12 @@ def audio_chunk():
                 "JSON não recebido.",
         }), 400
 
-
     job_id = str(
         data.get(
             "jobId",
             "",
         )
     ).strip()
-
 
     if not job_id:
 
@@ -2219,12 +2161,10 @@ def audio_chunk():
                 "jobId não informado.",
         }), 400
 
-
     encoded = data.get(
         "audio",
         "",
     )
-
 
     if not encoded:
 
@@ -2236,7 +2176,6 @@ def audio_chunk():
             "error":
                 "Áudio não informado.",
         }), 400
-
 
     target_language = normalize_language(
 
@@ -2251,14 +2190,12 @@ def audio_chunk():
         )
     )
 
-
     try:
 
         audio_data = base64.b64decode(
             encoded,
             validate=True,
         )
-
 
     except Exception:
 
@@ -2267,7 +2204,6 @@ def audio_chunk():
             audio_data = base64.b64decode(
                 encoded
             )
-
 
         except Exception:
 
@@ -2280,7 +2216,6 @@ def audio_chunk():
                     "Base64 inválido.",
             }), 400
 
-
     if not audio_data:
 
         return jsonify({
@@ -2292,13 +2227,11 @@ def audio_chunk():
                 "Chunk vazio.",
         }), 400
 
-
     with audio_sessions_lock:
 
         job = audio_sessions.get(
             job_id
         )
-
 
     if not job:
 
@@ -2307,13 +2240,11 @@ def audio_chunk():
             target_language,
         )
 
-
     with job["lock"]:
 
         job[
             "last_activity"
         ] = time.time()
-
 
     try:
 
@@ -2323,7 +2254,6 @@ def audio_chunk():
             audio_data,
             timeout=2,
         )
-
 
     except queue.Full:
 
@@ -2335,7 +2265,6 @@ def audio_chunk():
             "error":
                 "Fila de áudio cheia.",
         }), 503
-
 
     return jsonify({
 
@@ -2371,7 +2300,6 @@ def audio_status(
             job_id
         )
 
-
     if not job:
 
         return jsonify({
@@ -2382,7 +2310,6 @@ def audio_status(
             "error":
                 "Job não encontrado.",
         }), 404
-
 
     with job["lock"]:
 
@@ -2399,16 +2326,9 @@ def audio_status(
             else None
         )
 
-
-        # ----------------------------------------------------
-        # Se não há áudio pendente e Deepgram está conectado,
-        # manter status listening.
-        # ----------------------------------------------------
-
         status = job[
             "status"
         ]
-
 
         if (
             not next_audio
@@ -2421,7 +2341,6 @@ def audio_status(
         ):
 
             status = "listening"
-
 
         response = {
 
@@ -2497,7 +2416,6 @@ def audio_status(
                 ],
         }
 
-
         return jsonify(
             response
         )
@@ -2505,12 +2423,6 @@ def audio_status(
 
 # ============================================================
 # ACK DO ÁUDIO
-#
-# O Android deve chamar:
-#
-# POST /api/audio/ack/JOB_ID/AUDIO_ID
-#
-# somente depois que terminar de reproduzir o áudio.
 # ============================================================
 
 @app.route(
@@ -2528,7 +2440,6 @@ def audio_ack(
             job_id
         )
 
-
     if not job:
 
         return jsonify({
@@ -2540,11 +2451,9 @@ def audio_ack(
                 "Job não encontrado.",
         }), 404
 
-
     removed = False
 
     removed_filename = None
-
 
     with job["lock"]:
 
@@ -2555,7 +2464,6 @@ def audio_ack(
             first = job[
                 "audio_queue"
             ][0]
-
 
             if (
                 first[
@@ -2568,16 +2476,13 @@ def audio_ack(
                     "audio_queue"
                 ].pop(0)
 
-
                 removed = True
-
 
                 removed_filename = (
                     first.get(
                         "filename"
                     )
                 )
-
 
         if not job[
             "audio_queue"
@@ -2590,11 +2495,6 @@ def audio_ack(
                 job[
                     "status"
                 ] = "listening"
-
-
-    # --------------------------------------------------------
-    # Remover WAV depois do ACK.
-    # --------------------------------------------------------
 
     if removed_filename:
 
@@ -2611,7 +2511,6 @@ def audio_ack(
 
         except Exception:
             pass
-
 
     return jsonify({
 
@@ -2641,7 +2540,6 @@ def audio_file(
     filename = os.path.basename(
         filename
     )
-
 
     return send_from_directory(
 
@@ -2673,7 +2571,6 @@ def stop_audio(
             job_id
         )
 
-
     if not job:
 
         return jsonify({
@@ -2685,11 +2582,9 @@ def stop_audio(
                 "Job não encontrado.",
         }), 404
 
-
     job[
         "stop_event"
     ].set()
-
 
     try:
 
@@ -2702,7 +2597,6 @@ def stop_audio(
     except Exception:
         pass
 
-
     try:
 
         job[
@@ -2714,11 +2608,6 @@ def stop_audio(
     except Exception:
         pass
 
-
-    # --------------------------------------------------------
-    # Apagar áudios pendentes.
-    # --------------------------------------------------------
-
     with job["lock"]:
 
         pending = list(
@@ -2727,28 +2616,23 @@ def stop_audio(
             ]
         )
 
-
         job[
             "audio_queue"
         ].clear()
-
 
         job[
             "status"
         ] = "stopped"
 
-
         job[
             "interim_text"
         ] = ""
-
 
     for item in pending:
 
         filename = item.get(
             "filename"
         )
-
 
         if filename:
 
@@ -2765,7 +2649,6 @@ def stop_audio(
 
             except Exception:
                 pass
-
 
     return jsonify({
 
@@ -2797,7 +2680,6 @@ def diagnostic():
         or {}
     )
 
-
     print(
         "[DIAGNOSTIC]",
         json.dumps(
@@ -2806,7 +2688,6 @@ def diagnostic():
         ),
         flush=True,
     )
-
 
     return jsonify({
 
@@ -2830,9 +2711,7 @@ def cleanup_worker():
             300
         )
 
-
         now = time.time()
-
 
         # ----------------------------------------------------
         # SESSÕES ANTIGAS
@@ -2841,7 +2720,6 @@ def cleanup_worker():
         with audio_sessions_lock:
 
             old_jobs = []
-
 
             for (
                 job_id,
@@ -2860,7 +2738,6 @@ def cleanup_worker():
                         job_id
                     )
 
-
             for job_id in old_jobs:
 
                 job = audio_sessions.pop(
@@ -2868,13 +2745,11 @@ def cleanup_worker():
                     None,
                 )
 
-
                 if job:
 
                     job[
                         "stop_event"
                     ].set()
-
 
                     with job["lock"]:
 
@@ -2884,18 +2759,15 @@ def cleanup_worker():
                             ]
                         )
 
-
                         job[
                             "audio_queue"
                         ].clear()
-
 
                     for item in pending:
 
                         filename = item.get(
                             "filename"
                         )
-
 
                         if filename:
 
@@ -2913,7 +2785,6 @@ def cleanup_worker():
                             except Exception:
                                 pass
 
-
         # ----------------------------------------------------
         # ARQUIVOS ANTIGOS
         # ----------------------------------------------------
@@ -2923,9 +2794,7 @@ def cleanup_worker():
             for path in AUDIO_DIR.iterdir():
 
                 if not path.is_file():
-
                     continue
-
 
                 try:
 
@@ -2934,17 +2803,14 @@ def cleanup_worker():
                         - path.stat().st_mtime
                     )
 
-
                     if age > 3600:
 
                         path.unlink(
                             missing_ok=True
                         )
 
-
                 except Exception:
                     pass
-
 
         except Exception:
             pass
@@ -2972,48 +2838,45 @@ if __name__ == "__main__":
         flush=True,
     )
 
-
     print(
         " SI - TRADUTOR LIVE",
         flush=True,
     )
-
 
     print(
         " Deepgram + DeepL + Piper",
         flush=True,
     )
 
-
     print(
         " OpenAI: DESATIVADO",
         flush=True,
     )
-
 
     print(
         " ElevenLabs: DESATIVADO",
         flush=True,
     )
 
-
     print(
         " DeepL Voice: DESATIVADO",
         flush=True,
     )
-
 
     print(
         " Piper: ATIVO",
         flush=True,
     )
 
+    print(
+        " Piper API: synthesize()",
+        flush=True,
+    )
 
     print(
         "====================================",
         flush=True,
     )
-
 
     print(
         "Deepgram configurado:",
@@ -3021,13 +2884,11 @@ if __name__ == "__main__":
         flush=True,
     )
 
-
     print(
         "DeepL configurado:",
         bool(DEEPL_API_KEY),
         flush=True,
     )
-
 
     print(
         "Idioma de origem:",
@@ -3035,13 +2896,11 @@ if __name__ == "__main__":
         flush=True,
     )
 
-
     print(
         "Idioma padrão:",
         DEFAULT_TARGET_LANGUAGE,
         flush=True,
     )
-
 
     print(
         "Diretório Piper:",
@@ -3049,12 +2908,10 @@ if __name__ == "__main__":
         flush=True,
     )
 
-
     print(
         "====================================",
         flush=True,
     )
-
 
     app.run(
 
@@ -3065,4 +2922,4 @@ if __name__ == "__main__":
         debug=False,
 
         threaded=True,
-)
+    )
