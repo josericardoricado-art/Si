@@ -14,7 +14,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
-import android.media.AudioTrack
+import android.media.MediaPlayer
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -24,6 +24,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.LinkedBlockingQueue
@@ -46,20 +47,13 @@ class AudioCaptureService : Service() {
         private const val CHANNEL_ID = "si_audio_capture"
         private const val NOTIFICATION_ID = 1001
 
-        // A captura interna do Android trabalha de forma mais confiável em 48 kHz.
-        // O backend continua recebendo 16 kHz, então fazemos downsample 48k -> 16k.
         private const val CAPTURE_SAMPLE_RATE = 48000
         private const val SEND_SAMPLE_RATE = 16000
         private const val CAPTURE_CHANNEL = AudioFormat.CHANNEL_IN_MONO
         private const val PCM_FORMAT = AudioFormat.ENCODING_PCM_16BIT
-
-        // 100 ms em 48 kHz mono PCM16 = 9600 bytes.
         private const val CAPTURE_CHUNK_BYTES = 9600
-        // 100 ms em 16 kHz mono PCM16 = 3200 bytes.
-        private const val SEND_CHUNK_BYTES = 3200
-
         private const val INPUT_QUEUE_SIZE = 80
-        private const val OUTPUT_QUEUE_SIZE = 8
+        private const val OUTPUT_QUEUE_SIZE = 4
         private const val STATUS_INTERVAL_MS = 300L
     }
 
@@ -70,7 +64,8 @@ class AudioCaptureService : Service() {
     private var mediaProjection: MediaProjection? = null
     private var projectionCallback: MediaProjection.Callback? = null
     private var audioRecord: AudioRecord? = null
-    private var audioTrack: AudioTrack? = null
+    private var mediaPlayer: MediaPlayer? = null
+    private var playbackFile: File? = null
 
     private var captureThread: Thread? = null
     private var sendThread: Thread? = null
@@ -85,7 +80,6 @@ class AudioCaptureService : Service() {
     )
 
     private val outputQueue = LinkedBlockingQueue<OutputAudio>(OUTPUT_QUEUE_SIZE)
-
     private val downloadedAudioIds = HashSet<String>()
     private val downloadedAudioLock = Any()
 
@@ -107,24 +101,18 @@ class AudioCaptureService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val action = intent?.action
-        Log.d(TAG, "onStartCommand=$action")
-
-        if (action == ACTION_STOP) {
-            pararServico(true)
-            return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_STOP -> {
+                pararServico(true)
+                return START_NOT_STICKY
+            }
+            ACTION_START -> Unit
+            else -> return START_NOT_STICKY
         }
 
-        if (action != ACTION_START) {
-            return START_NOT_STICKY
-        }
+        if (running) return START_STICKY
 
-        if (running) {
-            Log.d(TAG, "Serviço já está rodando")
-            return START_STICKY
-        }
-
-        jobId = intent?.getStringExtra(EXTRA_JOB_ID).orEmpty()
+        jobId = intent.getStringExtra(EXTRA_JOB_ID).orEmpty()
         if (jobId.isEmpty()) {
             lastError = "jobId vazio"
             publicarDiagnostico("❌ jobId vazio")
@@ -132,11 +120,7 @@ class AudioCaptureService : Service() {
             return START_NOT_STICKY
         }
 
-        val resultCode = intent.getIntExtra(
-            EXTRA_RESULT_CODE,
-            Activity.RESULT_CANCELED
-        )
-
+        val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED)
         val resultData: Intent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             intent.getParcelableExtra(EXTRA_RESULT_DATA, Intent::class.java)
         } else {
@@ -155,7 +139,7 @@ class AudioCaptureService : Service() {
             ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
         ) {
             lastError = "Permissão RECORD_AUDIO não concedida"
-            publicarDiagnostico("❌ Permissão de microfone/captura não concedida")
+            publicarDiagnostico("❌ Permissão de áudio não concedida")
             stopSelf()
             return START_NOT_STICKY
         }
@@ -163,8 +147,8 @@ class AudioCaptureService : Service() {
         try {
             iniciarForeground()
             limparEstado()
-            running = true
             stopping = false
+            running = true
 
             iniciarMediaProjection(resultCode, resultData)
             iniciarCaptura()
@@ -177,7 +161,7 @@ class AudioCaptureService : Service() {
         } catch (e: Exception) {
             lastError = e.message ?: e.javaClass.simpleName
             Log.e(TAG, "Erro iniciando serviço", e)
-            publicarDiagnostico("❌ Erro ao iniciar: ${lastError}")
+            publicarDiagnostico("❌ Erro ao iniciar: $lastError")
             pararServico(false)
         }
 
@@ -187,13 +171,15 @@ class AudioCaptureService : Service() {
     private fun criarCanal() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = getSystemService(NotificationManager::class.java)
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "SI Tradutor Live",
-                NotificationManager.IMPORTANCE_LOW
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_ID,
+                    "SI Tradutor Live",
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = "Captura e tradução de áudio em tempo real"
+                }
             )
-            channel.description = "Captura e tradução de áudio em tempo real"
-            manager.createNotificationChannel(channel)
         }
     }
 
@@ -201,7 +187,7 @@ class AudioCaptureService : Service() {
         val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle("SI Tradutor Live")
-                .setContentText("Capturando áudio em tempo real")
+                .setContentText("Traduzindo áudio em tempo real")
                 .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                 .setOngoing(true)
                 .build()
@@ -209,7 +195,7 @@ class AudioCaptureService : Service() {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
                 .setContentTitle("SI Tradutor Live")
-                .setContentText("Capturando áudio em tempo real")
+                .setContentText("Traduzindo áudio em tempo real")
                 .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                 .setOngoing(true)
                 .build()
@@ -237,14 +223,11 @@ class AudioCaptureService : Service() {
                 if (running) pararServico(true)
             }
         }
-
         mediaProjection?.registerCallback(projectionCallback!!, null)
     }
 
     private fun iniciarCaptura() {
-        val projection = mediaProjection
-            ?: throw IllegalStateException("MediaProjection não disponível")
-
+        val projection = mediaProjection ?: throw IllegalStateException("MediaProjection não disponível")
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             throw IllegalStateException("Captura interna exige Android 10 ou superior")
         }
@@ -254,15 +237,7 @@ class AudioCaptureService : Service() {
             CAPTURE_CHANNEL,
             PCM_FORMAT
         )
-
-        if (minBuffer <= 0) {
-            throw IllegalStateException("AudioRecord.getMinBufferSize falhou: $minBuffer")
-        }
-
-        val bufferSize = max(
-            minBuffer * 4,
-            CAPTURE_CHUNK_BYTES * 8
-        )
+        if (minBuffer <= 0) throw IllegalStateException("AudioRecord.getMinBufferSize falhou: $minBuffer")
 
         val captureConfig = AudioPlaybackCaptureConfiguration.Builder(projection)
             .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
@@ -278,7 +253,7 @@ class AudioCaptureService : Service() {
                     .setChannelMask(CAPTURE_CHANNEL)
                     .build()
             )
-            .setBufferSizeInBytes(bufferSize)
+            .setBufferSizeInBytes(max(minBuffer * 4, CAPTURE_CHUNK_BYTES * 8))
             .setAudioPlaybackCaptureConfig(captureConfig)
             .build()
 
@@ -291,17 +266,13 @@ class AudioCaptureService : Service() {
 
         captureThread = Thread {
             val captureBuffer = ByteArray(CAPTURE_CHUNK_BYTES)
-
             try {
                 record.startRecording()
-
                 if (record.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
-                    throw IllegalStateException(
-                        "AudioRecord não entrou em RECORDING; estado=${record.recordingState}"
-                    )
+                    throw IllegalStateException("AudioRecord não entrou em RECORDING")
                 }
 
-                Log.d(TAG, "CAPTURA INICIADA: ${CAPTURE_SAMPLE_RATE} Hz")
+                Log.d(TAG, "CAPTURA INICIADA 48kHz")
                 publicarDiagnostico("🎤 Capturando áudio interno...")
 
                 while (running && !stopping) {
@@ -314,55 +285,27 @@ class AudioCaptureService : Service() {
 
                     if (read > 0) {
                         capturedChunks++
-
                         val chunk = captureBuffer.copyOf(read)
-                        val rms = calcularRms(chunk)
-                        lastRms = rms
-
-                        if (rms == 0L) silentChunks++
-                        else receivedAudio++
+                        lastRms = calcularRms(chunk)
+                        if (lastRms == 0L) silentChunks++ else receivedAudio++
 
                         val pcm16k = downsample48kTo16k(chunk)
                         if (pcm16k.isNotEmpty()) {
-                            if (!inputQueue.offer(pcm16k)) {
-                                inputQueue.poll()
-                                inputQueue.offer(pcm16k)
-                            }
+                            if (!inputQueue.offer(pcm16k)) inputQueue.poll()
+                            inputQueue.offer(pcm16k)
                         }
 
                         if (capturedChunks <= 5 || capturedChunks % 25L == 0L) {
-                            Log.d(
-                                TAG,
-                                "CAPTURA=$capturedChunks read=$read rms=$rms " +
-                                    "silencios=$silentChunks fila=${inputQueue.size}"
-                            )
+                            Log.d(TAG, "CAPTURA=$capturedChunks read=$read rms=$lastRms fila=${inputQueue.size}")
                         }
-
                         publicarDiagnostico(null)
                         continue
                     }
 
-                    if (read == AudioRecord.ERROR_DEAD_OBJECT) {
-                        lastError = "AudioRecord ERROR_DEAD_OBJECT"
-                        Log.e(TAG, lastError!!)
-                        break
-                    }
-
-                    if (read == AudioRecord.ERROR_INVALID_OPERATION) {
-                        lastError = "AudioRecord ERROR_INVALID_OPERATION"
-                        Log.e(TAG, lastError!!)
-                    } else if (read == AudioRecord.ERROR_BAD_VALUE) {
-                        lastError = "AudioRecord ERROR_BAD_VALUE"
-                        Log.e(TAG, lastError!!)
-                    } else if (read == AudioRecord.ERROR) {
-                        lastError = "AudioRecord ERROR"
-                        Log.e(TAG, lastError!!)
-                    } else {
-                        lastError = "AudioRecord read retornou $read"
-                        Log.e(TAG, lastError!!)
-                    }
-
+                    lastError = "AudioRecord retornou $read"
+                    Log.e(TAG, lastError!!)
                     publicarDiagnostico("⚠️ Captura retornou $read")
+                    if (read == AudioRecord.ERROR_DEAD_OBJECT) break
                     Thread.sleep(100)
                 }
             } catch (e: SecurityException) {
@@ -384,17 +327,14 @@ class AudioCaptureService : Service() {
             name = "SI-AudioCapture"
             isDaemon = true
         }
-
         captureThread?.start()
     }
 
     private fun downsample48kTo16k(data: ByteArray): ByteArray {
-        if (data.size < 6) return ByteArray(0)
-
         val sampleCount = data.size / 2
+        if (sampleCount < 3) return ByteArray(0)
         val outputSamples = sampleCount / 3
         val output = ByteArray(outputSamples * 2)
-
         var inputSample = 0
         var outByte = 0
 
@@ -403,14 +343,11 @@ class AudioCaptureService : Service() {
             val s2 = readPcm16(data, inputSample + 1)
             val s3 = readPcm16(data, inputSample + 2)
             val avg = ((s1 + s2 + s3) / 3).coerceIn(-32768, 32767)
-
             output[outByte] = (avg and 0xff).toByte()
             output[outByte + 1] = ((avg shr 8) and 0xff).toByte()
-
             inputSample += 3
             outByte += 2
         }
-
         return output
     }
 
@@ -422,25 +359,20 @@ class AudioCaptureService : Service() {
 
     private fun calcularRms(data: ByteArray): Long {
         if (data.size < 2) return 0L
-
         var sum = 0.0
         var count = 0
         var i = 0
-
         while (i + 1 < data.size) {
             val sample = ((data[i + 1].toInt() shl 8) or (data[i].toInt() and 0xff)).toShort().toInt()
             sum += sample.toDouble() * sample.toDouble()
             count++
             i += 2
         }
-
         return if (count == 0) 0L else sqrt(sum / count).toLong()
     }
 
     private fun iniciarEnvio() {
         sendThread = Thread {
-            Log.d(TAG, "THREAD ENVIO INICIADA")
-
             while (running && !stopping) {
                 try {
                     val chunk = inputQueue.poll(500, TimeUnit.MILLISECONDS) ?: continue
@@ -450,8 +382,8 @@ class AudioCaptureService : Service() {
                 } catch (e: Exception) {
                     if (running) {
                         lastError = e.message ?: e.javaClass.simpleName
-                        Log.e(TAG, "Erro no envio", e)
-                        publicarDiagnostico("⚠️ Erro no envio: $lastError")
+                        Log.e(TAG, "Erro envio", e)
+                        publicarDiagnostico("⚠️ Erro envio: $lastError")
                     }
                 }
             }
@@ -459,17 +391,13 @@ class AudioCaptureService : Service() {
             name = "SI-AudioSend"
             isDaemon = true
         }
-
         sendThread?.start()
     }
 
     private fun enviarAudio(audio: ByteArray) {
         var connection: HttpURLConnection? = null
-
         try {
-            connection = URL("$BACKEND_URL/api/audio/chunk")
-                .openConnection() as HttpURLConnection
-
+            connection = URL("$BACKEND_URL/api/audio/chunk").openConnection() as HttpURLConnection
             connection.requestMethod = "POST"
             connection.connectTimeout = 10000
             connection.readTimeout = 10000
@@ -477,7 +405,6 @@ class AudioCaptureService : Service() {
             connection.useCaches = false
             connection.setRequestProperty("Content-Type", "application/json")
             connection.setRequestProperty("Accept", "application/json")
-            connection.setRequestProperty("Connection", "close")
 
             val json = JSONObject()
             json.put("jobId", jobId)
@@ -485,22 +412,15 @@ class AudioCaptureService : Service() {
             json.put("mimeType", "audio/pcm")
             json.put("sampleRate", SEND_SAMPLE_RATE)
 
-            connection.outputStream.use { out ->
-                out.write(json.toString().toByteArray(Charsets.UTF_8))
-                out.flush()
-            }
-
+            connection.outputStream.use { it.write(json.toString().toByteArray(Charsets.UTF_8)) }
             val code = connection.responseCode
             if (code in 200..299) {
                 sentChunks++
-                if (sentChunks <= 5 || sentChunks % 25L == 0L) {
-                    Log.d(TAG, "ENVIO=$sentChunks")
-                }
+                if (sentChunks <= 5 || sentChunks % 25L == 0L) Log.d(TAG, "ENVIO=$sentChunks")
             } else {
                 lastError = "Render HTTP=$code"
                 Log.e(TAG, lastError!!)
             }
-
             publicarDiagnostico(null)
         } catch (e: Exception) {
             if (running) {
@@ -530,22 +450,16 @@ class AudioCaptureService : Service() {
             name = "SI-Status"
             isDaemon = true
         }
-
         statusThread?.start()
     }
 
     private fun consultarStatus() {
         var connection: HttpURLConnection? = null
-
         try {
-            connection = URL("$BACKEND_URL/api/audio/status/$jobId")
-                .openConnection() as HttpURLConnection
-
+            connection = URL("$BACKEND_URL/api/audio/status/$jobId").openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
             connection.connectTimeout = 8000
             connection.readTimeout = 8000
-            connection.setRequestProperty("Accept", "application/json")
-
             val code = connection.responseCode
             if (code !in 200..299) return
 
@@ -553,20 +467,15 @@ class AudioCaptureService : Service() {
             val json = JSONObject(response)
             if (!json.optBoolean("ok", false)) return
 
-            val sourceText = json.optString("sourceText", "")
-            val translatedText = json.optString("translatedText", "")
-            if (sourceText.isNotEmpty() || translatedText.isNotEmpty()) {
-                Log.d(TAG, "TEXTO source=$sourceText translated=$translatedText")
+            val source = json.optString("sourceText", "")
+            val translated = json.optString("translatedText", "")
+            if (source.isNotEmpty() || translated.isNotEmpty()) {
+                Log.d(TAG, "TEXTO source=$source translated=$translated")
             }
 
             var audioId = json.optString("audioId", "")
             var audioUrl = json.optString("audioUrl", "")
-
-            if (audioId.isEmpty() || audioUrl.isEmpty()) {
-                publicarDiagnostico(null)
-                return
-            }
-
+            if (audioId.isEmpty() || audioUrl.isEmpty()) return
             if (audioUrl.startsWith("/")) audioUrl = BACKEND_URL + audioUrl
 
             synchronized(downloadedAudioLock) {
@@ -574,7 +483,7 @@ class AudioCaptureService : Service() {
                 downloadedAudioIds.add(audioId)
             }
 
-            Log.d(TAG, "NOVO AUDIO PIPER=$audioId")
+            Log.d(TAG, "NOVO AUDIO PIPER=$audioId url=$audioUrl")
             publicarDiagnostico("🔊 Áudio Piper recebido")
 
             val wav = baixarWav(audioUrl)
@@ -583,20 +492,21 @@ class AudioCaptureService : Service() {
                 return
             }
 
-            val validWav = validarWav(wav)
-            if (validWav == null) {
+            if (!isWavPcm16(wav)) {
+                lastError = "WAV Piper inválido ou não PCM16"
+                Log.e(TAG, lastError!!)
                 removerAudioBaixado(audioId)
+                publicarDiagnostico("❌ WAV Piper inválido")
                 return
             }
 
-            val item = OutputAudio(audioId, validWav)
-            if (!outputQueue.offer(item, 2, TimeUnit.SECONDS)) {
+            if (!outputQueue.offer(OutputAudio(audioId, wav), 2, TimeUnit.SECONDS)) {
                 removerAudioBaixado(audioId)
                 return
             }
 
             Log.d(TAG, "WAV PIPER ENFILEIRADO=${wav.size} bytes")
-            publicarDiagnostico("🔊 Áudio Piper recebido")
+            publicarDiagnostico("🔊 Áudio Piper pronto para tocar")
         } catch (e: Exception) {
             if (running) Log.e(TAG, "Erro consultando status", e)
         } finally {
@@ -606,14 +516,12 @@ class AudioCaptureService : Service() {
 
     private fun baixarWav(url: String): ByteArray? {
         var connection: HttpURLConnection? = null
-
         return try {
             connection = URL(url).openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
             connection.connectTimeout = 10000
             connection.readTimeout = 30000
             connection.setRequestProperty("Accept", "audio/wav,audio/x-wav,*/*")
-
             if (connection.responseCode !in 200..299) {
                 lastError = "Download WAV HTTP=${connection.responseCode}"
                 Log.e(TAG, lastError!!)
@@ -626,9 +534,7 @@ class AudioCaptureService : Service() {
                         val n = input.read(buffer)
                         if (n <= 0) break
                         out.write(buffer, 0, n)
-                        if (out.size() > 10 * 1024 * 1024) {
-                            throw IllegalStateException("WAV Piper maior que 10 MB")
-                        }
+                        if (out.size() > 10 * 1024 * 1024) throw IllegalStateException("WAV maior que 10 MB")
                     }
                     out.toByteArray()
                 }
@@ -642,109 +548,68 @@ class AudioCaptureService : Service() {
         }
     }
 
-    private data class WavInfo(
-        val channels: Int,
-        val sampleRate: Int,
-        val bits: Int,
-        val dataStart: Int,
-        val dataSize: Int
-    )
+    private fun isWavPcm16(wav: ByteArray): Boolean {
+        if (wav.size < 44) return false
+        if (String(wav, 0, 4, Charsets.US_ASCII) != "RIFF") return false
+        if (String(wav, 8, 4, Charsets.US_ASCII) != "WAVE") return false
 
-    private fun validarWav(wav: ByteArray): ByteArray? {
-        val info = analisarWav(wav) ?: return null
-        Log.d(
-            TAG,
-            "WAV OK rate=${info.sampleRate} channels=${info.channels} bits=${info.bits} data=${info.dataSize}"
-        )
-        return wav
-    }
-
-    private fun analisarWav(wav: ByteArray): WavInfo? {
-        try {
-            if (wav.size < 44) {
-                lastError = "WAV pequeno demais: ${wav.size} bytes"
-                return null
-            }
-
-            fun intLE(offset: Int): Int {
-                if (offset < 0 || offset + 4 > wav.size) return -1
-                return (wav[offset].toInt() and 0xff) or
-                    ((wav[offset + 1].toInt() and 0xff) shl 8) or
-                    ((wav[offset + 2].toInt() and 0xff) shl 16) or
-                    ((wav[offset + 3].toInt() and 0xff) shl 24)
-            }
-
-            fun shortLE(offset: Int): Int {
-                if (offset < 0 || offset + 2 > wav.size) return -1
-                return (wav[offset].toInt() and 0xff) or
-                    ((wav[offset + 1].toInt() and 0xff) shl 8)
-            }
-
-            fun chunkName(offset: Int): String {
-                if (offset < 0 || offset + 4 > wav.size) return ""
-                return String(wav, offset, 4, Charsets.US_ASCII)
-            }
-
-            if (chunkName(0) != "RIFF" || chunkName(8) != "WAVE") {
-                lastError = "WAV inválido: RIFF/WAVE não encontrado"
-                return null
-            }
-
-            var offset = 12
-            var format = 0
-            var channels = 0
-            var sampleRate = 0
-            var bits = 0
-            var dataStart = -1
-            var dataSize = 0
-
-            while (offset + 8 <= wav.size) {
-                val id = chunkName(offset)
-                val size = intLE(offset + 4)
-                if (size < 0) return null
-
-                val payload = offset + 8
-                if (payload > wav.size) return null
-
-                val safeSize = minOf(size, wav.size - payload)
-
-                if (id == "fmt " && safeSize >= 16) {
-                    format = shortLE(payload)
-                    channels = shortLE(payload + 2)
-                    sampleRate = intLE(payload + 4)
-                    bits = shortLE(payload + 14)
-                }
-
-                if (id == "data") {
-                    dataStart = payload
-                    dataSize = safeSize
-                    break
-                }
-
-                offset = payload + size
-                if ((offset and 1) != 0) offset++
-            }
-
-            if (format != 1 || channels !in 1..2 || sampleRate <= 0 || bits != 16 || dataStart < 0 || dataSize <= 0) {
-                lastError = "WAV incompatível format=$format channels=$channels rate=$sampleRate bits=$bits data=$dataSize"
-                return null
-            }
-
-            return WavInfo(channels, sampleRate, bits, dataStart, dataSize)
-        } catch (e: Exception) {
-            lastError = "Erro validando WAV: ${e.message}"
-            return null
+        fun u16(p: Int): Int {
+            if (p + 2 > wav.size) return -1
+            return (wav[p].toInt() and 0xff) or ((wav[p + 1].toInt() and 0xff) shl 8)
         }
+        fun i32(p: Int): Int {
+            if (p + 4 > wav.size) return -1
+            return (wav[p].toInt() and 0xff) or
+                ((wav[p + 1].toInt() and 0xff) shl 8) or
+                ((wav[p + 2].toInt() and 0xff) shl 16) or
+                ((wav[p + 3].toInt() and 0xff) shl 24)
+        }
+        fun id(p: Int): String {
+            if (p + 4 > wav.size) return ""
+            return String(wav, p, 4, Charsets.US_ASCII)
+        }
+
+        var p = 12
+        var format = 0
+        var channels = 0
+        var rate = 0
+        var bits = 0
+        var dataSize = 0
+
+        while (p + 8 <= wav.size) {
+            val name = id(p)
+            val size = i32(p + 4)
+            if (size < 0) return false
+            val payload = p + 8
+            if (payload > wav.size) return false
+            val safeSize = minOf(size, wav.size - payload)
+
+            if (name == "fmt " && safeSize >= 16) {
+                format = u16(payload)
+                channels = u16(payload + 2)
+                rate = i32(payload + 4)
+                bits = u16(payload + 14)
+            }
+            if (name == "data") {
+                dataSize = safeSize
+                break
+            }
+            p = payload + size
+            if ((p and 1) != 0) p++
+        }
+
+        val ok = format == 1 && channels in 1..2 && rate > 0 && bits == 16 && dataSize > 0
+        Log.d(TAG, "WAV format=$format channels=$channels rate=$rate bits=$bits data=$dataSize ok=$ok")
+        return ok
     }
 
     private fun iniciarPlayback() {
         playbackThread = Thread {
-            Log.d(TAG, "THREAD PLAYBACK INICIADA")
-
+            Log.d(TAG, "THREAD PLAYBACK PIPER INICIADA")
             while (running && !stopping) {
                 try {
                     val item = outputQueue.poll(500, TimeUnit.MILLISECONDS) ?: continue
-                    tocarWav(item)
+                    tocarWavComMediaPlayer(item)
                 } catch (_: InterruptedException) {
                     break
                 } catch (e: Exception) {
@@ -755,138 +620,97 @@ class AudioCaptureService : Service() {
                     }
                 }
             }
-
-            liberarAudioTrack()
+            liberarMediaPlayer()
         }.apply {
             name = "SI-PiperPlayback"
             isDaemon = true
         }
-
         playbackThread?.start()
     }
 
-    private fun tocarWav(item: OutputAudio) {
-        val info = analisarWav(item.wav)
-        if (info == null) {
-            enviarAck(item.audioId)
-            return
-        }
-
-        var track: AudioTrack? = null
+    private fun tocarWavComMediaPlayer(item: OutputAudio) {
+        var file: File? = null
+        var player: MediaPlayer? = null
+        var completed = false
 
         try {
-            val channelMask = if (info.channels == 1) {
-                AudioFormat.CHANNEL_OUT_MONO
-            } else {
-                AudioFormat.CHANNEL_OUT_STEREO
-            }
+            file = File.createTempFile("si_piper_", ".wav", cacheDir)
+            file.writeBytes(item.wav)
+            playbackFile = file
 
-            val minBuffer = AudioTrack.getMinBufferSize(
-                info.sampleRate,
-                channelMask,
-                AudioFormat.ENCODING_PCM_16BIT
-            )
+            val finished = Object()
+            var done = false
+            var playbackError: String? = null
 
-            if (minBuffer <= 0) {
-                throw IllegalStateException("AudioTrack.getMinBufferSize falhou: $minBuffer")
-            }
+            player = MediaPlayer()
+            mediaPlayer = player
 
-            val bufferSize = max(minBuffer * 2, 8192)
-
-            track = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                AudioTrack.Builder()
-                    .setAudioAttributes(
-                        AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_MEDIA)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                            .build()
-                    )
-                    .setAudioFormat(
-                        AudioFormat.Builder()
-                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                            .setSampleRate(info.sampleRate)
-                            .setChannelMask(channelMask)
-                            .build()
-                    )
-                    .setBufferSizeInBytes(bufferSize)
-                    .setTransferMode(AudioTrack.MODE_STREAM)
+            player.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
-            } else {
-                @Suppress("DEPRECATION")
-                AudioTrack(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build(),
-                    AudioFormat.Builder()
-                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                        .setSampleRate(info.sampleRate)
-                        .setChannelMask(channelMask)
-                        .build(),
-                    bufferSize,
-                    AudioTrack.MODE_STREAM,
-                    0
-                )
-            }
+            )
+            player.setDataSource(file.absolutePath)
+            player.setVolume(1.0f, 1.0f)
 
-            if (track.state != AudioTrack.STATE_INITIALIZED) {
-                throw IllegalStateException("AudioTrack não inicializado")
-            }
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                track.setVolume(1.0f)
-            } else {
-                @Suppress("DEPRECATION")
-                track.setStereoVolume(1.0f, 1.0f)
-            }
-
-            synchronized(this) {
-                audioTrack = track
-            }
-
-            track.play()
-
-            if (track.playState != AudioTrack.PLAYSTATE_PLAYING) {
-                throw IllegalStateException("AudioTrack não entrou em PLAYING")
-            }
-
-            val end = info.dataStart + info.dataSize
-            var offset = info.dataStart
-
-            while (running && !stopping && offset < end) {
-                val count = minOf(16384, end - offset)
-                val written = track.write(
-                    item.wav,
-                    offset,
-                    count,
-                    AudioTrack.WRITE_BLOCKING
-                )
-
-                if (written < 0) {
-                    throw IllegalStateException("AudioTrack.write retornou $written")
-                }
-
-                if (written == 0) {
-                    Thread.sleep(10)
-                } else {
-                    offset += written
+            player.setOnPreparedListener {
+                try {
+                    Log.d(TAG, "PIPER WAV PREPARED size=${item.wav.size}")
+                    publicarDiagnostico("🔊 Voz Piper tocando")
+                    it.start()
+                } catch (e: Exception) {
+                    synchronized(finished) {
+                        playbackError = e.message ?: e.javaClass.simpleName
+                        done = true
+                        finished.notifyAll()
+                    }
                 }
             }
 
-            try {
-                track.stop()
-            } catch (_: Exception) { }
+            player.setOnCompletionListener {
+                synchronized(finished) {
+                    done = true
+                    completed = true
+                    finished.notifyAll()
+                }
+            }
+
+            player.setOnErrorListener { _, what, extra ->
+                synchronized(finished) {
+                    playbackError = "MediaPlayer erro what=$what extra=$extra"
+                    done = true
+                    finished.notifyAll()
+                }
+                true
+            }
+
+            player.prepare()
+
+            synchronized(finished) {
+                while (!done && running && !stopping) {
+                    try {
+                        finished.wait(1000L)
+                    } catch (_: InterruptedException) {
+                        break
+                    }
+                }
+            }
+
+            if (playbackError != null) throw IllegalStateException(playbackError)
+            if (!completed) throw IllegalStateException("Piper não terminou a reprodução")
 
             playedAudio++
-            publicarDiagnostico("🔊 Áudio Piper reproduzido")
-            Log.d(TAG, "AUDIO TOCADO #$playedAudio id=${item.audioId}")
+            publicarDiagnostico("🔊 Voz Piper reproduzida")
+            Log.d(TAG, "PIPER AUDIO TOCADO #$playedAudio id=${item.audioId}")
             enviarAck(item.audioId)
         } finally {
-            synchronized(this) {
-                if (audioTrack === track) audioTrack = null
-            }
-            try { track?.flush() } catch (_: Exception) { }
-            try { track?.release() } catch (_: Exception) { }
+            try { player?.stop() } catch (_: Exception) { }
+            try { player?.reset() } catch (_: Exception) { }
+            try { player?.release() } catch (_: Exception) { }
+            if (mediaPlayer === player) mediaPlayer = null
+            if (playbackFile === file) playbackFile = null
+            try { file?.delete() } catch (_: Exception) { }
         }
     }
 
@@ -894,8 +718,7 @@ class AudioCaptureService : Service() {
         Thread {
             var connection: HttpURLConnection? = null
             try {
-                connection = URL("$BACKEND_URL/api/audio/ack/$jobId/$audioId")
-                    .openConnection() as HttpURLConnection
+                connection = URL("$BACKEND_URL/api/audio/ack/$jobId/$audioId").openConnection() as HttpURLConnection
                 connection.requestMethod = "POST"
                 connection.connectTimeout = 5000
                 connection.readTimeout = 5000
@@ -907,6 +730,7 @@ class AudioCaptureService : Service() {
                 Log.e(TAG, "Erro ACK", e)
             } finally {
                 connection?.disconnect()
+                removerAudioBaixado(audioId)
             }
         }.apply {
             name = "SI-Ack"
@@ -923,10 +747,7 @@ class AudioCaptureService : Service() {
     private fun limparEstado() {
         inputQueue.clear()
         outputQueue.clear()
-        synchronized(downloadedAudioLock) {
-            downloadedAudioIds.clear()
-        }
-
+        synchronized(downloadedAudioLock) { downloadedAudioIds.clear() }
         capturedChunks = 0L
         sentChunks = 0L
         receivedAudio = 0L
@@ -934,18 +755,13 @@ class AudioCaptureService : Service() {
         silentChunks = 0L
         lastRms = 0L
         lastError = null
-
-        getSharedPreferences("si_diagnostic", Context.MODE_PRIVATE)
-            .edit()
-            .clear()
-            .apply()
+        getSharedPreferences("si_diagnostic", Context.MODE_PRIVATE).edit().clear().apply()
     }
 
     private fun publicarDiagnostico(status: String?) {
         try {
             val prefs = getSharedPreferences("si_diagnostic", Context.MODE_PRIVATE)
             val editor = prefs.edit()
-
             if (status != null) editor.putString("status", status)
             editor.putLong("captured", capturedChunks)
             editor.putLong("sent", sentChunks)
@@ -955,17 +771,19 @@ class AudioCaptureService : Service() {
             editor.putInt("queue", inputQueue.size)
             editor.putString("error", lastError ?: "")
             editor.apply()
-        } catch (_: Exception) {
-        }
+        } catch (_: Exception) { }
     }
 
-    private fun liberarAudioTrack() {
+    private fun liberarMediaPlayer() {
         synchronized(this) {
-            val track = audioTrack
-            audioTrack = null
-            try { track?.pause() } catch (_: Exception) { }
-            try { track?.flush() } catch (_: Exception) { }
-            try { track?.release() } catch (_: Exception) { }
+            val player = mediaPlayer
+            mediaPlayer = null
+            try { player?.stop() } catch (_: Exception) { }
+            try { player?.reset() } catch (_: Exception) { }
+            try { player?.release() } catch (_: Exception) { }
+            val file = playbackFile
+            playbackFile = null
+            try { file?.delete() } catch (_: Exception) { }
         }
     }
 
@@ -975,7 +793,6 @@ class AudioCaptureService : Service() {
         running = false
 
         Log.d(TAG, "PARANDO SERVIÇO")
-
         captureThread?.interrupt()
         sendThread?.interrupt()
         statusThread?.interrupt()
@@ -984,25 +801,16 @@ class AudioCaptureService : Service() {
         try { audioRecord?.stop() } catch (_: Exception) { }
         try { audioRecord?.release() } catch (_: Exception) { }
         audioRecord = null
+        liberarMediaPlayer()
 
-        liberarAudioTrack()
-
-        try {
-            projectionCallback?.let { mediaProjection?.unregisterCallback(it) }
-        } catch (_: Exception) { }
+        try { projectionCallback?.let { mediaProjection?.unregisterCallback(it) } } catch (_: Exception) { }
         projectionCallback = null
-
         try { mediaProjection?.stop() } catch (_: Exception) { }
         mediaProjection = null
 
         inputQueue.clear()
         outputQueue.clear()
-
         publicarDiagnostico("⏹ Monitoramento parado")
-
-        if (pararSessao) {
-            // MainActivity já chama /api/audio/stop; não fazemos uma segunda chamada aqui.
-        }
 
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
