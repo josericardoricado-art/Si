@@ -582,13 +582,26 @@ class AudioCaptureService : Service() {
                 )
             }
 
-            var audioId = json.optString("audioId", "")
-            var audioUrl = json.optString("audioUrl", "")
+            // JSONObject.optString converte JSON null na string literal "null".
+            // Nunca tentar abrir URL("null") nem marcar esse áudio como baixado.
+            val audioId = if (json.isNull("audioId")) "" else json.optString("audioId", "").trim()
+            var audioUrl = if (json.isNull("audioUrl")) "" else json.optString("audioUrl", "").trim()
 
-            if (audioId.isEmpty() || audioUrl.isEmpty()) return
+            if (audioId.isBlank() || audioId.equals("null", ignoreCase = true) ||
+                audioUrl.isBlank() || audioUrl.equals("null", ignoreCase = true)
+            ) {
+                return // O servidor ainda não tem um WAV disponível.
+            }
 
             if (audioUrl.startsWith("/")) {
                 audioUrl = BACKEND_URL + audioUrl
+            }
+
+            if (!audioUrl.startsWith("https://") && !audioUrl.startsWith("http://")) {
+                lastError = "URL WAV inválida: $audioUrl"
+                lastPlaybackStage = "URL WAV inválida"
+                publicarDiagnostico("❌ Endereço do WAV inválido")
+                return
             }
 
             synchronized(downloadedAudioLock) {
