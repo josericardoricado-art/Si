@@ -49,6 +49,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var monitorButton: Button
     private lateinit var stopButton: Button
     private lateinit var languageSpinner: Spinner
+    private lateinit var captureModeSpinner: Spinner
 
     private var currentJobId: String? = null
     private var monitoring = false
@@ -123,6 +124,16 @@ class MainActivity : AppCompatActivity() {
         // Espaço maior para mostrar recebimento, reprodução e erros do Piper.
         root.addView(diagnosticText, LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT))
 
+        adicionarEspaco(root, 16)
+        val captureLabel = TextView(this)
+        captureLabel.text = "🎙️ Fonte do áudio"
+        captureLabel.textSize = 18f
+        captureLabel.setTextColor(Color.WHITE)
+        root.addView(captureLabel)
+        captureModeSpinner = Spinner(this)
+        captureModeSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item,
+            arrayOf("Áudio interno (vídeos)", "Microfone (alternativo)"))
+        root.addView(captureModeSpinner, LinearLayout.LayoutParams(-1, 70))
         adicionarEspaco(root, 20)
 
         monitorButton = Button(this)
@@ -229,6 +240,12 @@ class MainActivity : AppCompatActivity() {
         }
         if (starting) return
 
+        if (captureModeSpinner.selectedItemPosition == 1 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            verificarPermissaoMicrofone()
+            Toast.makeText(this, "Autorize o microfone e toque novamente", Toast.LENGTH_LONG).show()
+            return
+        }
         starting = true
         monitorButton.isEnabled = false
         stopButton.isEnabled = false
@@ -320,7 +337,11 @@ class MainActivity : AppCompatActivity() {
                             starting = false
                             monitorButton.isEnabled = false
                             stopButton.isEnabled = true
-                            solicitarCapturaDeTela()
+                            if (captureModeSpinner.selectedItemPosition == 1) {
+                                iniciarCapturaAudio(Activity.RESULT_CANCELED, null)
+                            } else {
+                                solicitarCapturaDeTela()
+                            }
                         }
                         return@thread
                     }
@@ -398,12 +419,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun iniciarCapturaAudio(resultCode: Int, resultData: Intent) {
+    private fun iniciarCapturaAudio(resultCode: Int, resultData: Intent?) {
         val intent = Intent(this, AudioCaptureService::class.java)
         intent.action = AudioCaptureService.ACTION_START
         intent.putExtra(AudioCaptureService.EXTRA_JOB_ID, currentJobId)
         intent.putExtra(AudioCaptureService.EXTRA_RESULT_CODE, resultCode)
         intent.putExtra(AudioCaptureService.EXTRA_RESULT_DATA, resultData)
+        intent.putExtra(AudioCaptureService.EXTRA_CAPTURE_MODE,
+            if (captureModeSpinner.selectedItemPosition == 1) AudioCaptureService.MODE_MICROPHONE
+            else AudioCaptureService.MODE_INTERNAL)
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -411,7 +435,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 startService(intent)
             }
-            status("🎤 Capturando áudio em tempo real...")
+            status(if (captureModeSpinner.selectedItemPosition == 1) "🎤 Capturando pelo microfone..." else "🎤 Capturando áudio interno...")
         } catch (e: Exception) {
             monitoring = false
             starting = false
@@ -508,6 +532,7 @@ class MainActivity : AppCompatActivity() {
         val peak = prefs.getInt("peak", 0)
         val nonZero = prefs.getInt("nonZero", 0)
         val captureState = prefs.getString("captureState", "Aguardando captura") ?: "Aguardando captura"
+        val captureMode = prefs.getString("captureMode", "internal") ?: "internal"
         val queue = prefs.getInt("queue", 0)
         val error = prefs.getString("error", "") ?: ""
 
@@ -523,6 +548,7 @@ class MainActivity : AppCompatActivity() {
             append("\nTentativas de reprodução: $attempts")
             append("\nEtapa: $playbackStage")
             append("\nRMS: $rms   Pico: $peak   Amostras com som: $nonZero")
+            append("\nFonte: ${if (captureMode == "microphone") "Microfone" else "Áudio interno"}")
             append("\nCaptura: $captureState")
             append("\nFila entrada: $queue   Fila voz: $outputQueue")
             append("\nSessão: $job")
