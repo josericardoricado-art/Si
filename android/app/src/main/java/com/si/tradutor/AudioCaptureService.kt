@@ -87,8 +87,11 @@ class AudioCaptureService : Service() {
 
     @Volatile private var capturedChunks = 0L
     @Volatile private var sentChunks = 0L
-    @Volatile private var receivedAudio = 0L
+    @Volatile private var receivedAudio = 0L // WAVs Piper validados e colocados na fila
     @Volatile private var playedAudio = 0L
+    @Volatile private var playbackAttempts = 0L
+    @Volatile private var lastPlaybackStage = "Aguardando WAV Piper"
+    @Volatile private var outputQueueCount = 0
     @Volatile private var silentChunks = 0L
     @Volatile private var lastRms = 0L
     @Volatile private var lastError: String? = null
@@ -318,8 +321,6 @@ class AudioCaptureService : Service() {
 
                         if (lastRms == 0L) {
                             silentChunks++
-                        } else {
-                            receivedAudio++
                         }
 
                         val pcm16k = downsample48kTo16k(chunk)
@@ -599,16 +600,20 @@ class AudioCaptureService : Service() {
                 TAG,
                 "NOVO AUDIO PIPER=$audioId url=$audioUrl"
             )
-            publicarDiagnostico("🔊 Áudio Piper recebido")
+            lastPlaybackStage = "URL Piper recebida; baixando WAV"
+            publicarDiagnostico("🔊 URL do Piper recebida; baixando...")
 
             val wav = baixarWav(audioUrl)
 
             if (wav == null) {
+                lastPlaybackStage = "Falha no download do WAV"
+                publicarDiagnostico("❌ Não foi possível baixar o WAV Piper")
                 removerAudioBaixado(audioId)
                 return
             }
 
             if (!isWavPcm16(wav)) {
+                lastPlaybackStage = "WAV inválido"
                 lastError = "WAV Piper inválido ou não PCM16"
                 Log.e(TAG, lastError!!)
                 removerAudioBaixado(audioId)
@@ -620,16 +625,20 @@ class AudioCaptureService : Service() {
 
             if (!outputQueue.offer(item, 2, TimeUnit.SECONDS)) {
                 removerAudioBaixado(audioId)
+                lastPlaybackStage = "Fila de saída cheia"
                 lastError = "Fila de reprodução cheia"
                 publicarDiagnostico("⚠️ Fila de voz cheia")
                 return
             }
 
+            receivedAudio++
+            outputQueueCount = outputQueue.size
+            lastPlaybackStage = "WAV validado e enfileirado"
             Log.d(
                 TAG,
-                "WAV PIPER ENFILEIRADO=${wav.size} bytes"
+                "WAV PIPER ENFILEIRADO=${wav.size} bytes; recebidos=$receivedAudio"
             )
-            publicarDiagnostico("🔊 Áudio Piper pronto para tocar")
+            publicarDiagnostico("🔊 WAV Piper pronto para tocar")
         } catch (e: Exception) {
             if (running) {
                 lastError = e.message ?: e.javaClass.simpleName
@@ -802,6 +811,7 @@ class AudioCaptureService : Service() {
                         TimeUnit.MILLISECONDS
                     ) ?: continue
 
+                    outputQueueCount = outputQueue.size
                     tocarWavComMediaPlayer(item)
                 } catch (_: InterruptedException) {
                     break
@@ -837,6 +847,9 @@ class AudioCaptureService : Service() {
         var player: MediaPlayer? = null
 
         try {
+            playbackAttempts++
+            lastPlaybackStage = "Iniciando reprodução #$playbackAttempts"
+            publicarDiagnostico("🔊 Preparando reprodução Piper...")
             val info = lerWavInfo(item.wav)
                 ?: throw IllegalStateException("WAV Piper inválido")
 
@@ -867,6 +880,8 @@ class AudioCaptureService : Service() {
                 player!!.setVolume(1.0f, 1.0f)
 
                 // prepare() é síncrono; não dependemos de OnPreparedListener.
+                lastPlaybackStage = "MediaPlayer.prepare()"
+                publicarDiagnostico("🔊 Preparando WAV no Android...")
                 player!!.prepare()
 
                 Log.d(
@@ -876,8 +891,10 @@ class AudioCaptureService : Service() {
                         "bytes=${item.wav.size}"
                 )
 
-                publicarDiagnostico("🔊 Voz Piper tocando")
+                lastPlaybackStage = "MediaPlayer.start()"
+                publicarDiagnostico("🔊 Iniciando voz Piper...")
                 player!!.start()
+                lastPlaybackStage = "MediaPlayer.start() chamado"
 
                 Log.d(
                     TAG,
@@ -899,6 +916,7 @@ class AudioCaptureService : Service() {
             }
 
             playedAudio++
+            lastPlaybackStage = "Reprodução finalizada"
             publicarDiagnostico("🔊 Voz Piper reproduzida")
             Log.d(
                 TAG,
@@ -910,7 +928,8 @@ class AudioCaptureService : Service() {
             Thread.currentThread().interrupt()
             Log.d(TAG, "Playback interrompido")
         } catch (e: Exception) {
-            lastError = e.message ?: e.javaClass.simpleName
+            lastError = "${e.javaClass.simpleName}: ${e.message ?: "sem detalhes"}"
+            lastPlaybackStage = "Falha: $lastPlaybackStage"
             Log.e(TAG, "Erro reproduzindo WAV Piper", e)
             publicarDiagnostico("❌ Piper não reproduziu: $lastError")
         } finally {
@@ -984,6 +1003,9 @@ class AudioCaptureService : Service() {
         sentChunks = 0L
         receivedAudio = 0L
         playedAudio = 0L
+        playbackAttempts = 0L
+        lastPlaybackStage = "Aguardando WAV Piper"
+        outputQueueCount = 0
         silentChunks = 0L
         lastRms = 0L
         lastError = null
@@ -1011,6 +1033,9 @@ class AudioCaptureService : Service() {
             editor.putLong("sent", sentChunks)
             editor.putLong("received", receivedAudio)
             editor.putLong("played", playedAudio)
+            editor.putLong("playbackAttempts", playbackAttempts)
+            editor.putString("playbackStage", lastPlaybackStage)
+            editor.putInt("outputQueue", outputQueue.size)
             editor.putLong("rms", lastRms)
             editor.putInt("queue", inputQueue.size)
             editor.putString("error", lastError ?: "")
