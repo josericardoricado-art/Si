@@ -98,6 +98,7 @@ class AudioCaptureService : Service() {
     @Volatile private var nonZeroSamples = 0
     @Volatile private var silentStreak = 0L
     @Volatile private var captureState = "Aguardando captura"
+    @Volatile private var androidCaptureSilenced = false
     @Volatile private var lastError: String? = null
 
     override fun onCreate() {
@@ -324,6 +325,15 @@ class AudioCaptureService : Service() {
                         capturedChunks++
 
                         val chunk = captureBuffer.copyOf(read)
+                        // Android 10+ pode silenciar a captura por política do sistema.
+                        // Este sinal não depende do volume do alto-falante.
+                        if (capturedChunks == 1L || capturedChunks % 25L == 0L) {
+                            androidCaptureSilenced = try {
+                                record.activeRecordingConfiguration?.isClientSilenced == true
+                            } catch (_: Exception) {
+                                false
+                            }
+                        }
                         val stats = analisarPcm(chunk)
                         lastRms = stats.first
                         peakLevel = stats.second
@@ -333,7 +343,11 @@ class AudioCaptureService : Service() {
                             silentChunks++
                             silentStreak++
                             if (silentStreak >= 50L) {
-                                captureState = "Silêncio digital: verificar permissão de captura do app de origem"
+                                captureState = if (androidCaptureSilenced) {
+                                    "Android sinaliza captura silenciada; verifique restrições de captura"
+                                } else {
+                                    "PCM zerado: app de origem pode bloquear captura interna"
+                                }
                             }
                         } else {
                             silentStreak = 0L
@@ -1053,6 +1067,7 @@ class AudioCaptureService : Service() {
         nonZeroSamples = 0
         silentStreak = 0L
         captureState = "Aguardando captura"
+        androidCaptureSilenced = false
         lastError = null
 
         getSharedPreferences(
@@ -1085,6 +1100,7 @@ class AudioCaptureService : Service() {
             editor.putInt("peak", peakLevel)
             editor.putInt("nonZero", nonZeroSamples)
             editor.putString("captureState", captureState)
+            editor.putBoolean("androidCaptureSilenced", androidCaptureSilenced)
             editor.putLong("silentStreak", silentStreak)
             editor.putInt("queue", inputQueue.size)
             editor.putString("error", lastError ?: "")
