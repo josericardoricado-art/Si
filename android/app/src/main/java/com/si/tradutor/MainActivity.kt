@@ -505,6 +505,9 @@ class MainActivity : AppCompatActivity() {
         val playbackStage = prefs.getString("playbackStage", "Aguardando WAV Piper") ?: "Aguardando WAV Piper"
         val outputQueue = prefs.getInt("outputQueue", 0)
         val rms = prefs.getLong("rms", 0L)
+        val peak = prefs.getInt("peak", 0)
+        val nonZero = prefs.getInt("nonZero", 0)
+        val captureState = prefs.getString("captureState", "Aguardando captura") ?: "Aguardando captura"
         val queue = prefs.getInt("queue", 0)
         val error = prefs.getString("error", "") ?: ""
 
@@ -519,7 +522,9 @@ class MainActivity : AppCompatActivity() {
             append("\nWAV Piper recebidos: $received   Reproduzidos: $played")
             append("\nTentativas de reprodução: $attempts")
             append("\nEtapa: $playbackStage")
-            append("\nRMS: $rms   Fila entrada: $queue   Fila voz: $outputQueue")
+            append("\nRMS: $rms   Pico: $peak   Amostras com som: $nonZero")
+            append("\nCaptura: $captureState")
+            append("\nFila entrada: $queue   Fila voz: $outputQueue")
             append("\nSessão: $job")
             if (error.isNotEmpty()) {
                 append("\n⚠️ ")
