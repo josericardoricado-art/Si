@@ -94,6 +94,10 @@ class AudioCaptureService : Service() {
     @Volatile private var outputQueueCount = 0
     @Volatile private var silentChunks = 0L
     @Volatile private var lastRms = 0L
+    @Volatile private var peakLevel = 0
+    @Volatile private var nonZeroSamples = 0
+    @Volatile private var silentStreak = 0L
+    @Volatile private var captureState = "Aguardando captura"
     @Volatile private var lastError: String? = null
 
     override fun onCreate() {
@@ -289,6 +293,8 @@ class AudioCaptureService : Service() {
         }
 
         audioRecord = record
+        captureState = "AudioRecord inicializado: 48 kHz mono, PCM16"
+        publicarDiagnostico(null)
 
         captureThread = Thread {
             val captureBuffer = ByteArray(CAPTURE_CHUNK_BYTES)
@@ -302,6 +308,7 @@ class AudioCaptureService : Service() {
                     )
                 }
 
+                captureState = "AudioRecord gravando: 48 kHz"
                 Log.d(TAG, "CAPTURA INICIADA 48kHz")
                 publicarDiagnostico("🎤 Capturando áudio interno...")
 
@@ -317,18 +324,31 @@ class AudioCaptureService : Service() {
                         capturedChunks++
 
                         val chunk = captureBuffer.copyOf(read)
-                        lastRms = calcularRms(chunk)
+                        val stats = analisarPcm(chunk)
+                        lastRms = stats.first
+                        peakLevel = stats.second
+                        nonZeroSamples = stats.third
 
-                        if (lastRms == 0L) {
+                        if (nonZeroSamples == 0) {
                             silentChunks++
+                            silentStreak++
+                            if (silentStreak >= 50L) {
+                                captureState = "Silêncio digital: verificar permissão de captura do app de origem"
+                            }
+                        } else {
+                            silentStreak = 0L
+                            captureState = "Áudio detectado na captura interna"
                         }
 
-                        val pcm16k = downsample48kTo16k(chunk)
-
-                        if (pcm16k.isNotEmpty()) {
-                            if (!inputQueue.offer(pcm16k)) {
-                                inputQueue.poll()
-                                inputQueue.offer(pcm16k)
+                        // Não sobrecarregar o Render com blocos totalmente zerados.
+                        // Mantém blocos com amostras não nulas, mesmo em volume baixo.
+                        if (nonZeroSamples > 0) {
+                            val pcm16k = downsample48kTo16k(chunk)
+                            if (pcm16k.isNotEmpty()) {
+                                if (!inputQueue.offer(pcm16k)) {
+                                    inputQueue.poll()
+                                    inputQueue.offer(pcm16k)
+                                }
                             }
                         }
 
@@ -414,11 +434,16 @@ class AudioCaptureService : Service() {
             ).toShort().toInt()
     }
 
-    private fun calcularRms(data: ByteArray): Long {
-        if (data.size < 2) return 0L
+    // Retorna RMS, pico absoluto e quantidade de amostras não nulas.
+    // O RMS inteiro pode ser 0 com sinal muito baixo; o pico distingue isso
+    // de um buffer inteiramente preenchido com zeros.
+    private fun analisarPcm(data: ByteArray): Triple<Long, Int, Int> {
+        if (data.size < 2) return Triple(0L, 0, 0)
 
         var sum = 0.0
         var count = 0
+        var peak = 0
+        var nonZero = 0
         var i = 0
 
         while (i + 1 < data.size) {
@@ -428,11 +453,14 @@ class AudioCaptureService : Service() {
                 ).toShort().toInt()
 
             sum += sample.toDouble() * sample.toDouble()
+            peak = max(peak, kotlin.math.abs(sample))
+            if (sample != 0) nonZero++
             count++
             i += 2
         }
 
-        return if (count == 0) 0L else sqrt(sum / count).toLong()
+        return if (count == 0) Triple(0L, 0, 0)
+        else Triple(sqrt(sum / count).toLong(), peak, nonZero)
     }
 
     private fun iniciarEnvio() {
@@ -1021,6 +1049,10 @@ class AudioCaptureService : Service() {
         outputQueueCount = 0
         silentChunks = 0L
         lastRms = 0L
+        peakLevel = 0
+        nonZeroSamples = 0
+        silentStreak = 0L
+        captureState = "Aguardando captura"
         lastError = null
 
         getSharedPreferences(
@@ -1050,6 +1082,10 @@ class AudioCaptureService : Service() {
             editor.putString("playbackStage", lastPlaybackStage)
             editor.putInt("outputQueue", outputQueue.size)
             editor.putLong("rms", lastRms)
+            editor.putInt("peak", peakLevel)
+            editor.putInt("nonZero", nonZeroSamples)
+            editor.putString("captureState", captureState)
+            editor.putLong("silentStreak", silentStreak)
             editor.putInt("queue", inputQueue.size)
             editor.putString("error", lastError ?: "")
             editor.apply()
