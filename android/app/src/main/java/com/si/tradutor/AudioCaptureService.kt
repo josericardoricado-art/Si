@@ -13,6 +13,7 @@ import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioPlaybackCaptureConfiguration
+import android.media.MediaRecorder
 import android.media.AudioRecord
 import android.media.MediaPlayer
 import android.media.projection.MediaProjection
@@ -43,6 +44,9 @@ class AudioCaptureService : Service() {
         const val EXTRA_JOB_ID = "jobId"
         const val EXTRA_RESULT_CODE = "resultCode"
         const val EXTRA_RESULT_DATA = "resultData"
+        const val EXTRA_CAPTURE_MODE = "captureMode"
+        const val MODE_MICROPHONE = "microphone"
+        const val MODE_INTERNAL = "internal"
 
         private const val CHANNEL_ID = "si_audio_capture"
         private const val NOTIFICATION_ID = 1001
@@ -60,6 +64,7 @@ class AudioCaptureService : Service() {
     @Volatile private var running = false
     @Volatile private var stopping = false
     @Volatile private var jobId = ""
+    @Volatile private var captureMode = MODE_INTERNAL
 
     private var mediaProjection: MediaProjection? = null
     private var projectionCallback: MediaProjection.Callback? = null
@@ -122,6 +127,7 @@ class AudioCaptureService : Service() {
 
         if (running) return START_STICKY
 
+        captureMode = if (intent.getStringExtra(EXTRA_CAPTURE_MODE) == MODE_MICROPHONE) MODE_MICROPHONE else MODE_INTERNAL
         jobId = intent.getStringExtra(EXTRA_JOB_ID).orEmpty()
         if (jobId.isEmpty()) {
             lastError = "jobId vazio"
@@ -142,7 +148,7 @@ class AudioCaptureService : Service() {
             intent.getParcelableExtra(EXTRA_RESULT_DATA)
         }
 
-        if (resultCode != Activity.RESULT_OK || resultData == null) {
+        if (captureMode == MODE_INTERNAL && (resultCode != Activity.RESULT_OK || resultData == null)) {
             lastError = "MediaProjection inválida"
             publicarDiagnostico("❌ MediaProjection inválida")
             stopSelf()
@@ -168,13 +174,15 @@ class AudioCaptureService : Service() {
             running = true
 
             iniciarForeground()
-            iniciarMediaProjection(resultCode, resultData)
+            if (captureMode == MODE_INTERNAL) {
+                iniciarMediaProjection(resultCode, resultData!!)
+            }
             iniciarCaptura()
             iniciarEnvio()
             iniciarStatus()
             iniciarPlayback()
 
-            publicarDiagnostico("🎤 Capturando áudio em tempo real...")
+            publicarDiagnostico(if (captureMode == MODE_MICROPHONE) "🎤 Capturando pelo microfone..." else "🎤 Capturando áudio interno...")
             Log.d(TAG, "SI INICIADO jobId=$jobId")
         } catch (e: Exception) {
             lastError = e.message ?: e.javaClass.simpleName
@@ -223,7 +231,8 @@ class AudioCaptureService : Service() {
             startForeground(
                 NOTIFICATION_ID,
                 notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                if (captureMode == MODE_MICROPHONE) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                else ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
             )
         } else {
             startForeground(NOTIFICATION_ID, notification)
@@ -249,10 +258,7 @@ class AudioCaptureService : Service() {
     }
 
     private fun iniciarCaptura() {
-        val projection = mediaProjection
-            ?: throw IllegalStateException("MediaProjection não disponível")
-
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+        if (captureMode == MODE_INTERNAL && Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             throw IllegalStateException("Captura interna exige Android 10 ou superior")
         }
 
@@ -268,13 +274,7 @@ class AudioCaptureService : Service() {
             )
         }
 
-        val captureConfig = AudioPlaybackCaptureConfiguration.Builder(projection)
-            .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
-            .addMatchingUsage(AudioAttributes.USAGE_GAME)
-            .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
-            .build()
-
-        val record = AudioRecord.Builder()
+        val builder = AudioRecord.Builder()
             .setAudioFormat(
                 AudioFormat.Builder()
                     .setEncoding(PCM_FORMAT)
@@ -282,11 +282,20 @@ class AudioCaptureService : Service() {
                     .setChannelMask(CAPTURE_CHANNEL)
                     .build()
             )
-            .setBufferSizeInBytes(
-                max(minBuffer * 4, CAPTURE_CHUNK_BYTES * 8)
-            )
-            .setAudioPlaybackCaptureConfig(captureConfig)
-            .build()
+            .setBufferSizeInBytes(max(minBuffer * 4, CAPTURE_CHUNK_BYTES * 8))
+
+        if (captureMode == MODE_MICROPHONE) {
+            builder.setAudioSource(MediaRecorder.AudioSource.MIC)
+        } else {
+            val projection = mediaProjection ?: throw IllegalStateException("MediaProjection não disponível")
+            val captureConfig = AudioPlaybackCaptureConfiguration.Builder(projection)
+                .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+                .addMatchingUsage(AudioAttributes.USAGE_GAME)
+                .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
+                .build()
+            builder.setAudioPlaybackCaptureConfig(captureConfig)
+        }
+        val record = builder.build()
 
         if (record.state != AudioRecord.STATE_INITIALIZED) {
             record.release()
@@ -294,7 +303,7 @@ class AudioCaptureService : Service() {
         }
 
         audioRecord = record
-        captureState = "AudioRecord inicializado: 48 kHz mono, PCM16"
+        captureState = "AudioRecord inicializado: 48 kHz mono, PCM16 ($captureMode)"
         publicarDiagnostico(null)
 
         captureThread = Thread {
@@ -309,9 +318,9 @@ class AudioCaptureService : Service() {
                     )
                 }
 
-                captureState = "AudioRecord gravando: 48 kHz"
+                captureState = "AudioRecord gravando: 48 kHz ($captureMode)"
                 Log.d(TAG, "CAPTURA INICIADA 48kHz")
-                publicarDiagnostico("🎤 Capturando áudio interno...")
+                publicarDiagnostico(if (captureMode == MODE_MICROPHONE) "🎤 Capturando pelo microfone..." else "🎤 Capturando áudio interno...")
 
                 while (running && !stopping) {
                     val read = record.read(
@@ -343,7 +352,9 @@ class AudioCaptureService : Service() {
                             silentChunks++
                             silentStreak++
                             if (silentStreak >= 50L) {
-                                captureState = if (androidCaptureSilenced) {
+                                captureState = if (captureMode == MODE_MICROPHONE) {
+                                    "Microfone sem sinal: aproxime o som e confira a permissão"
+                                } else if (androidCaptureSilenced) {
                                     "Android sinaliza captura silenciada; verifique restrições de captura"
                                 } else {
                                     "PCM zerado: app de origem pode bloquear captura interna"
@@ -351,7 +362,7 @@ class AudioCaptureService : Service() {
                             }
                         } else {
                             silentStreak = 0L
-                            captureState = "Áudio detectado na captura interna"
+                            captureState = if (captureMode == MODE_MICROPHONE) "Áudio detectado no microfone" else "Áudio detectado na captura interna"
                         }
 
                         // Não sobrecarregar o Render com blocos totalmente zerados.
@@ -1100,6 +1111,7 @@ class AudioCaptureService : Service() {
             editor.putInt("peak", peakLevel)
             editor.putInt("nonZero", nonZeroSamples)
             editor.putString("captureState", captureState)
+            editor.putString("captureMode", captureMode)
             editor.putBoolean("androidCaptureSilenced", androidCaptureSilenced)
             editor.putLong("silentStreak", silentStreak)
             editor.putInt("queue", inputQueue.size)
