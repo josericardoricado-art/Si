@@ -121,7 +121,7 @@ class MainActivity : AppCompatActivity() {
         diagnosticText.setPadding(18, 16, 18, 16)
         diagnosticText.setBackgroundColor(Color.rgb(15, 37, 70))
         // Espaço maior para mostrar recebimento, reprodução e erros do Piper.
-        root.addView(diagnosticText, LinearLayout.LayoutParams(-1, 240))
+        root.addView(diagnosticText, LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT))
 
         adicionarEspaco(root, 20)
 
@@ -501,6 +501,9 @@ class MainActivity : AppCompatActivity() {
         val sent = prefs.getLong("sent", 0L)
         val received = prefs.getLong("received", 0L)
         val played = prefs.getLong("played", 0L)
+        val attempts = prefs.getLong("playbackAttempts", 0L)
+        val playbackStage = prefs.getString("playbackStage", "Aguardando WAV Piper") ?: "Aguardando WAV Piper"
+        val outputQueue = prefs.getInt("outputQueue", 0)
         val rms = prefs.getLong("rms", 0L)
         val queue = prefs.getInt("queue", 0)
         val error = prefs.getString("error", "") ?: ""
@@ -513,8 +516,10 @@ class MainActivity : AppCompatActivity() {
             append(status)
             append("\n\n")
             append("Capturados: $captured   Enviados: $sent")
-            append("\nPiper recebidos: $received   Reproduzidos: $played")
-            append("\nRMS: $rms   Fila: $queue")
+            append("\nWAV Piper recebidos: $received   Reproduzidos: $played")
+            append("\nTentativas de reprodução: $attempts")
+            append("\nEtapa: $playbackStage")
+            append("\nRMS: $rms   Fila entrada: $queue   Fila voz: $outputQueue")
             append("\nSessão: $job")
             if (error.isNotEmpty()) {
                 append("\n⚠️ ")
