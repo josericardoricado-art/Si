@@ -115,12 +115,13 @@ class MainActivity : AppCompatActivity() {
 
         diagnosticText = TextView(this)
         diagnosticText.text = "🔎 Diagnóstico: aguardando..."
-        diagnosticText.textSize = 15f
+        diagnosticText.textSize = 13f
         diagnosticText.setTextColor(Color.WHITE)
-        diagnosticText.gravity = Gravity.CENTER
+        diagnosticText.gravity = Gravity.CENTER_VERTICAL
         diagnosticText.setPadding(18, 16, 18, 16)
         diagnosticText.setBackgroundColor(Color.rgb(15, 37, 70))
-        root.addView(diagnosticText, LinearLayout.LayoutParams(-1, 155))
+        // Espaço maior para mostrar recebimento, reprodução e erros do Piper.
+        root.addView(diagnosticText, LinearLayout.LayoutParams(-1, 240))
 
         adicionarEspaco(root, 20)
 
