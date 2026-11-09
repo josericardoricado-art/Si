@@ -1482,269 +1482,134 @@ def translation_worker(
 # DEEPGRAM WORKER
 # ============================================================
 
-def deepgram_worker(
-    job
-):
-
-    ws = None
-
-    try:
-
-        if not DEEPGRAM_API_KEY:
-
-            raise RuntimeError(
-                "DEEPGRAM_API_KEY não configurada."
-            )
-
-        print(
-            "[DEEPGRAM] Conectando...",
-            flush=True,
-        )
-
-        ws = websocket.create_connection(
-
-            deepgram_url(),
-
-            header=[
-                "Authorization: Token "
-                + DEEPGRAM_API_KEY
-            ],
-
-            timeout=10,
-        )
-
-        # Evita bloquear o envio de PCM por meio segundo a cada ciclo.
-        ws.settimeout(0.02)
-
+def deepgram_worker(job):
+    """Mantém a sessão Deepgram ativa e reconecta após desconexões."""
+    if not DEEPGRAM_API_KEY:
         with job["lock"]:
+            job["error"] = "DEEPGRAM_API_KEY não configurada."
+            job["status"] = "error"
+        return
 
-            job[
-                "status"
-            ] = "listening"
+    reconnect_delay = 1.0
+    while not job["stop_event"].is_set():
+        ws = None
+        close_reason = "conexão encerrada"
+        try:
+            with job["lock"]:
+                job["status"] = "connecting"
+                job["connected"] = False
 
-            job[
-                "connected"
-            ] = True
+            print("[DEEPGRAM] Conectando...", flush=True)
+            ws = websocket.create_connection(
+                deepgram_url(),
+                header=["Authorization: Token " + DEEPGRAM_API_KEY],
+                timeout=10,
+            )
+            ws.settimeout(0.1)
+            reconnect_delay = 1.0
+            last_sent = time.monotonic()
+            with job["lock"]:
+                job["status"] = "listening"
+                job["connected"] = True
+                job["error"] = None
+            print("[DEEPGRAM] Conectado.", flush=True)
 
-            job[
-                "error"
-            ] = None
-
-        print(
-            "[DEEPGRAM] Conectado.",
-            flush=True,
-        )
-
-        while not job[
-            "stop_event"
-        ].is_set():
-
-            # =================================================
-            # ENVIAR ÁUDIO
-            # =================================================
-
-            try:
-
-                audio_data = (
-                    job[
-                        "audio_queue_input"
-                    ].get(
-                        timeout=0.1
-                    )
-                )
-
-            except queue.Empty:
-
-                audio_data = None
-
-            if audio_data is not None:
+            while not job["stop_event"].is_set():
+                try:
+                    audio_data = job["audio_queue_input"].get(timeout=0.05)
+                except queue.Empty:
+                    audio_data = None
 
                 if audio_data is False:
+                    return
 
-                    break
+                if audio_data is not None:
+                    try:
+                        ws.send(audio_data, opcode=websocket.ABNF.OPCODE_BINARY)
+                        last_sent = time.monotonic()
+                    except Exception as error:
+                        close_reason = "falha enviando áudio: " + str(error)
+                        break
+                elif time.monotonic() - last_sent >= 3:
+                    # Deepgram exige tráfego periódico quando não há fala.
+                    try:
+                        ws.send(json.dumps({"type": "KeepAlive"}))
+                        last_sent = time.monotonic()
+                    except Exception as error:
+                        close_reason = "falha KeepAlive: " + str(error)
+                        break
 
-                try:
+                # Ler mensagens sem prender o envio de áudio.
+                for _ in range(10):
+                    try:
+                        message = ws.recv()
+                    except websocket.WebSocketTimeoutException:
+                        break
+                    except websocket.WebSocketConnectionClosedException as error:
+                        close_reason = "WebSocket fechado: " + str(error)
+                        message = None
+                    except Exception as error:
+                        close_reason = "falha recebendo: " + str(error)
+                        message = None
 
-                    ws.send(
-                        audio_data,
-                        opcode=(
-                            websocket
-                            .ABNF
-                            .OPCODE_BINARY
-                        ),
-                    )
+                    if message is None or message == "":
+                        if close_reason == "conexão encerrada":
+                            close_reason = "Deepgram fechou a conexão"
+                        break
 
-                except Exception as error:
+                    if isinstance(message, bytes):
+                        continue
+                    try:
+                        data = json.loads(message)
+                    except (TypeError, ValueError):
+                        continue
 
-                    print(
-                        "[DEEPGRAM] Erro enviando áudio:",
-                        repr(error),
-                        flush=True,
-                    )
+                    event_type = data.get("type")
+                    if event_type == "Error" or data.get("error"):
+                        close_reason = "Deepgram: " + str(
+                            data.get("description") or data.get("message")
+                            or data.get("error") or "erro desconhecido"
+                        )
+                        break
 
-                    break
-
-            # =================================================
-            # RECEBER RESPOSTAS
-            # =================================================
-
-            while True:
-
-                try:
-
-                    message = ws.recv()
-
-                except (
-                    websocket
-                    .WebSocketTimeoutException
-                ):
-
-                    break
-
-                except Exception as recv_error:
-
-                    print("[DEEPGRAM] Erro recebendo:", repr(recv_error), flush=True)
+                    alternatives = (data.get("channel") or {}).get("alternatives") or []
+                    if not alternatives:
+                        continue
+                    transcript = clean_text(alternatives[0].get("transcript", ""))
+                    if not transcript:
+                        continue
                     with job["lock"]:
-                        job["error"] = "Deepgram receive: " + str(recv_error)
+                        job["interim_text"] = transcript
+                        job["last_activity"] = time.time()
+                    if data.get("is_final"):
+                        enqueue_translation(job, transcript)
+                    if data.get("speech_final"):
+                        with job["lock"]:
+                            job["interim_text"] = ""
+
+                if close_reason != "conexão encerrada":
                     break
 
-                if not message:
-                    break
-
-                if isinstance(
-                    message,
-                    bytes,
-                ):
-
-                    continue
-
+        except Exception as error:
+            close_reason = "erro de conexão: " + str(error)
+        finally:
+            with job["lock"]:
+                job["connected"] = False
+                if not job["stop_event"].is_set():
+                    job["status"] = "reconnecting"
+                    job["error"] = close_reason
+            if ws is not None:
                 try:
-
-                    data = json.loads(
-                        message
-                    )
-
+                    ws.close()
                 except Exception:
+                    pass
+            print("[DEEPGRAM] Desconectado:", close_reason, flush=True)
 
-                    continue
-
-                if data.get("type") == "Error" or data.get("error"):
-                    message_error = str(data.get("description") or data.get("message") or data.get("error"))
-                    with job["lock"]:
-                        job["error"] = "Deepgram: " + message_error
-                    print("[DEEPGRAM] API error:", message_error, flush=True)
-                    continue
-
-                channel = data.get(
-                    "channel",
-                    {},
-                )
-
-                alternatives = (
-                    channel.get(
-                        "alternatives",
-                        [],
-                    )
-                )
-
-                if not alternatives:
-                    continue
-
-                transcript = clean_text(
-                    alternatives[0].get(
-                        "transcript",
-                        "",
-                    )
-                )
-
-                if not transcript:
-                    continue
-
-                is_final = bool(
-                    data.get(
-                        "is_final",
-                        False,
-                    )
-                )
-
-                speech_final = bool(
-                    data.get(
-                        "speech_final",
-                        False,
-                    )
-                )
-
-                with job["lock"]:
-
-                    job[
-                        "interim_text"
-                    ] = transcript
-
-                    job[
-                        "last_activity"
-                    ] = time.time()
-
-                # ---------------------------------------------
-                # SOMENTE FRASES FINAIS
-                # ---------------------------------------------
-
-                if is_final:
-
-                    enqueue_translation(
-                        job,
-                        transcript,
-                    )
-
-                # ---------------------------------------------
-                # FECHAMENTO DA FALA
-                # ---------------------------------------------
-
-                if speech_final:
-
-                    with job["lock"]:
-
-                        job[
-                            "interim_text"
-                        ] = ""
-
-    except Exception as error:
-
-        print(
-            "[DEEPGRAM] Erro:",
-            repr(error),
-            flush=True,
-        )
-
-        with job["lock"]:
-
-            job[
-                "error"
-            ] = str(error)
-
-            job[
-                "status"
-            ] = "error"
-
-    finally:
-
-        with job["lock"]:
-
-            job[
-                "connected"
-            ] = False
-
-        try:
-
-            if ws:
-                ws.close()
-
-        except Exception:
-            pass
-
-        print(
-            "[DEEPGRAM] Conexão encerrada.",
-            flush=True,
-        )
+        if job["stop_event"].is_set():
+            break
+        # Reconectar sem gerar milhares de logs/erros por segundo.
+        job["stop_event"].wait(reconnect_delay)
+        reconnect_delay = min(reconnect_delay * 2, 15.0)
 
 
 # ============================================================
