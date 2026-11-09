@@ -1513,9 +1513,8 @@ def deepgram_worker(
             timeout=10,
         )
 
-        ws.settimeout(
-            0.5
-        )
+        # Evita bloquear o envio de PCM por meio segundo a cada ciclo.
+        ws.settimeout(0.02)
 
         with job["lock"]:
 
@@ -1602,8 +1601,11 @@ def deepgram_worker(
 
                     break
 
-                except Exception:
+                except Exception as recv_error:
 
+                    print("[DEEPGRAM] Erro recebendo:", repr(recv_error), flush=True)
+                    with job["lock"]:
+                        job["error"] = "Deepgram receive: " + str(recv_error)
                     break
 
                 if not message:
@@ -1624,6 +1626,13 @@ def deepgram_worker(
 
                 except Exception:
 
+                    continue
+
+                if data.get("type") == "Error" or data.get("error"):
+                    message_error = str(data.get("description") or data.get("message") or data.get("error"))
+                    with job["lock"]:
+                        job["error"] = "Deepgram: " + message_error
+                    print("[DEEPGRAM] API error:", message_error, flush=True)
                     continue
 
                 channel = data.get(
