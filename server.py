@@ -1385,6 +1385,9 @@ def deepgram_worker(job):
             reconnect_delay = 1.0
             last_sent = time.monotonic()
             with job["lock"]:
+                job["deepgram_events"] = 0
+                job["deepgram_empty_results"] = 0
+                job["deepgram_final_results"] = 0
                 job["status"] = "listening"
                 job["connected"] = True
                 job["error"] = None
@@ -1403,6 +1406,9 @@ def deepgram_worker(job):
                     try:
                         ws.send(audio_data, opcode=websocket.ABNF.OPCODE_BINARY)
                         last_sent = time.monotonic()
+                        with job["lock"]:
+                            job["deepgram_bytes_sent"] += len(audio_data)
+                            job["deepgram_chunks_sent"] += 1
                     except Exception as error:
                         close_reason = "falha enviando áudio: " + str(error)
                         break
@@ -1441,6 +1447,9 @@ def deepgram_worker(job):
                         continue
 
                     event_type = data.get("type")
+                    with job["lock"]:
+                        job["deepgram_events"] += 1
+                        job["deepgram_last_event"] = str(event_type or "unknown")
                     if event_type == "Error" or data.get("error"):
                         close_reason = "Deepgram: " + str(
                             data.get("description") or data.get("message")
@@ -1453,8 +1462,12 @@ def deepgram_worker(job):
                         continue
                     transcript = clean_text(alternatives[0].get("transcript", ""))
                     if not transcript:
+                        with job["lock"]:
+                            job["deepgram_empty_results"] += 1
                         continue
                     with job["lock"]:
+                        if data.get("is_final"):
+                            job["deepgram_final_results"] += 1
                         job["interim_text"] = transcript
                         job["last_activity"] = time.time()
                     if data.get("is_final"):
@@ -1548,6 +1561,15 @@ def create_audio_session(
 
         "connected":
             False,
+
+        "audio_bytes_received": 0,
+        "audio_chunks_received": 0,
+        "deepgram_bytes_sent": 0,
+        "deepgram_chunks_sent": 0,
+        "deepgram_events": 0,
+        "deepgram_empty_results": 0,
+        "deepgram_final_results": 0,
+        "deepgram_last_event": "",
 
         "created_at":
             time.time(),
@@ -2012,6 +2034,8 @@ def audio_chunk():
         job[
             "last_activity"
         ] = time.time()
+        job["audio_bytes_received"] += len(audio_data)
+        job["audio_chunks_received"] += 1
 
     try:
 
@@ -2181,6 +2205,15 @@ def audio_status(
                 job[
                     "connected"
                 ],
+            "audioBytesReceived": job["audio_bytes_received"],
+            "audioChunksReceived": job["audio_chunks_received"],
+            "deepgramBytesSent": job["deepgram_bytes_sent"],
+            "deepgramChunksSent": job["deepgram_chunks_sent"],
+            "deepgramEvents": job["deepgram_events"],
+            "deepgramEmptyResults": job["deepgram_empty_results"],
+            "deepgramFinalResults": job["deepgram_final_results"],
+            "deepgramLastEvent": job["deepgram_last_event"],
+            "inputQueueSize": job["audio_queue_input"].qsize(),
         }
 
         return jsonify(
