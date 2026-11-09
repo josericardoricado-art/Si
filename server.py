@@ -1273,6 +1273,7 @@ def process_transcript(
             job[
                 "status"
             ] = "ready"
+            job["error"] = None
 
         print(
             "[SI] Áudio Piper pronto:",
@@ -2108,6 +2109,10 @@ def audio_status(
 
             "ok":
                 True,
+
+            "translationQueueSize": job["translation_queue"].qsize(),
+            "voiceStage": status,
+            "wavReady": bool(next_audio),
 
             "jobId":
                 job["job_id"],
