@@ -57,6 +57,7 @@ class AudioCaptureService : Service() {
         private const val PCM_FORMAT = AudioFormat.ENCODING_PCM_16BIT
         private const val CAPTURE_CHUNK_BYTES = 9600
         private const val INPUT_QUEUE_SIZE = 80
+        private const val BATCH_CHUNKS = 10 // 10 x 100 ms = 1 segundo por POST
         private const val OUTPUT_QUEUE_SIZE = 4
         private const val STATUS_INTERVAL_MS = 300L
     }
@@ -373,7 +374,7 @@ class AudioCaptureService : Service() {
 
                         // Não sobrecarregar o Render com blocos totalmente zerados.
                         // Mantém blocos com amostras não nulas, mesmo em volume baixo.
-                        if (nonZeroSamples > 0) {
+                        if (captureMode == MODE_MICROPHONE || nonZeroSamples > 0) {
                             val pcm16k = downsample48kTo16k(chunk)
                             if (pcm16k.isNotEmpty()) {
                                 if (!inputQueue.offer(pcm16k)) {
@@ -505,7 +506,17 @@ class AudioCaptureService : Service() {
                         TimeUnit.MILLISECONDS
                     ) ?: continue
 
-                    enviarAudio(chunk)
+                    // Um POST por 100 ms satura a rede móvel e deixa a fila cheia.
+                    // Agrupa até 1 segundo de PCM contínuo, preservando a ordem.
+                    val batch = java.io.ByteArrayOutputStream()
+                    batch.write(chunk)
+                    var count = 1
+                    while (count < BATCH_CHUNKS) {
+                        val next = inputQueue.poll(120, TimeUnit.MILLISECONDS) ?: break
+                        batch.write(next)
+                        count++
+                    }
+                    enviarAudio(batch.toByteArray())
                 } catch (_: InterruptedException) {
                     break
                 } catch (e: Exception) {
@@ -572,7 +583,8 @@ class AudioCaptureService : Service() {
                     Log.d(TAG, "ENVIO=$sentChunks")
                 }
             } else {
-                lastError = "Render HTTP=$code"
+                val details = try { connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "" } catch (_: Exception) { "" }
+                lastError = "Render HTTP=$code ${details.take(160)}"
                 Log.e(TAG, lastError!!)
             }
 
