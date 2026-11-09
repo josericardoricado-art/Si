@@ -105,6 +105,12 @@ class AudioCaptureService : Service() {
     @Volatile private var captureState = "Aguardando captura"
     @Volatile private var androidCaptureSilenced = false
     @Volatile private var lastError: String? = null
+    @Volatile private var serverStatus = "Aguardando servidor"
+    @Volatile private var deepgramConnected = false
+    @Volatile private var sourceText = ""
+    @Volatile private var translatedText = ""
+    @Volatile private var serverError = ""
+    @Volatile private var serverAudioQueue = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -625,8 +631,15 @@ class AudioCaptureService : Service() {
             val json = JSONObject(response)
             if (!json.optBoolean("ok", false)) return
 
-            val source = json.optString("sourceText", "")
-            val translated = json.optString("translatedText", "")
+            val source = if (json.isNull("sourceText")) "" else json.optString("sourceText", "")
+            val translated = if (json.isNull("translatedText")) "" else json.optString("translatedText", "")
+            sourceText = source.takeLast(240)
+            translatedText = translated.takeLast(240)
+            serverStatus = json.optString("status", "desconhecido")
+            deepgramConnected = json.optBoolean("deepgramConnected", false)
+            serverError = if (json.isNull("error")) "" else json.optString("error", "")
+            serverAudioQueue = json.optInt("audioQueueSize", 0)
+            publicarDiagnostico(null)
 
             if (source.isNotEmpty() || translated.isNotEmpty()) {
                 Log.d(
@@ -1079,6 +1092,12 @@ class AudioCaptureService : Service() {
         silentStreak = 0L
         captureState = "Aguardando captura"
         androidCaptureSilenced = false
+        serverStatus = "Aguardando servidor"
+        deepgramConnected = false
+        sourceText = ""
+        translatedText = ""
+        serverError = ""
+        serverAudioQueue = 0
         lastError = null
 
         getSharedPreferences(
@@ -1112,6 +1131,12 @@ class AudioCaptureService : Service() {
             editor.putInt("nonZero", nonZeroSamples)
             editor.putString("captureState", captureState)
             editor.putString("captureMode", captureMode)
+            editor.putString("serverStatus", serverStatus)
+            editor.putBoolean("deepgramConnected", deepgramConnected)
+            editor.putString("sourceText", sourceText)
+            editor.putString("translatedText", translatedText)
+            editor.putString("serverError", serverError)
+            editor.putInt("serverAudioQueue", serverAudioQueue)
             editor.putBoolean("androidCaptureSilenced", androidCaptureSilenced)
             editor.putLong("silentStreak", silentStreak)
             editor.putInt("queue", inputQueue.size)
