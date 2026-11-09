@@ -541,6 +541,8 @@ class MainActivity : AppCompatActivity() {
         val translatedText = prefs.getString("translatedText", "") ?: ""
         val serverError = prefs.getString("serverError", "") ?: ""
         val serverAudioQueue = prefs.getInt("serverAudioQueue", 0)
+        val translationQueueSize = prefs.getInt("translationQueueSize", 0)
+        val wavReady = prefs.getBoolean("wavReady", false)
 
         val job = currentJobId?.let {
             if (it.length > 12) it.take(12) + "..." else it
@@ -563,6 +565,8 @@ class MainActivity : AppCompatActivity() {
             append("\nEtapa servidor: $serverStatus")
             append("\nTexto reconhecido: ${sourceText.ifBlank { "(aguardando fala)" }}")
             append("\nTradução DeepL: ${translatedText.ifBlank { "(aguardando)" }}")
+            append("\nFrases aguardando síntese: $translationQueueSize")
+            append("\nWAV pronto no servidor: ${if (wavReady) "Sim" else "Não"}")
             append("\nÁudios Piper na fila do servidor: $serverAudioQueue")
             if (serverError.isNotBlank()) append("\n❌ Erro servidor: $serverError")
             if (error.isNotEmpty()) {
