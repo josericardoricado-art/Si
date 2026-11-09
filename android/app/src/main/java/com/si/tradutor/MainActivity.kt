@@ -535,6 +535,12 @@ class MainActivity : AppCompatActivity() {
         val captureMode = prefs.getString("captureMode", "internal") ?: "internal"
         val queue = prefs.getInt("queue", 0)
         val error = prefs.getString("error", "") ?: ""
+        val serverStatus = prefs.getString("serverStatus", "Aguardando servidor") ?: "Aguardando servidor"
+        val deepgramConnected = prefs.getBoolean("deepgramConnected", false)
+        val sourceText = prefs.getString("sourceText", "") ?: ""
+        val translatedText = prefs.getString("translatedText", "") ?: ""
+        val serverError = prefs.getString("serverError", "") ?: ""
+        val serverAudioQueue = prefs.getInt("serverAudioQueue", 0)
 
         val job = currentJobId?.let {
             if (it.length > 12) it.take(12) + "..." else it
@@ -552,6 +558,13 @@ class MainActivity : AppCompatActivity() {
             append("\nCaptura: $captureState")
             append("\nFila entrada: $queue   Fila voz: $outputQueue")
             append("\nSessão: $job")
+            append("\n--- PROCESSAMENTO NO SERVIDOR ---")
+            append("\nDeepgram: ${if (deepgramConnected) "Conectado" else "Desconectado"}")
+            append("\nEtapa servidor: $serverStatus")
+            append("\nTexto reconhecido: ${sourceText.ifBlank { "(aguardando fala)" }}")
+            append("\nTradução DeepL: ${translatedText.ifBlank { "(aguardando)" }}")
+            append("\nÁudios Piper na fila do servidor: $serverAudioQueue")
+            if (serverError.isNotBlank()) append("\n❌ Erro servidor: $serverError")
             if (error.isNotEmpty()) {
                 append("\n⚠️ ")
                 append(error)
