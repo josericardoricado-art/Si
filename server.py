@@ -709,159 +709,39 @@ def generate_piper_audio(
 
     try:
 
-        # ====================================================
-        # NOVA API DO PIPER
-        # ====================================================
+        # piper-tts 1.2.0 usa synthesize(text, wav_file).
+        # Versões mais recentes podem retornar chunks PCM.
+        import inspect
 
-        if hasattr(
-            voice,
-            "synthesize"
-        ):
-
-            chunks = voice.synthesize(
-                text
+        if hasattr(voice, "synthesize_wav"):
+            with wave.open(str(output), "wb") as wav_file:
+                voice.synthesize_wav(text, wav_file)
+        elif hasattr(voice, "synthesize"):
+            params = list(inspect.signature(voice.synthesize).parameters.values())
+            needs_wav_file = (
+                len(params) >= 2
+                and params[1].name in ("wav_file", "wav", "output_file")
             )
-
-            first_chunk = None
-
-            total_frames = 0
-
-            sample_rate = None
-
-            sample_width = None
-
-            sample_channels = None
-
-            with wave.open(
-                str(output),
-                "wb",
-            ) as wav_file:
-
-                for chunk in chunks:
-
-                    if first_chunk is None:
-
-                        first_chunk = chunk
-
-                        sample_rate = int(
-                            getattr(
-                                chunk,
-                                "sample_rate",
-                                getattr(
-                                    voice.config,
-                                    "sample_rate",
-                                    22050,
-                                ),
-                            )
-                        )
-
-                        sample_width = int(
-                            getattr(
-                                chunk,
-                                "sample_width",
-                                2,
-                            )
-                        )
-
-                        sample_channels = int(
-                            getattr(
-                                chunk,
-                                "sample_channels",
-                                1,
-                            )
-                        )
-
-                        wav_file.setnchannels(
-                            sample_channels
-                        )
-
-                        wav_file.setsampwidth(
-                            sample_width
-                        )
-
-                        wav_file.setframerate(
-                            sample_rate
-                        )
-
-                    audio_bytes = getattr(
-                        chunk,
-                        "audio_int16_bytes",
-                        None,
-                    )
-
-                    if audio_bytes:
-
-                        wav_file.writeframes(
-                            audio_bytes
-                        )
-
-                        bytes_per_frame = (
-                            sample_width
-                            * sample_channels
-                        )
-
-                        if bytes_per_frame > 0:
-
-                            total_frames += (
-                                len(audio_bytes)
-                                // bytes_per_frame
-                            )
-
-            if first_chunk is None:
-
-                raise RuntimeError(
-                    "Piper não retornou nenhum "
-                    "bloco de áudio."
-                )
-
-            if total_frames <= 0:
-
-                raise RuntimeError(
-                    "Piper retornou áudio vazio."
-                )
-
-        # ====================================================
-        # COMPATIBILIDADE COM VERSÕES ANTIGAS
-        # ====================================================
-
-        elif hasattr(
-            voice,
-            "synthesize_wav"
-        ):
-
-            with wave.open(
-                str(output),
-                "wb",
-            ) as wav_file:
-
-                wav_file.setnchannels(
-                    1
-                )
-
-                wav_file.setsampwidth(
-                    2
-                )
-
-                wav_file.setframerate(
-                    getattr(
-                        voice.config,
-                        "sample_rate",
-                        22050,
-                    )
-                )
-
-                voice.synthesize_wav(
-                    text,
-                    wav_file,
-                )
-
+            if needs_wav_file:
+                with wave.open(str(output), "wb") as wav_file:
+                    voice.synthesize(text, wav_file)
+            else:
+                chunks = voice.synthesize(text)
+                frames = 0
+                with wave.open(str(output), "wb") as wav_file:
+                    for chunk in chunks:
+                        if frames == 0:
+                            wav_file.setnchannels(int(getattr(chunk, "sample_channels", 1)))
+                            wav_file.setsampwidth(int(getattr(chunk, "sample_width", 2)))
+                            wav_file.setframerate(int(getattr(chunk, "sample_rate", voice.config.sample_rate)))
+                        audio_bytes = getattr(chunk, "audio_int16_bytes", None)
+                        if audio_bytes:
+                            wav_file.writeframes(audio_bytes)
+                            frames += len(audio_bytes)
+                if frames == 0:
+                    raise RuntimeError("Piper não retornou áudio PCM.")
         else:
-
-            raise RuntimeError(
-                "A versão do Piper instalada não "
-                "possui nem synthesize() nem "
-                "synthesize_wav()."
-            )
+            raise RuntimeError("API de síntese Piper não encontrada.")
 
     except Exception as error:
 
@@ -1850,7 +1730,7 @@ def test_piper():
 
         text = data.get(
             "text",
-            "Olá. Este é um teste de voz do SI.",
+            "Olá! Eu sou a voz do SI Tradutor Live. A tradução está funcionando.",
         )
 
         language = data.get(
