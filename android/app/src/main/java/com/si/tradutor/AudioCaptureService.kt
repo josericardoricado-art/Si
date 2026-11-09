@@ -112,6 +112,8 @@ class AudioCaptureService : Service() {
     @Volatile private var translatedText = ""
     @Volatile private var serverError = ""
     @Volatile private var serverAudioQueue = 0
+    @Volatile private var translationQueueSize = 0
+    @Volatile private var wavReady = false
 
     override fun onCreate() {
         super.onCreate()
@@ -651,6 +653,8 @@ class AudioCaptureService : Service() {
             deepgramConnected = json.optBoolean("deepgramConnected", false)
             serverError = if (json.isNull("error")) "" else json.optString("error", "")
             serverAudioQueue = json.optInt("audioQueueSize", 0)
+            translationQueueSize = json.optInt("translationQueueSize", 0)
+            wavReady = json.optBoolean("wavReady", false)
             publicarDiagnostico(null)
 
             if (source.isNotEmpty() || translated.isNotEmpty()) {
@@ -1110,6 +1114,8 @@ class AudioCaptureService : Service() {
         translatedText = ""
         serverError = ""
         serverAudioQueue = 0
+        translationQueueSize = 0
+        wavReady = false
         lastError = null
 
         getSharedPreferences(
@@ -1149,6 +1155,8 @@ class AudioCaptureService : Service() {
             editor.putString("translatedText", translatedText)
             editor.putString("serverError", serverError)
             editor.putInt("serverAudioQueue", serverAudioQueue)
+            editor.putInt("translationQueueSize", translationQueueSize)
+            editor.putBoolean("wavReady", wavReady)
             editor.putBoolean("androidCaptureSilenced", androidCaptureSilenced)
             editor.putLong("silentStreak", silentStreak)
             editor.putInt("queue", inputQueue.size)
