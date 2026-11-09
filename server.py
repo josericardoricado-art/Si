@@ -1292,13 +1292,8 @@ def process_transcript(
 
         with job["lock"]:
 
-            job[
-                "error"
-            ] = str(error)
-
-            job[
-                "status"
-            ] = "error"
+            job["error"] = "Falha tradução/voz Piper: " + str(error)
+            job["status"] = "error"
 
 
 # ============================================================
@@ -1778,6 +1773,9 @@ def test_piper():
             "audioUrl":
                 "/api/audio/file/"
                 + filename,
+            "audioUrlAbsolute": request.host_url.rstrip("/") + "/api/audio/file/" + filename,
+            "wavBytes": (AUDIO_DIR / filename).stat().st_size,
+            "wavValid": True,
         })
 
     except Exception as error:
@@ -1799,6 +1797,20 @@ def test_piper():
             "error":
                 str(error),
         }), 500
+
+
+# Teste direto do Piper: retorna WAV real, ou erro JSON com a causa.
+@app.route("/api/test-piper.wav", methods=["GET"])
+def test_piper_wav():
+    try:
+        phrase = "Olá! Eu sou a voz do SI Tradutor Live. A tradução está funcionando."
+        filename = generate_piper_audio(phrase, "pt")
+        if not filename:
+            raise RuntimeError("Piper não gerou arquivo.")
+        return send_from_directory(AUDIO_DIR, filename, mimetype="audio/wav", as_attachment=False)
+    except Exception as error:
+        print("[TEST PIPER WAV] Falha:", repr(error), flush=True)
+        return jsonify({"ok": False, "stage": "piper_synthesis", "error": str(error)}), 500
 
 
 # ============================================================
@@ -2087,11 +2099,7 @@ def audio_status(
         if (
             not next_audio
             and job["connected"]
-            and status
-            not in (
-                "error",
-                "stopped",
-            )
+            and status == "ready"
         ):
 
             status = "listening"
