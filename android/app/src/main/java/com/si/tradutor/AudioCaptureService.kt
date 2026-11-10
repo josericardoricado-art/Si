@@ -89,6 +89,7 @@ class AudioCaptureService : Service() {
 
     private val outputQueue = LinkedBlockingQueue<OutputAudio>(OUTPUT_QUEUE_SIZE)
     private val downloadedAudioIds = HashSet<String>()
+    @Volatile private var suppressMicUntilMs = 0L
     private val downloadedAudioLock = Any()
 
     @Volatile private var capturedChunks = 0L
@@ -376,7 +377,11 @@ class AudioCaptureService : Service() {
 
                         // Não sobrecarregar o Render com blocos totalmente zerados.
                         // Mantém blocos com amostras não nulas, mesmo em volume baixo.
-                        if (captureMode == MODE_MICROPHONE || nonZeroSamples > 0) {
+                        // Impede que a própria voz Piper seja recapturada
+                        // pelo microfone e traduzida em um ciclo de eco.
+                        val micEchoWindow = captureMode == MODE_MICROPHONE &&
+                            android.os.SystemClock.elapsedRealtime() < suppressMicUntilMs
+                        if (!micEchoWindow && (captureMode == MODE_MICROPHONE || nonZeroSamples > 0)) {
                             val pcm16k = downsample48kTo16k(chunk)
                             if (pcm16k.isNotEmpty()) {
                                 if (!inputQueue.offer(pcm16k)) {
@@ -943,6 +948,10 @@ class AudioCaptureService : Service() {
 
         try {
             playbackAttempts++
+            if (captureMode == MODE_MICROPHONE) {
+                suppressMicUntilMs = Long.MAX_VALUE
+                inputQueue.clear()
+            }
             lastPlaybackStage = "Iniciando reprodução #$playbackAttempts"
             publicarDiagnostico("🔊 Preparando reprodução Piper...")
             val info = lerWavInfo(item.wav)
@@ -1028,6 +1037,9 @@ class AudioCaptureService : Service() {
             Log.e(TAG, "Erro reproduzindo WAV Piper", e)
             publicarDiagnostico("❌ Piper não reproduziu: $lastError")
         } finally {
+            if (captureMode == MODE_MICROPHONE) {
+                suppressMicUntilMs = android.os.SystemClock.elapsedRealtime() + 800L
+            }
             synchronized(mediaPlayerLock) {
                 if (mediaPlayer === player) {
                     liberarMediaPlayerInterno()
@@ -1089,6 +1101,7 @@ class AudioCaptureService : Service() {
     private fun limparEstado() {
         inputQueue.clear()
         outputQueue.clear()
+        suppressMicUntilMs = 0L
 
         synchronized(downloadedAudioLock) {
             downloadedAudioIds.clear()
