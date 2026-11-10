@@ -100,7 +100,7 @@ DEFAULT_TARGET_LANGUAGE = os.environ.get(
 
 DEEPGRAM_SOURCE_LANGUAGE = os.environ.get(
     "DEEPGRAM_SOURCE_LANGUAGE",
-    "pt-BR",
+    "en-US",
 ).strip()
 
 
