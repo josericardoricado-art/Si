@@ -1016,6 +1016,15 @@ def enqueue_translation(
             transcript
         )
 
+        # Evita repetição da mesma fala durante uma janela curta.
+        recent = job["recent_source_keys"]
+        now = time.monotonic()
+        for old_key, old_time in list(recent.items()):
+            if now - old_time > 20:
+                del recent[old_key]
+        if key in recent:
+            return
+
         if key == job[
             "last_queued_source_key"
         ]:
@@ -1031,6 +1040,7 @@ def enqueue_translation(
         job[
             "last_queued_source_key"
         ] = key
+        recent[key] = now
 
     q = job[
         "translation_queue"
@@ -1208,21 +1218,9 @@ def process_transcript(
                     )
                 )
 
-                if old_filename:
-
-                    old_path = (
-                        AUDIO_DIR
-                        / old_filename
-                    )
-
-                    try:
-
-                        old_path.unlink(
-                            missing_ok=True
-                        )
-
-                    except Exception:
-                        pass
+                # Não apagar WAV imediatamente: o Android pode já ter
+                # recebido sua URL e estar tentando fazer o download.
+                # A limpeza periódica de arquivos cuida dos órfãos.
 
             sequence = (
                 job[
@@ -1588,6 +1586,8 @@ def create_audio_session(
 
         "last_translation_key":
             "",
+
+        "recent_source_keys": {},
 
         "stop_event":
             threading.Event(),
